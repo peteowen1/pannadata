@@ -1,0 +1,11 @@
+# Data files (stored in GitHub Releases instead)
+data/
+
+# R artifacts
+.Rhistory
+.RData
+.Ruserdata
+.Rproj.user
+.httr-oauth
+.DS_Store
+.quarto
