@@ -6,13 +6,16 @@
 # Old: panna/data/fbref_matches/{tabletype}/{LEAGUE}_{SEASON}_{ID}.rds
 # New: pannadata/data/{tabletype}/{league}/{season}/{id}.rds
 
-# Configuration
+# 1. Configuration ----
+
 OLD_BASE_DIR <- "C:/Users/peteo/OneDrive/Documents/panna/data/fbref_matches"
 NEW_BASE_DIR <- "C:/Users/peteo/OneDrive/Documents/pannaverse/pannadata/data"
 
 # Table types to migrate
 TABLE_TYPES <- c("metadata", "summary", "passing", "passing_types",
                  "defense", "possession", "misc", "keeper", "shots", "fixtures")
+
+# 2. Helper Functions ----
 
 #' Parse old filename format
 #'
@@ -116,6 +119,7 @@ migrate_table_type <- function(table_type, old_base, new_base, dry_run = FALSE) 
   n_migrated
 }
 
+# 3. Migration Functions ----
 
 #' Run full migration
 #'
@@ -176,8 +180,7 @@ verify_migration <- function() {
   }
 }
 
-
-# Main execution
+# 4. Main Execution ----
 if (interactive()) {
   message("=== Data Migration Script ===\n")
   message("This script migrates data from the old panna structure to pannadata.\n")

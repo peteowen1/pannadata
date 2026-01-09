@@ -1,6 +1,10 @@
 # Data files (stored in GitHub Releases instead)
 data/
 
+# Claude Code (local settings)
+.claude/
+CLAUDE.md
+
 # R artifacts
 .Rhistory
 .RData
