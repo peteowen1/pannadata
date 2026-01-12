@@ -18,40 +18,54 @@ TAG <- "latest"
 
 # Ensure we're in the right directory
 if (!file.exists("data")) {
-
-stop("Run this from the pannadata directory (data/ folder not found)")
+  stop("Run this from the pannadata directory (data/ folder not found)")
 }
 
 # Create release if it doesn't exist
 cat("Checking for existing release...\n")
 tryCatch({
-pb_list(repo = REPO, tag = TAG)
-cat("Release '", TAG, "' already exists\n", sep = "")
+  pb_list(repo = REPO, tag = TAG)
+  cat("Release '", TAG, "' already exists\n", sep = "")
 }, error = function(e) {
-cat("Creating new release '", TAG, "'...\n", sep = "")
-pb_new_release(repo = REPO, tag = TAG)
+  cat("Creating new release '", TAG, "'...\n", sep = "")
+  pb_new_release(repo = REPO, tag = TAG)
 })
 
-# Zip the data directory
+# Zip the data directory using PowerShell (Windows) or system zip (Unix)
 zip_file <- "pannadata.zip"
-cat("\nZipping data directory...\n")
+cat("\nZipping data directory (this may take a minute)...\n")
 
 if (file.exists(zip_file)) {
-file.remove(zip_file)
+  file.remove(zip_file)
 }
 
-zip(zip_file, files = "data", extras = "-r")
+# Use PowerShell on Windows, system zip on Unix
+if (.Platform$OS.type == "windows") {
+  # PowerShell Compress-Archive is quieter and more reliable on Windows
+  ps_cmd <- sprintf(
+    'Compress-Archive -Path "data" -DestinationPath "%s" -Force',
+    zip_file
+  )
+  result <- system2("powershell", args = c("-Command", ps_cmd), stdout = TRUE, stderr = TRUE)
+} else {
+  # Unix: use zip with quiet flag
+  result <- system2("zip", args = c("-rq", zip_file, "data"), stdout = TRUE, stderr = TRUE)
+}
+
+if (!file.exists(zip_file)) {
+  stop("Failed to create zip file. Error: ", paste(result, collapse = "\n"))
+}
 
 zip_size <- file.size(zip_file) / (1024 * 1024)
 cat(sprintf("Created %s (%.1f MB)\n", zip_file, zip_size))
 
 # Upload to GitHub Releases
-cat("\nUploading to GitHub Releases...\n")
+cat("\nUploading to GitHub Releases (this may take a few minutes)...\n")
 pb_upload(
-file = zip_file,
-repo = REPO,
-tag = TAG,
-overwrite = TRUE
+  file = zip_file,
+  repo = REPO,
+  tag = TAG,
+  overwrite = TRUE
 )
 
 cat("Upload complete!\n")
