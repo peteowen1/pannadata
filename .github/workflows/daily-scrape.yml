@@ -32,6 +32,7 @@ jobs:
     - name: Setup R dependencies
       uses: r-lib/actions/setup-r-dependencies@v2
       with:
+        extra-repositories: https://apache.r-universe.dev
         packages: |
           any::remotes
           any::piggyback
