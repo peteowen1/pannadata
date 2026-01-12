@@ -13,3 +13,6 @@ CLAUDE.md
 .httr-oauth
 .DS_Store
 .quarto
+
+# Claude Code temp files
+tmpclaude-*
