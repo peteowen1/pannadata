@@ -33,32 +33,28 @@ jobs:
 
     - name: Install R dependencies
       run: |
-        install.packages(c("remotes", "piggyback", "httr", "rvest"))
+        install.packages(c("remotes", "piggyback", "httr", "rvest", "arrow"))
         remotes::install_github("peteowen1/panna")
       shell: Rscript {0}
 
-    - name: Download existing data from GitHub Releases
+    - name: Download existing parquet data from GitHub Releases
       run: |
         Rscript -e '
-          library(piggyback)
+          library(panna)
 
-          # Download existing pannadata cache (zipped)
+          # Set pannadata directory to current working directory
+          pannadata_dir(file.path(getwd(), "data"))
+
           tryCatch({
-            pb_download(
-              file = "pannadata.zip",
+            pb_download_parquet(
               repo = "peteowen1/pannadata",
               tag = "latest",
-              dest = "."
+              dest = file.path(getwd(), "data"),
+              verbose = TRUE
             )
-            message("Downloaded existing data from GitHub Releases")
-
-            # Unzip preserving directory structure
-            unzip("pannadata.zip", exdir = ".")
-            file.remove("pannadata.zip")
-            message("Extracted data to data/")
+            message("Downloaded existing parquet data")
           }, error = function(e) {
-            message("No existing data to download (first run?): ", e$message)
-            # Create empty data directory for first run
+            message("No existing parquet data (first run?): ", e$message)
             dir.create("data", recursive = TRUE, showWarnings = FALSE)
           })
         '
@@ -68,6 +64,9 @@ jobs:
       run: |
         Rscript -e '
           library(panna)
+
+          # Set pannadata directory
+          pannadata_dir(file.path(getwd(), "data"))
 
           # Configuration
           FORCE_RESCRAPE <- FALSE
@@ -167,35 +166,34 @@ jobs:
         '
       shell: bash
 
-    - name: Upload data to GitHub Releases
+    - name: Build parquet files from RDS
       run: |
         Rscript -e '
-          library(piggyback)
+          library(panna)
 
-          # Zip the data directory to preserve structure
-          message("Zipping data directory...")
-          zip_file <- "pannadata.zip"
+          pannadata_dir(file.path(getwd(), "data"))
 
-          zip(zip_file, files = "data", extras = "-r")
+          message("Building parquet files from RDS...")
+          stats <- build_all_parquet(verbose = TRUE)
 
-          zip_size <- file.size(zip_file) / (1024 * 1024)
-          message(sprintf("Created %s (%.1f MB)", zip_file, zip_size))
+          message(sprintf("Built %d parquet files (%.1f MB total)",
+                          nrow(stats), sum(stats$size_mb)))
+        '
+      shell: bash
 
-          # Upload zipped data
-          tryCatch({
-            pb_upload(
-              file = zip_file,
-              repo = "peteowen1/pannadata",
-              tag = "latest",
-              overwrite = TRUE
-            )
-            message("Uploaded data to GitHub Releases")
-          }, error = function(e) {
-            stop("Failed to upload: ", e$message)
-          })
+    - name: Upload parquet data to GitHub Releases
+      run: |
+        Rscript -e '
+          library(panna)
 
-          # Cleanup
-          file.remove(zip_file)
+          pannadata_dir(file.path(getwd(), "data"))
+
+          pb_upload_parquet(
+            repo = "peteowen1/pannadata",
+            tag = "latest",
+            source = file.path(getwd(), "data"),
+            verbose = TRUE
+          )
         '
       shell: bash
 
@@ -204,6 +202,7 @@ jobs:
         echo "Daily scrape completed successfully"
         echo "Check pannadata repo releases for updated data"
 
-        # Show what was scraped
+        # Show counts
+        find data -name "*.parquet" 2>/dev/null | wc -l | xargs -I {} echo "Total parquet files: {}"
         find data -name "*.rds" 2>/dev/null | wc -l | xargs -I {} echo "Total RDS files: {}"
       shell: bash

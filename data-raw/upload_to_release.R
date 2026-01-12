@@ -1,16 +1,16 @@
 # upload_to_release.R
-# Upload local pannadata cache to GitHub Releases
+# Upload pannadata parquet files to GitHub Releases
 #
-# Run this once to seed the GitHub Release with your existing data.
-# After this, the daily GitHub Actions workflow will update incrementally.
+# This script builds parquet files from RDS and uploads only parquet.
+# RDS files remain local for incremental updates.
 #
 # Usage:
 #   setwd("pannadata")
 #   source("data-raw/upload_to_release.R")
 
-library(piggyback)
+library(panna)
 
-cat("=== Upload pannadata to GitHub Releases ===\n\n")
+cat("=== Upload pannadata (parquet only) to GitHub Releases ===\n\n")
 
 # Configuration
 REPO <- "peteowen1/pannadata"
@@ -21,59 +21,24 @@ if (!file.exists("data")) {
   stop("Run this from the pannadata directory (data/ folder not found)")
 }
 
-# Create release if it doesn't exist
-cat("Checking for existing release...\n")
-tryCatch({
-  pb_list(repo = REPO, tag = TAG)
-  cat("Release '", TAG, "' already exists\n", sep = "")
-}, error = function(e) {
-  cat("Creating new release '", TAG, "'...\n", sep = "")
-  pb_new_release(repo = REPO, tag = TAG)
-})
+# Set pannadata directory
+pannadata_dir(file.path(getwd(), "data"))
 
-# Zip the data directory using PowerShell (Windows) or system zip (Unix)
-zip_file <- "pannadata.zip"
-cat("\nZipping data directory (this may take a minute)...\n")
+# Step 1: Build all parquet files from RDS
+cat("Building parquet files from RDS...\n\n")
+stats <- build_all_parquet(verbose = TRUE)
 
-if (file.exists(zip_file)) {
-  file.remove(zip_file)
+if (nrow(stats) == 0) {
+  stop("No parquet files were created. Check that RDS files exist in data/")
 }
 
-# Use PowerShell on Windows, system zip on Unix
-if (.Platform$OS.type == "windows") {
-  # PowerShell Compress-Archive is quieter and more reliable on Windows
-  ps_cmd <- sprintf(
-    'Compress-Archive -Path "data" -DestinationPath "%s" -Force',
-    zip_file
-  )
-  result <- system2("powershell", args = c("-Command", ps_cmd), stdout = TRUE, stderr = TRUE)
-} else {
-  # Unix: use zip with quiet flag
-  result <- system2("zip", args = c("-rq", zip_file, "data"), stdout = TRUE, stderr = TRUE)
-}
+cat(sprintf("\nBuilt %d parquet files (%.1f MB total)\n",
+            nrow(stats), sum(stats$size_mb)))
 
-if (!file.exists(zip_file)) {
-  stop("Failed to create zip file. Error: ", paste(result, collapse = "\n"))
-}
-
-zip_size <- file.size(zip_file) / (1024 * 1024)
-cat(sprintf("Created %s (%.1f MB)\n", zip_file, zip_size))
-
-# Upload to GitHub Releases
-cat("\nUploading to GitHub Releases (this may take a few minutes)...\n")
-pb_upload(
-  file = zip_file,
-  repo = REPO,
-  tag = TAG,
-  overwrite = TRUE
-)
-
-cat("Upload complete!\n")
-
-# Cleanup
-file.remove(zip_file)
-cat("Cleaned up local zip file\n")
+# Step 2: Upload parquet files only
+cat("\nUploading parquet files to GitHub Releases...\n")
+pb_upload_parquet(repo = REPO, tag = TAG, verbose = TRUE)
 
 cat("\n=== Done ===\n")
-cat("Your data is now available at:\n")
+cat("Your parquet data is now available at:\n")
 cat(sprintf("https://github.com/%s/releases/tag/%s\n", REPO, TAG))
