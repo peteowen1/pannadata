@@ -8,7 +8,12 @@
 #   setwd("pannadata")
 #   source("data-raw/upload_to_release.R")
 
-library(panna)
+# Load panna - use dev version if available, otherwise installed
+if (file.exists("../panna/DESCRIPTION")) {
+  devtools::load_all("../panna")
+} else {
+  library(panna)
+}
 
 cat("=== Upload pannadata (parquet only) to GitHub Releases ===\n\n")
 

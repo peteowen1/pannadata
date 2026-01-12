@@ -8,7 +8,12 @@
 #   setwd("pannadata")
 #   source("data-raw/migrate_to_parquet.R")
 
-library(panna)
+# Load panna - use dev version if available, otherwise installed
+if (file.exists("../panna/DESCRIPTION")) {
+  devtools::load_all("../panna")
+} else {
+  library(panna)
+}
 
 cat("=== Migrating pannadata to Parquet Format ===\n\n")
 
