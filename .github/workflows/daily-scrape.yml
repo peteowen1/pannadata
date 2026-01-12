@@ -12,6 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180  # 3 hour timeout for long scrapes
 
+    permissions:
+      contents: write  # Required for GitHub Releases upload
+
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
 
@@ -26,16 +29,16 @@ jobs:
       with:
         r-version: 'release'
 
-    - name: Install system dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libcurl4-openssl-dev libssl-dev libxml2-dev
-
-    - name: Install R dependencies
-      run: |
-        install.packages(c("remotes", "piggyback", "httr", "rvest", "arrow"))
-        remotes::install_github("peteowen1/panna")
-      shell: Rscript {0}
+    - name: Setup R dependencies
+      uses: r-lib/actions/setup-r-dependencies@v2
+      with:
+        packages: |
+          any::remotes
+          any::piggyback
+          any::httr
+          any::rvest
+          any::arrow
+        extra-packages: github::peteowen1/panna
 
     - name: Download existing parquet data from GitHub Releases
       run: |
