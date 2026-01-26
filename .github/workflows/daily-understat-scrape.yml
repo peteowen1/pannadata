@@ -56,7 +56,7 @@ jobs:
           any::arrow
           any::jsonlite
           any::stringi
-        extra-packages: github::peteowen1/panna
+        extra-packages: github::peteowen1/panna@dev
 
     - name: Download existing Understat data from GitHub Releases
       run: |

@@ -46,7 +46,7 @@ jobs:
           any::httr
           any::rvest
           any::arrow
-        extra-packages: github::peteowen1/panna
+        extra-packages: github::peteowen1/panna@dev
 
     - name: Download existing parquet data from GitHub Releases
       run: |
