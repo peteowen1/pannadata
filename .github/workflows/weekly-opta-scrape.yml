@@ -1,0 +1,244 @@
+name: Weekly Opta Scrape
+
+on:
+  schedule:
+    # Run weekly on Monday at 3 AM UTC
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+    inputs:
+      leagues:
+        description: 'Leagues to scrape (space-separated, e.g., "EPL La_Liga")'
+        required: false
+        type: string
+      recent:
+        description: 'Number of recent seasons to scrape per league'
+        required: false
+        type: number
+        default: 1
+      force_rescrape:
+        description: 'Force rescrape existing matches'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180  # 3 hour timeout for comprehensive scrape
+
+    permissions:
+      contents: write  # Required for GitHub Releases upload
+
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+    - name: Checkout pannaverse (contains theanalyst_scraper)
+      uses: actions/checkout@v4
+      with:
+        repository: peteowen1/pannaverse
+        path: pannaverse
+        submodules: false
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+        cache-dependency-path: pannaverse/theanalyst_scraper/requirements.txt
+
+    - name: Install Python dependencies
+      run: |
+        pip install -r pannaverse/theanalyst_scraper/requirements.txt
+
+    - name: Download existing Opta data from GitHub Releases
+      run: |
+        # Python script writes to pannadata/data/opta/
+        mkdir -p pannaverse/pannadata/data
+
+        # Download existing opta-parquet.zip if it exists
+        echo "Checking for existing Opta data..."
+        if gh release download opta-latest \
+            --repo peteowen1/pannadata \
+            --pattern "opta-parquet.zip" \
+            --dir . 2>/dev/null; then
+          echo "Downloaded existing opta-parquet.zip"
+          unzip -o opta-parquet.zip -d pannaverse/pannadata/data/
+          rm opta-parquet.zip
+          echo "Extracted existing data"
+          find pannaverse/pannadata/data/opta -name "*.parquet" 2>/dev/null | wc -l | xargs -I {} echo "Existing parquet files: {}"
+        else
+          echo "No existing opta-parquet.zip found (first run)"
+          mkdir -p pannaverse/pannadata/data/opta
+        fi
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Run Opta scraper
+      run: |
+        cd pannaverse/theanalyst_scraper
+
+        # Build command arguments
+        ARGS="--recent ${{ github.event.inputs.recent || 1 }}"
+
+        # Add leagues if specified
+        if [ -n "${{ github.event.inputs.leagues }}" ]; then
+          ARGS="$ARGS --leagues ${{ github.event.inputs.leagues }}"
+        fi
+
+        # Add force flag if specified
+        if [ "${{ github.event.inputs.force_rescrape }}" = "true" ]; then
+          ARGS="$ARGS --force"
+        fi
+
+        echo "Running: python scrape_big5.py $ARGS"
+        python scrape_big5.py $ARGS
+
+    - name: Build consolidated Opta parquet files
+      run: |
+        cd pannaverse/pannadata/data
+
+        # Count what we have
+        echo "Opta directory contents:"
+        find opta -type f 2>/dev/null | head -20
+        echo "..."
+
+        PARQUET_COUNT=$(find opta -name "*.parquet" 2>/dev/null | wc -l)
+        echo "Total parquet files: $PARQUET_COUNT"
+
+        if [ "$PARQUET_COUNT" -eq 0 ]; then
+          echo "No parquet files to consolidate"
+          exit 0
+        fi
+
+        # Create consolidated directory
+        mkdir -p consolidated
+
+        # Build consolidated parquet files using Python
+        python3 << 'EOF'
+import os
+import glob
+import pyarrow.parquet as pq
+import pyarrow as pa
+
+opta_dir = "opta"
+consolidated_dir = "consolidated"
+
+# Find all table types (subdirectories of opta/)
+table_types = [d for d in os.listdir(opta_dir) if os.path.isdir(os.path.join(opta_dir, d))]
+
+print(f"Found table types: {table_types}")
+
+for table_type in table_types:
+    tt_dir = os.path.join(opta_dir, table_type)
+    parquet_files = glob.glob(os.path.join(tt_dir, "**/*.parquet"), recursive=True)
+
+    if not parquet_files:
+        print(f"  Skipping {table_type} - no parquet files")
+        continue
+
+    print(f"\nConsolidating opta_{table_type}...")
+    print(f"  Found {len(parquet_files)} parquet files")
+
+    # Read and combine all parquet files
+    tables = []
+    for f in parquet_files:
+        try:
+            t = pq.read_table(f)
+            tables.append(t)
+        except Exception as e:
+            print(f"  Warning: Error reading {f}: {e}")
+
+    if not tables:
+        print(f"  Skipping {table_type} - no valid data")
+        continue
+
+    # Combine tables
+    combined = pa.concat_tables(tables)
+
+    # Write consolidated parquet
+    output_path = os.path.join(consolidated_dir, f"opta_{table_type}.parquet")
+    pq.write_table(combined, output_path)
+
+    size_mb = os.path.getsize(output_path) / (1024 * 1024)
+    print(f"  Wrote {output_path}: {combined.num_rows:,} rows, {size_mb:.1f} MB")
+
+print("\nConsolidation complete!")
+EOF
+
+        # Show consolidated files
+        echo ""
+        echo "Consolidated parquet files:"
+        ls -lh consolidated/*.parquet 2>/dev/null || echo "  (none)"
+
+    - name: Create Opta parquet zip (backup)
+      run: |
+        cd pannaverse/pannadata/data
+
+        PARQUET_COUNT=$(find opta -name "*.parquet" 2>/dev/null | wc -l)
+        if [ "$PARQUET_COUNT" -eq 0 ]; then
+          echo "No parquet files to zip"
+          exit 0
+        fi
+
+        # Create zip of opta directory as backup
+        zip -r opta-parquet.zip opta/
+
+        ZIP_SIZE=$(ls -lh opta-parquet.zip | awk '{print $5}')
+        echo "Created opta-parquet.zip ($ZIP_SIZE)"
+
+    - name: Upload Opta data to GitHub Releases
+      run: |
+        cd pannaverse/pannadata/data
+
+        # Create release if it doesn't exist
+        if ! gh release view opta-latest --repo peteowen1/pannadata >/dev/null 2>&1; then
+          echo "Creating opta-latest release..."
+          gh release create opta-latest \
+            --repo peteowen1/pannadata \
+            --title "Opta Data (Latest)" \
+            --notes "Automated weekly Opta/TheAnalyst data scrape. Individual parquet files for fast remote queries." \
+            --prerelease
+        fi
+
+        # Upload individual consolidated parquet files
+        echo "Uploading consolidated Opta parquet files..."
+        for f in consolidated/opta_*.parquet; do
+          if [ -f "$f" ]; then
+            fname=$(basename "$f")
+            echo "  Uploading $fname..."
+            gh release upload opta-latest "$f" \
+              --repo peteowen1/pannadata \
+              --clobber
+          fi
+        done
+
+        # Upload zip file as backup
+        if [ -f opta-parquet.zip ]; then
+          echo "Uploading opta-parquet.zip (backup archive)..."
+          gh release upload opta-latest opta-parquet.zip \
+            --repo peteowen1/pannadata \
+            --clobber
+        fi
+
+        echo "Upload complete"
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Summary
+      run: |
+        echo "Weekly Opta scrape completed successfully"
+        echo "Check pannadata repo opta-latest release for updated data"
+        echo ""
+        echo "Individual parquet files available for fast remote queries:"
+        ls -lh pannaverse/pannadata/data/consolidated/opta_*.parquet 2>/dev/null || echo "  (none)"
+
+        # Show scrape summary from theanalyst_scraper
+        if [ -f pannaverse/theanalyst_scraper/data/scrape_summary.json ]; then
+          echo ""
+          echo "Scrape summary:"
+          cat pannaverse/theanalyst_scraper/data/scrape_summary.json
+        fi
+
+        echo ""
+        echo "Total Opta parquet files: $(find pannaverse/pannadata/data/opta -name '*.parquet' 2>/dev/null | wc -l)"

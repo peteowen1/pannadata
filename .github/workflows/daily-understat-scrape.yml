@@ -1,0 +1,261 @@
+name: Daily Understat Scrape
+
+on:
+  schedule:
+    # Run at 7 AM UTC daily (after FBref scrape)
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+    inputs:
+      start_id:
+        description: 'Start match ID (leave empty for auto-detect)'
+        required: false
+        type: string
+      end_id:
+        description: 'End match ID (leave empty for auto-detect +500)'
+        required: false
+        type: string
+      force_rescrape:
+        description: 'Force rescrape cached matches'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120  # 2 hour timeout
+
+    permissions:
+      contents: write  # Required for GitHub Releases upload
+
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+    - name: Checkout pannadata
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup R
+      uses: r-lib/actions/setup-r@v2
+      with:
+        r-version: 'release'
+
+    - name: Setup R dependencies
+      uses: r-lib/actions/setup-r-dependencies@v2
+      with:
+        extra-repositories: |
+          https://apache.r-universe.dev
+          https://dmlc.r-universe.dev
+        packages: |
+          any::remotes
+          any::piggyback
+          any::httr
+          any::rvest
+          any::arrow
+          any::jsonlite
+          any::stringi
+        extra-packages: github::peteowen1/panna
+
+    - name: Download existing Understat data from GitHub Releases
+      run: |
+        Rscript -e '
+          library(panna)
+
+          # Set pannadata directory
+          pannadata_dir(file.path(getwd(), "data"))
+
+          tryCatch({
+            pb_download_source(
+              source_type = "understat",
+              repo = "peteowen1/pannadata",
+              dest = file.path(getwd(), "data"),
+              verbose = TRUE
+            )
+            message("Downloaded existing Understat parquet data")
+          }, error = function(e) {
+            message("No existing Understat data (first run?): ", e$message)
+            dir.create("data", recursive = TRUE, showWarnings = FALSE)
+          })
+        '
+      shell: bash
+
+    - name: Run incremental Understat scrape
+      run: |
+        Rscript -e '
+          library(panna)
+
+          # Set pannadata directory
+          pannadata_dir(file.path(getwd(), "data"))
+
+          # Configuration from inputs
+          input_start <- "${{ github.event.inputs.start_id }}"
+          input_end <- "${{ github.event.inputs.end_id }}"
+          skip_cached <- !as.logical("${{ github.event.inputs.force_rescrape }}")
+          if (is.na(skip_cached)) skip_cached <- TRUE
+
+          # Auto-detect ID range if not provided
+          if (nzchar(input_start) && nzchar(input_end)) {
+            start_id <- as.integer(input_start)
+            end_id <- as.integer(input_end)
+            message(sprintf("Using manual ID range: %d to %d", start_id, end_id))
+          } else {
+            # Find max cached ID across all leagues
+            all_cached_ids <- c()
+            for (league in c("ENG", "ESP", "GER", "ITA", "FRA", "RUS")) {
+              for (season in 2014:2025) {
+                ids <- tryCatch(
+                  get_cached_understat_ids(league, season),
+                  error = function(e) character(0)
+                )
+                all_cached_ids <- c(all_cached_ids, as.integer(ids))
+              }
+            }
+
+            if (length(all_cached_ids) > 0) {
+              max_cached <- max(all_cached_ids, na.rm = TRUE)
+              start_id <- max_cached + 1
+              end_id <- start_id + 499
+              message(sprintf("Auto-detected: max cached ID = %d", max_cached))
+              message(sprintf("Scraping ID range: %d to %d", start_id, end_id))
+            } else {
+              # First run - start from a known recent range
+              # 2024-25 season IDs are approximately 27000-29000+
+              start_id <- 28000
+              end_id <- 28499
+              message("No cached data found, starting fresh from ID 28000")
+            }
+          }
+
+          cat("\n", strrep("=", 60), "\n")
+          cat("PANNA DAILY UNDERSTAT SCRAPE\n")
+          cat(strrep("=", 60), "\n\n")
+          cat("ID Range:", start_id, "to", end_id, "\n")
+          cat("Skip cached:", skip_cached, "\n")
+          cat("Started:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n\n")
+
+          # Run bulk scrape with auto-detection
+          results <- bulk_scrape_understat(
+            start_id = start_id,
+            end_id = end_id,
+            delay = 3,
+            skip_cached = skip_cached,
+            verbose = TRUE
+          )
+
+          # Summary
+          cat("\n", strrep("=", 60), "\n")
+          cat("SCRAPE SUMMARY\n")
+          cat(strrep("=", 60), "\n")
+          print(table(results$status))
+          if (any(results$status == "success")) {
+            cat("\nLeague breakdown:\n")
+            print(table(results$league[results$status == "success"]))
+          }
+          cat("\nFinished:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+        '
+      shell: bash
+
+    - name: Build consolidated Understat parquet files
+      run: |
+        Rscript -e '
+          library(panna)
+
+          pannadata_dir(file.path(getwd(), "data"))
+
+          # Check if we have any Understat data
+          understat_dir <- file.path(getwd(), "data", "understat")
+          if (!dir.exists(understat_dir)) {
+            message("No Understat directory found")
+            quit(status = 0)
+          }
+
+          message("Building consolidated Understat parquet files...")
+          stats <- build_consolidated_understat_parquet(
+            output_dir = file.path(getwd(), "data", "consolidated"),
+            verbose = TRUE
+          )
+
+          if (nrow(stats) > 0) {
+            message(sprintf("Built %d consolidated files (%.1f MB total)",
+                            nrow(stats), sum(stats$size_mb)))
+          }
+        '
+      shell: bash
+
+    - name: Upload individual Understat parquet files to GitHub Releases
+      run: |
+        # Create release if it doesn't exist
+        if ! gh release view understat-latest --repo peteowen1/pannadata >/dev/null 2>&1; then
+          echo "Creating understat-latest release..."
+          gh release create understat-latest \
+            --repo peteowen1/pannadata \
+            --title "Understat Data (Latest)" \
+            --notes "Automated daily Understat data scrape. Individual parquet files for fast remote queries." \
+            --prerelease
+        fi
+
+        # Upload consolidated parquet files (understat_*.parquet)
+        echo "Uploading consolidated Understat parquet files..."
+        for f in data/consolidated/understat_*.parquet; do
+          if [ -f "$f" ]; then
+            fname=$(basename "$f")
+            echo "  Uploading $fname..."
+            gh release upload understat-latest "$f" \
+              --repo peteowen1/pannadata \
+              --clobber
+          fi
+        done
+
+        echo "Individual Understat parquet uploads complete"
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload Understat parquet archive to GitHub Releases
+      run: |
+        Rscript -e '
+          library(panna)
+
+          pannadata_dir(file.path(getwd(), "data"))
+
+          # Check if we have any Understat data
+          understat_dir <- file.path(getwd(), "data", "understat")
+          if (!dir.exists(understat_dir)) {
+            message("No Understat directory found")
+            quit(status = 0)
+          }
+
+          understat_files <- list.files(
+            understat_dir,
+            pattern = "\\.parquet$",
+            recursive = TRUE
+          )
+
+          if (length(understat_files) == 0) {
+            message("No Understat parquet files to upload")
+            quit(status = 0)
+          }
+
+          message(sprintf("Found %d Understat parquet files", length(understat_files)))
+
+          # Also upload the zip archive as backup
+          pb_upload_source(
+            source_type = "understat",
+            repo = "peteowen1/pannadata",
+            source = file.path(getwd(), "data"),
+            verbose = TRUE
+          )
+        '
+      shell: bash
+
+    - name: Summary
+      run: |
+        echo "Daily Understat scrape completed successfully"
+        echo "Check pannadata repo understat-latest release for updated data"
+        echo ""
+        echo "Individual parquet files available for fast remote queries:"
+        ls -lh data/consolidated/understat_*.parquet 2>/dev/null || echo "  (none)"
+        echo ""
+        echo "Total Understat parquet files: $(find data/understat -name '*.parquet' 2>/dev/null | wc -l)"
+      shell: bash
