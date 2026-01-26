@@ -45,19 +45,32 @@ jobs:
     - name: Install R dependencies
       run: |
         Rscript -e '
-          options(repos = c(
-            apache = "https://apache.r-universe.dev",
-            dmlc = "https://dmlc.r-universe.dev",
-            CRAN = "https://cloud.r-project.org"
+          # Use r-universe for pre-built binaries (much faster than compiling)
+          options(
+            repos = c(
+              ropensci = "https://ropensci.r-universe.dev",
+              apache = "https://apache.r-universe.dev",
+              dmlc = "https://dmlc.r-universe.dev",
+              CRAN = "https://cloud.r-project.org"
+            ),
+            HTTPUserAgent = sprintf(
+              "R/%s R (%s)",
+              getRversion(),
+              paste(getRversion(), R.version["platform"], R.version["arch"], R.version["os"])
+            )
+          )
+
+          # Install packages (binaries from r-universe where available)
+          install.packages(c(
+            "remotes", "piggyback", "httr", "httr2", "rvest",
+            "arrow", "jsonlite", "stringi", "DBI", "duckdb", "cli"
           ))
-          install.packages(c("remotes", "piggyback", "httr", "httr2", "rvest",
-                             "arrow", "jsonlite", "stringi", "DBI", "duckdb", "cli"))
         '
       shell: bash
 
     - name: Install panna package
       run: |
-        Rscript -e 'remotes::install_github("peteowen1/panna@dev", dependencies = TRUE)'
+        Rscript -e 'remotes::install_github("peteowen1/panna@dev", dependencies = FALSE)'
       shell: bash
 
     - name: Download existing Understat data from GitHub Releases
