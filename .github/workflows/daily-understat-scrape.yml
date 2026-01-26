@@ -56,6 +56,10 @@ jobs:
           any::arrow
           any::jsonlite
           any::stringi
+          any::DBI
+          any::duckdb
+          any::cli
+          any::httr2
         extra-packages: github::peteowen1/panna@dev
 
     - name: Download existing Understat data from GitHub Releases

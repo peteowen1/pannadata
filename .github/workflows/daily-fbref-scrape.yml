@@ -46,6 +46,10 @@ jobs:
           any::httr
           any::rvest
           any::arrow
+          any::DBI
+          any::duckdb
+          any::cli
+          any::httr2
         extra-packages: github::peteowen1/panna@dev
 
     - name: Download existing parquet data from GitHub Releases
