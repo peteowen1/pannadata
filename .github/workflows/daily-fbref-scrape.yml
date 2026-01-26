@@ -37,13 +37,10 @@ jobs:
     - name: Install R dependencies
       run: |
         Rscript -e '
-          # Use r-universe for pre-built binaries (much faster than compiling)
+          # Use Posit Package Manager for pre-built Linux binaries (much faster)
           options(
             repos = c(
-              ropensci = "https://ropensci.r-universe.dev",
-              apache = "https://apache.r-universe.dev",
-              dmlc = "https://dmlc.r-universe.dev",
-              CRAN = "https://cloud.r-project.org"
+              CRAN = "https://packagemanager.posit.co/cran/__linux__/noble/latest"
             ),
             HTTPUserAgent = sprintf(
               "R/%s R (%s)",
@@ -52,7 +49,7 @@ jobs:
             )
           )
 
-          # Install packages (binaries from r-universe where available)
+          # Install packages (pre-built binaries from PPM)
           install.packages(c(
             "remotes", "piggyback", "httr", "httr2", "rvest",
             "arrow", "DBI", "duckdb", "cli"
