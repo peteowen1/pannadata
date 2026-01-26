@@ -42,25 +42,23 @@ jobs:
       with:
         r-version: 'release'
 
-    - name: Setup R dependencies
-      uses: r-lib/actions/setup-r-dependencies@v2
-      with:
-        extra-repositories: |
-          https://apache.r-universe.dev
-          https://dmlc.r-universe.dev
-        packages: |
-          any::remotes
-          any::piggyback
-          any::httr
-          any::rvest
-          any::arrow
-          any::jsonlite
-          any::stringi
-          any::DBI
-          any::duckdb
-          any::cli
-          any::httr2
-        extra-packages: github::peteowen1/panna@dev
+    - name: Install R dependencies
+      run: |
+        Rscript -e '
+          options(repos = c(
+            apache = "https://apache.r-universe.dev",
+            dmlc = "https://dmlc.r-universe.dev",
+            CRAN = "https://cloud.r-project.org"
+          ))
+          install.packages(c("remotes", "piggyback", "httr", "httr2", "rvest",
+                             "arrow", "jsonlite", "stringi", "DBI", "duckdb", "cli"))
+        '
+      shell: bash
+
+    - name: Install panna package
+      run: |
+        Rscript -e 'remotes::install_github("peteowen1/panna@dev", dependencies = TRUE)'
+      shell: bash
 
     - name: Download existing Understat data from GitHub Releases
       run: |
