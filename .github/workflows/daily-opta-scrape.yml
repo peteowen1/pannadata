@@ -115,55 +115,34 @@ jobs:
         mkdir -p consolidated
 
         # Build consolidated parquet files using Python (pandas handles schema differences)
-        python3 -c "
-import os
-import glob
-import pandas as pd
-
-opta_dir = 'opta'
-consolidated_dir = 'consolidated'
-
-# Find all table types (subdirectories of opta/)
+        cat > consolidate.py << 'PYEOF'
+import os, glob, pandas as pd
+opta_dir, consolidated_dir = "opta", "consolidated"
 table_types = [d for d in os.listdir(opta_dir) if os.path.isdir(os.path.join(opta_dir, d))]
-
-print(f'Found table types: {table_types}')
-
+print(f"Found table types: {table_types}")
 for table_type in table_types:
     tt_dir = os.path.join(opta_dir, table_type)
-    parquet_files = glob.glob(os.path.join(tt_dir, '**/*.parquet'), recursive=True)
-
+    parquet_files = glob.glob(os.path.join(tt_dir, "**/*.parquet"), recursive=True)
     if not parquet_files:
-        print(f'  Skipping {table_type} - no parquet files')
+        print(f"  Skipping {table_type} - no parquet files")
         continue
-
-    print(f'Consolidating opta_{table_type}...')
-    print(f'  Found {len(parquet_files)} parquet files')
-
-    # Read all into dataframes
+    print(f"Consolidating opta_{table_type}... Found {len(parquet_files)} files")
     dfs = []
     for f in parquet_files:
         try:
-            df = pd.read_parquet(f)
-            dfs.append(df)
+            dfs.append(pd.read_parquet(f))
         except Exception as e:
-            print(f'  Warning: Error reading {f}: {e}')
-
+            print(f"  Warning: Error reading {f}: {e}")
     if not dfs:
-        print(f'  Skipping {table_type} - no valid data')
         continue
-
-    # Concatenate with pandas (handles type differences across seasons)
     combined = pd.concat(dfs, ignore_index=True)
-
-    # Write consolidated parquet
-    output_path = os.path.join(consolidated_dir, f'opta_{table_type}.parquet')
+    output_path = os.path.join(consolidated_dir, f"opta_{table_type}.parquet")
     combined.to_parquet(output_path, index=False)
-
     size_mb = os.path.getsize(output_path) / (1024 * 1024)
-    print(f'  Wrote {output_path}: {len(combined):,} rows, {size_mb:.1f} MB')
-
-print('Consolidation complete!')
-"
+    print(f"  Wrote {output_path}: {len(combined):,} rows, {size_mb:.1f} MB")
+print("Consolidation complete!")
+PYEOF
+        python3 consolidate.py
 
         # Show consolidated files
         echo ""
