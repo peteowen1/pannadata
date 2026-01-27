@@ -50,9 +50,13 @@ jobs:
           )
 
           # Install packages (pre-built binaries from PPM)
+          # Core panna dependencies + workflow requirements
           install.packages(c(
             "remotes", "piggyback", "httr", "httr2", "rvest",
-            "arrow", "DBI", "duckdb", "cli"
+            "arrow", "DBI", "duckdb", "cli",
+            "data.table", "doParallel", "dplyr", "glmnet", "janitor",
+            "tidyr", "lubridate", "magrittr", "Matrix", "purrr", "rlang",
+            "jsonlite", "stringi"
           ))
         '
       shell: bash
