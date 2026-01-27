@@ -1,0 +1,21 @@
+name: Scrape Notification
+
+on:
+  repository_dispatch:
+    types: [scrape-complete]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Scrape Summary
+      run: |
+        echo "## FBref Scrape Complete" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Status:** ${{ github.event.client_payload.status }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Matches scraped:** ${{ github.event.client_payload.matches_scraped }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Finished:** ${{ github.event.client_payload.finished_at }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        if [ -n "${{ github.event.client_payload.errors }}" ]; then
+          echo "**Errors:** ${{ github.event.client_payload.errors }}" >> $GITHUB_STEP_SUMMARY
+        fi
