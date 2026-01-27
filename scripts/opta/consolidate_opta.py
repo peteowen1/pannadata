@@ -51,6 +51,13 @@ def consolidate_opta(opta_dir="opta", output_dir="consolidated"):
         # Concatenate with pandas (handles type differences across seasons)
         combined = pd.concat(dfs, ignore_index=True)
 
+        # Deduplicate by match_id + player_id
+        before_count = len(combined)
+        if 'match_id' in combined.columns and 'player_id' in combined.columns:
+            combined = combined.drop_duplicates(subset=['match_id', 'player_id'])
+            if len(combined) < before_count:
+                print(f"  Removed {before_count - len(combined):,} duplicate rows")
+
         # Write consolidated parquet
         output_file = output_path / f"opta_{table_type}.parquet"
         combined.to_parquet(output_file, index=False)
