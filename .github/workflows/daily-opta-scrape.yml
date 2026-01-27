@@ -1,9 +1,9 @@
-name: Weekly Opta Scrape
+name: Daily Opta Scrape
 
 on:
   schedule:
-    # Run weekly on Monday at 3 AM UTC
-    - cron: '0 3 * * 1'
+    # Run at 5 AM UTC daily (before Understat at 7 AM)
+    - cron: '0 5 * * *'
   workflow_dispatch:
     inputs:
       leagues:
