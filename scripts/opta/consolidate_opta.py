@@ -36,11 +36,18 @@ def consolidate_opta(opta_dir="opta", output_dir="consolidated"):
 
         print(f"Consolidating opta_{table_type}... Found {len(parquet_files)} files")
 
-        # Read all into dataframes
+        # Read all into dataframes, adding competition and season columns
         dfs = []
         for f in parquet_files:
             try:
-                dfs.append(pd.read_parquet(f))
+                df = pd.read_parquet(f)
+                # Extract competition (league) and season from path
+                # Path: opta/{table_type}/{league}/{season}.parquet
+                competition = f.parent.name  # e.g., "EPL"
+                season = f.stem  # e.g., "2024-2025"
+                df['competition'] = competition
+                df['season'] = season
+                dfs.append(df)
             except Exception as e:
                 print(f"  Warning: Error reading {f}: {e}")
 
