@@ -85,9 +85,17 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
     shots_dir = opta_dir / "shots" / competition
 
     existing_match_ids = set()
-    if raw_dir.exists() and not force_rescrape:
-        existing_match_ids = {f.stem for f in raw_dir.glob("*.json")}
-        print(f"Found {len(existing_match_ids)} already scraped matches")
+    if not force_rescrape:
+        # Check raw JSON cache first (local development)
+        if raw_dir.exists():
+            existing_match_ids = {f.stem for f in raw_dir.glob("*.json")}
+        # Also check existing parquet files (GitHub Actions workflow)
+        existing_players_path = player_stats_dir / f"{season_name}.parquet"
+        if existing_players_path.exists():
+            existing_df = pd.read_parquet(existing_players_path, columns=['match_id'])
+            existing_match_ids.update(existing_df['match_id'].unique())
+        if existing_match_ids:
+            print(f"Found {len(existing_match_ids)} already scraped matches")
 
     date_ranges = get_season_date_range(season_name)
 
