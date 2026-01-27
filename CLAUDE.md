@@ -19,10 +19,20 @@ FBref blocks requests from GitHub Actions IP ranges. The daily FBref scrape runs
 - **Script**: `/home/opc/scraper/daily_scrape.R`
 - **Wrapper**: `/home/opc/scraper/run_scrape.sh`
 - **Logs**: `/home/opc/scraper/logs/`
-- **Uploads**: Results pushed to `latest` GitHub Release
+- **Upload target**: `fbref-latest` GitHub Release
+- **Upload format**: Zip archive of parquet files via `pb_upload_parquet()`
+- **Notification**: Triggers `scrape-notification.yml` workflow on completion
 
 ### Understat/Opta Scraping (GitHub Actions)
 These sources don't block GitHub Actions and use workflows in `.github/workflows/`.
+
+## GitHub Releases Structure
+
+| Release Tag | Source | Contents |
+|-------------|--------|----------|
+| `fbref-latest` | FBref (VM) | Individual parquet files + tar.gz archive |
+| `understat-latest` | Understat (GHA) | Parquet files |
+| `opta-latest` | Opta (GHA) | Parquet files |
 
 ## Structure
 
