@@ -75,7 +75,7 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
     print(f"Season ID: {season_id}")
     print(f"{'='*60}")
 
-    # Raw JSON cache stays in theanalyst_scraper/data/raw
+    # Raw JSON cache in scripts/opta/data/raw
     raw_dir = scraper.data_dir / "raw" / competition / season_name
 
     # Processed parquet goes to pannadata/data/opta/
