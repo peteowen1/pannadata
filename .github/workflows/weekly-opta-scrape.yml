@@ -56,19 +56,19 @@ jobs:
         # Python script writes to pannadata/data/opta/
         mkdir -p pannaverse/pannadata/data
 
-        # Download existing opta-parquet.zip if it exists
+        # Download existing opta-parquet.tar.gz if it exists
         echo "Checking for existing Opta data..."
         if gh release download opta-latest \
             --repo peteowen1/pannadata \
-            --pattern "opta-parquet.zip" \
+            --pattern "opta-parquet.tar.gz" \
             --dir . 2>/dev/null; then
-          echo "Downloaded existing opta-parquet.zip"
-          unzip -o opta-parquet.zip -d pannaverse/pannadata/data/
-          rm opta-parquet.zip
+          echo "Downloaded existing opta-parquet.tar.gz"
+          tar -xzf opta-parquet.tar.gz -C pannaverse/pannadata/data/
+          rm opta-parquet.tar.gz
           echo "Extracted existing data"
           find pannaverse/pannadata/data/opta -name "*.parquet" 2>/dev/null | wc -l | xargs -I {} echo "Existing parquet files: {}"
         else
-          echo "No existing opta-parquet.zip found (first run)"
+          echo "No existing opta-parquet.tar.gz found (first run)"
           mkdir -p pannaverse/pannadata/data/opta
         fi
       env:
@@ -114,12 +114,11 @@ jobs:
         # Create consolidated directory
         mkdir -p consolidated
 
-        # Build consolidated parquet files using Python
+        # Build consolidated parquet files using Python (pandas handles schema differences)
         python3 << 'EOF'
 import os
 import glob
-import pyarrow.parquet as pq
-import pyarrow as pa
+import pandas as pd
 
 opta_dir = "opta"
 consolidated_dir = "consolidated"
@@ -140,28 +139,28 @@ for table_type in table_types:
     print(f"\nConsolidating opta_{table_type}...")
     print(f"  Found {len(parquet_files)} parquet files")
 
-    # Read and combine all parquet files
-    tables = []
+    # Read all into dataframes
+    dfs = []
     for f in parquet_files:
         try:
-            t = pq.read_table(f)
-            tables.append(t)
+            df = pd.read_parquet(f)
+            dfs.append(df)
         except Exception as e:
             print(f"  Warning: Error reading {f}: {e}")
 
-    if not tables:
+    if not dfs:
         print(f"  Skipping {table_type} - no valid data")
         continue
 
-    # Combine tables
-    combined = pa.concat_tables(tables)
+    # Concatenate with pandas (handles type differences across seasons)
+    combined = pd.concat(dfs, ignore_index=True)
 
     # Write consolidated parquet
     output_path = os.path.join(consolidated_dir, f"opta_{table_type}.parquet")
-    pq.write_table(combined, output_path)
+    combined.to_parquet(output_path, index=False)
 
     size_mb = os.path.getsize(output_path) / (1024 * 1024)
-    print(f"  Wrote {output_path}: {combined.num_rows:,} rows, {size_mb:.1f} MB")
+    print(f"  Wrote {output_path}: {len(combined):,} rows, {size_mb:.1f} MB")
 
 print("\nConsolidation complete!")
 EOF
@@ -171,21 +170,21 @@ EOF
         echo "Consolidated parquet files:"
         ls -lh consolidated/*.parquet 2>/dev/null || echo "  (none)"
 
-    - name: Create Opta parquet zip (backup)
+    - name: Create Opta parquet archive (backup)
       run: |
         cd pannaverse/pannadata/data
 
         PARQUET_COUNT=$(find opta -name "*.parquet" 2>/dev/null | wc -l)
         if [ "$PARQUET_COUNT" -eq 0 ]; then
-          echo "No parquet files to zip"
+          echo "No parquet files to archive"
           exit 0
         fi
 
-        # Create zip of opta directory as backup
-        zip -r opta-parquet.zip opta/
+        # Create tar.gz of opta directory as backup
+        tar -czvf opta-parquet.tar.gz opta/
 
-        ZIP_SIZE=$(ls -lh opta-parquet.zip | awk '{print $5}')
-        echo "Created opta-parquet.zip ($ZIP_SIZE)"
+        ARCHIVE_SIZE=$(ls -lh opta-parquet.tar.gz | awk '{print $5}')
+        echo "Created opta-parquet.tar.gz ($ARCHIVE_SIZE)"
 
     - name: Upload Opta data to GitHub Releases
       run: |
@@ -213,10 +212,10 @@ EOF
           fi
         done
 
-        # Upload zip file as backup
-        if [ -f opta-parquet.zip ]; then
-          echo "Uploading opta-parquet.zip (backup archive)..."
-          gh release upload opta-latest opta-parquet.zip \
+        # Upload tar.gz file as backup
+        if [ -f opta-parquet.tar.gz ]; then
+          echo "Uploading opta-parquet.tar.gz (backup archive)..."
+          gh release upload opta-latest opta-parquet.tar.gz \
             --repo peteowen1/pannadata \
             --clobber
         fi
