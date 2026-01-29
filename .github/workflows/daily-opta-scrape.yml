@@ -1,0 +1,122 @@
+name: Daily Opta Scrape
+
+on:
+  schedule:
+    # Run at 5 AM UTC daily (before Understat at 7 AM)
+    - cron: '0 5 * * *'
+  workflow_dispatch:
+    inputs:
+      leagues:
+        description: 'Leagues to scrape (space-separated, e.g., "EPL La_Liga")'
+        required: false
+        type: string
+      recent:
+        description: 'Number of recent seasons to scrape per league'
+        required: false
+        type: number
+        default: 1
+      force_rescrape:
+        description: 'Force rescrape existing matches'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    permissions:
+      contents: write
+
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+    - name: Checkout pannadata
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+        cache-dependency-path: scripts/opta/requirements.txt
+
+    - name: Install Python dependencies
+      run: pip install -r scripts/opta/requirements.txt
+
+    - name: Download existing Opta data from GitHub Releases
+      run: |
+        mkdir -p data/opta
+        echo "Checking for existing Opta data..."
+        if gh release download opta-latest --pattern "opta-parquet.tar.gz" --dir . 2>/dev/null; then
+          echo "Downloaded existing opta-parquet.tar.gz"
+          tar -xzf opta-parquet.tar.gz -C data/
+          rm opta-parquet.tar.gz
+          echo "Existing parquet files: $(find data/opta -name '*.parquet' | wc -l)"
+        else
+          echo "No existing data found (first run)"
+        fi
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Run Opta scraper
+      run: |
+        cd scripts/opta
+        ARGS="--recent ${{ github.event.inputs.recent || 1 }}"
+        if [ -n "${{ github.event.inputs.leagues }}" ]; then
+          ARGS="$ARGS --leagues ${{ github.event.inputs.leagues }}"
+        fi
+        if [ "${{ github.event.inputs.force_rescrape }}" = "true" ]; then
+          ARGS="$ARGS --force"
+        fi
+        echo "Running: python scrape_big5.py $ARGS"
+        python scrape_big5.py $ARGS
+
+    - name: Build consolidated parquet files
+      run: |
+        cd data
+        PARQUET_COUNT=$(find opta -name "*.parquet" 2>/dev/null | wc -l)
+        echo "Total parquet files: $PARQUET_COUNT"
+        if [ "$PARQUET_COUNT" -eq 0 ]; then
+          echo "No parquet files to consolidate"
+          exit 0
+        fi
+        mkdir -p consolidated
+        python ../scripts/opta/consolidate_opta.py
+
+    - name: Create archive and upload to GitHub Releases
+      run: |
+        cd data
+        PARQUET_COUNT=$(find opta -name "*.parquet" 2>/dev/null | wc -l)
+        if [ "$PARQUET_COUNT" -eq 0 ]; then
+          echo "No data to upload"
+          exit 0
+        fi
+
+        # Create tar.gz archive
+        tar -czvf opta-parquet.tar.gz opta/
+        echo "Created opta-parquet.tar.gz ($(ls -lh opta-parquet.tar.gz | awk '{print $5}'))"
+
+        # Ensure release exists
+        if ! gh release view opta-latest >/dev/null 2>&1; then
+          gh release create opta-latest --title "Opta Data (Latest)" --notes "Automated daily Opta data scrape." --prerelease
+        fi
+
+        # Upload consolidated parquets
+        for f in consolidated/opta_*.parquet; do
+          [ -f "$f" ] && gh release upload opta-latest "$f" --clobber && echo "Uploaded $(basename $f)"
+        done
+
+        # Upload archive
+        gh release upload opta-latest opta-parquet.tar.gz --clobber
+        echo "Upload complete"
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Summary
+      run: |
+        echo "Daily Opta scrape completed"
+        echo "Parquet files: $(find data/opta -name '*.parquet' 2>/dev/null | wc -l)"
+        ls -lh data/consolidated/*.parquet 2>/dev/null || echo "No consolidated files"

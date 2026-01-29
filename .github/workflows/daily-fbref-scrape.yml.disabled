@@ -5,7 +5,12 @@ on:
     # Run at 6 AM UTC daily (after most matches complete)
     - cron: '0 6 * * *'
   workflow_dispatch:
-    # Allow manual trigger from GitHub Actions UI
+    inputs:
+      force_rescrape:
+        description: 'Force rescrape all matches (ignore cache)'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   scrape:
@@ -29,19 +34,37 @@ jobs:
       with:
         r-version: 'release'
 
-    - name: Setup R dependencies
-      uses: r-lib/actions/setup-r-dependencies@v2
-      with:
-        extra-repositories: |
-          https://apache.r-universe.dev
-          https://dmlc.r-universe.dev
-        packages: |
-          any::remotes
-          any::piggyback
-          any::httr
-          any::rvest
-          any::arrow
-        extra-packages: github::peteowen1/panna
+    - name: Install R dependencies
+      run: |
+        Rscript -e '
+          # Use Posit Package Manager for pre-built Linux binaries (much faster)
+          options(
+            repos = c(
+              CRAN = "https://packagemanager.posit.co/cran/__linux__/noble/latest"
+            ),
+            HTTPUserAgent = sprintf(
+              "R/%s R (%s)",
+              getRversion(),
+              paste(getRversion(), R.version["platform"], R.version["arch"], R.version["os"])
+            )
+          )
+
+          # Install packages (pre-built binaries from PPM)
+          # Core panna dependencies + workflow requirements
+          install.packages(c(
+            "remotes", "piggyback", "httr", "httr2", "rvest",
+            "arrow", "DBI", "duckdb", "cli",
+            "data.table", "doParallel", "dplyr", "glmnet", "janitor",
+            "tidyr", "lubridate", "magrittr", "Matrix", "purrr", "rlang",
+            "jsonlite", "stringi"
+          ))
+        '
+      shell: bash
+
+    - name: Install panna package
+      run: |
+        Rscript -e 'remotes::install_github("peteowen1/panna@dev", dependencies = FALSE)'
+      shell: bash
 
     - name: Download existing parquet data from GitHub Releases
       run: |
@@ -52,13 +75,13 @@ jobs:
           pannadata_dir(file.path(getwd(), "data"))
 
           tryCatch({
-            pb_download_parquet(
+            pb_download_source(
+              source_type = "fbref",
               repo = "peteowen1/pannadata",
-              tag = "latest",
               dest = file.path(getwd(), "data"),
               verbose = TRUE
             )
-            message("Downloaded existing parquet data")
+            message("Downloaded existing FBref parquet data")
           }, error = function(e) {
             message("No existing parquet data (first run?): ", e$message)
             dir.create("data", recursive = TRUE, showWarnings = FALSE)
@@ -75,7 +98,8 @@ jobs:
           pannadata_dir(file.path(getwd(), "data"))
 
           # Configuration
-          FORCE_RESCRAPE <- FALSE
+          FORCE_RESCRAPE <- as.logical("${{ github.event.inputs.force_rescrape }}")
+          if (is.na(FORCE_RESCRAPE)) FORCE_RESCRAPE <- FALSE
           DELAY <- 4
           TABLE_TYPES <- c("summary", "passing", "passing_types", "defense",
                            "possession", "misc", "keeper", "shots", "events", "metadata")
@@ -100,9 +124,9 @@ jobs:
           }
 
           cat("\n", strrep("=", 60), "\n")
-          cat("PANNA DAILY SCRAPE\n")
+          cat("PANNA DAILY FBREF SCRAPE\n")
           cat(strrep("=", 60), "\n\n")
-          cat("Mode: INCREMENTAL (using cache)\n")
+          cat("Mode:", if (FORCE_RESCRAPE) "FORCE RESCRAPE" else "INCREMENTAL", "\n")
           cat("Delay:", DELAY, "seconds\n")
           cat("Current season:", CURRENT_SEASON, "\n")
           cat("Started:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n\n")
@@ -165,7 +189,7 @@ jobs:
 
           # Summary
           cat("\n\n", strrep("=", 60), "\n")
-          cat("DAILY SCRAPE COMPLETE\n")
+          cat("DAILY FBREF SCRAPE COMPLETE\n")
           cat(strrep("=", 60), "\n")
           cat("\nNew matches scraped:", total_scraped, "\n")
           cat("Finished:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
@@ -187,16 +211,66 @@ jobs:
         '
       shell: bash
 
-    - name: Upload parquet data to GitHub Releases
+    - name: Build consolidated parquet files for fast remote queries
       run: |
         Rscript -e '
           library(panna)
 
           pannadata_dir(file.path(getwd(), "data"))
 
-          pb_upload_parquet(
+          message("Building consolidated parquet files...")
+          stats <- build_consolidated_parquet(
+            output_dir = file.path(getwd(), "data", "consolidated"),
+            verbose = TRUE
+          )
+
+          message(sprintf("Built %d consolidated files (%.1f MB total)",
+                          nrow(stats), sum(stats$size_mb)))
+        '
+      shell: bash
+
+    - name: Upload individual parquet files to GitHub Releases
+      run: |
+        # Upload consolidated parquet files as individual release assets
+        # This enables fast remote queries via query_remote_parquet()
+
+        # Create release if it doesn't exist
+        if ! gh release view fbref-latest --repo peteowen1/pannadata >/dev/null 2>&1; then
+          echo "Creating fbref-latest release..."
+          gh release create fbref-latest \
+            --repo peteowen1/pannadata \
+            --title "FBref Data (Latest)" \
+            --notes "Automated daily FBref data scrape. Individual parquet files for fast remote queries." \
+            --prerelease
+        fi
+
+        # Upload each consolidated parquet file
+        echo "Uploading consolidated parquet files..."
+        for f in data/consolidated/*.parquet; do
+          if [ -f "$f" ]; then
+            fname=$(basename "$f")
+            echo "  Uploading $fname..."
+            gh release upload fbref-latest "$f" \
+              --repo peteowen1/pannadata \
+              --clobber
+          fi
+        done
+
+        echo "Individual parquet uploads complete"
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload FBref parquet archive to GitHub Releases
+      run: |
+        Rscript -e '
+          library(panna)
+
+          pannadata_dir(file.path(getwd(), "data"))
+
+          # Also upload the zip archive as backup
+          pb_upload_source(
+            source_type = "fbref",
             repo = "peteowen1/pannadata",
-            tag = "latest",
             source = file.path(getwd(), "data"),
             verbose = TRUE
           )
@@ -205,10 +279,12 @@ jobs:
 
     - name: Summary
       run: |
-        echo "Daily scrape completed successfully"
-        echo "Check pannadata repo releases for updated data"
-
-        # Show counts
-        find data -name "*.parquet" 2>/dev/null | wc -l | xargs -I {} echo "Total parquet files: {}"
-        find data -name "*.rds" 2>/dev/null | wc -l | xargs -I {} echo "Total RDS files: {}"
+        echo "Daily FBref scrape completed successfully"
+        echo "Check pannadata repo fbref-latest release for updated data"
+        echo ""
+        echo "Individual parquet files available for fast remote queries:"
+        ls -lh data/consolidated/*.parquet 2>/dev/null || echo "  (none)"
+        echo ""
+        echo "Total FBref parquet files: $(find data/fbref -name '*.parquet' 2>/dev/null | wc -l)"
+        echo "Total RDS files: $(find data -name '*.rds' 2>/dev/null | wc -l)"
       shell: bash

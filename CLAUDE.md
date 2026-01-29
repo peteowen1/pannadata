@@ -16,11 +16,41 @@ The repository stores data from three sources, each with its own folder structur
 | Opta | `data/opta/` | Big 5 leagues since 2010, 271 columns per player |
 | Understat | `data/understat/` | Big 5 + Russia, xGChain/xGBuildup metrics |
 
+## Data Source Scraping
+
+| Source | Where to Scrape | Reason |
+|--------|----------------|--------|
+| **FBref** | Oracle Cloud VM | FBref blocks GitHub Actions IP addresses |
+| **Understat** | GitHub Actions | No IP restrictions |
+| **Opta** | GitHub Actions | No IP restrictions |
+
+### FBref Scraping (VM)
+FBref blocks requests from GitHub Actions IP ranges. The daily FBref scrape runs on the Oracle Cloud VM via cron job:
+- **VM**: `opc@168.138.108.69`
+- **Cron**: Runs daily at 6 AM UTC
+- **Script**: `/home/opc/scraper/daily_scrape.R`
+- **Wrapper**: `/home/opc/scraper/run_scrape.sh`
+- **Logs**: `/home/opc/scraper/logs/`
+- **Upload target**: `fbref-latest` GitHub Release
+- **Upload format**: Zip archive of parquet files via `pb_upload_parquet()`
+- **Notification**: Triggers `scrape-notification.yml` workflow on completion
+
+### Understat/Opta Scraping (GitHub Actions)
+These sources don't block GitHub Actions and use workflows in `.github/workflows/`.
+
 ## Data Storage
 
 - **Local**: `data/` folder (gitignored, too large for git)
-- **Remote**: GitHub Releases at `peteowen1/pannadata` tag `latest`
+- **Remote**: GitHub Releases at `peteowen1/pannadata`
 - **Format**: RDS for individual matches, parquet for bulk storage/transfer
+
+### GitHub Releases Structure
+
+| Release Tag | Source | Contents |
+|-------------|--------|----------|
+| `fbref-latest` | FBref (VM) | Individual parquet files + tar.gz archive |
+| `understat-latest` | Understat (GHA) | Parquet files |
+| `opta-latest` | Opta (GHA) | Parquet files |
 
 ### File Structure
 
