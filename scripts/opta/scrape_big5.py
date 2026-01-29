@@ -24,7 +24,7 @@ import argparse
 import sys
 from pathlib import Path
 from datetime import datetime
-from opta_scraper import OptaScraper
+from opta_scraper import OptaScraper, MatchEvent, ShotEvent, PlayerLineup
 from dataclasses import asdict
 import pandas as pd
 
@@ -68,7 +68,7 @@ def get_season_date_range(season_name: str) -> tuple:
 
 def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
                   season_id: str, force_rescrape: bool = False):
-    """Scrape a full season of data for a competition"""
+    """Scrape a full season of data for a competition with all data types"""
 
     print(f"\n{'='*60}")
     print(f"Scraping {competition} {season_name}")
@@ -81,16 +81,23 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
     # Processed parquet goes to pannadata/data/opta/
     pannadata_dir = get_pannadata_dir()
     opta_dir = pannadata_dir / "opta"
-    player_stats_dir = opta_dir / "player_stats" / competition
-    shots_dir = opta_dir / "shots" / competition
 
+    # Create all output directories
+    data_types = ["player_stats", "shots", "shot_events", "events", "lineups"]
+    output_dirs = {dt: opta_dir / dt / competition for dt in data_types}
+    for d in output_dirs.values():
+        d.mkdir(parents=True, exist_ok=True)
+
+    # Check for existing matches
     existing_match_ids = set()
     if not force_rescrape:
         # Check raw JSON cache first (local development)
         if raw_dir.exists():
-            existing_match_ids = {f.stem for f in raw_dir.glob("*.json")}
+            # Match IDs from stats files (without _stats suffix)
+            existing_match_ids = {f.stem.replace("_stats", "").replace("_events", "")
+                                  for f in raw_dir.glob("*.json")}
         # Also check existing parquet files (GitHub Actions workflow)
-        existing_players_path = player_stats_dir / f"{season_name}.parquet"
+        existing_players_path = output_dirs["player_stats"] / f"{season_name}.parquet"
         if existing_players_path.exists():
             existing_df = pd.read_parquet(existing_players_path, columns=['match_id'])
             existing_match_ids.update(existing_df['match_id'].unique())
@@ -99,8 +106,12 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
 
     date_ranges = get_season_date_range(season_name)
 
+    # Collectors for all data types
     all_player_stats = []
     all_shots = []
+    all_shot_events = []
+    all_events = []
+    all_lineups = []
     new_matches_scraped = 0
 
     for start_date, end_date in date_ranges:
@@ -122,85 +133,113 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
 
             print(f"  [{i+1}/{len(new_matches)}] {match_date[:10]} {match_desc}...", end=" ", flush=True)
 
+            # Get matchstats data
             stats = scraper.get_match_stats(match_id)
             if not stats:
-                print("FAILED")
+                print("FAILED (stats)")
                 continue
 
             existing_match_ids.add(match_id)
             new_matches_scraped += 1
 
-            # Extract data
+            # Extract from matchstats
             player_df = scraper.extract_all_player_stats(stats)
             all_player_stats.append(player_df)
 
             shots = scraper.extract_player_shots(stats)
-            shot_dicts = [asdict(s) for s in shots]
-            all_shots.extend(shot_dicts)
+            all_shots.extend([asdict(s) for s in shots])
 
-            # Save raw JSON
+            events = scraper.extract_match_events(stats)
+            all_events.extend([asdict(e) for e in events])
+
+            lineups = scraper.extract_lineups(stats)
+            all_lineups.extend([asdict(l) for l in lineups])
+
+            # Get matchevent data (event-level with x/y coords)
+            event_data = scraper.get_match_events(match_id)
+            if event_data:
+                shot_events = scraper.extract_shot_events(event_data)
+                all_shot_events.extend([asdict(s) for s in shot_events])
+
+            # Save raw JSON files
             raw_dir.mkdir(parents=True, exist_ok=True)
-            with open(raw_dir / f"{match_id}.json", "w") as f:
+            with open(raw_dir / f"{match_id}_stats.json", "w") as f:
                 json.dump(stats, f)
+            if event_data:
+                with open(raw_dir / f"{match_id}_events.json", "w") as f:
+                    json.dump(event_data, f)
 
             print("OK")
 
-    # Combine with existing processed data
-    # Files are saved as: pannadata/data/opta/{table_type}/{league}/{season}.parquet
-    player_stats_dir.mkdir(parents=True, exist_ok=True)
-    shots_dir.mkdir(parents=True, exist_ok=True)
+    # Helper to combine new data with existing parquet
+    def combine_and_save(new_data, output_path, dedup_cols):
+        if not new_data:
+            if output_path.exists():
+                return pd.read_parquet(output_path)
+            return pd.DataFrame()
 
-    existing_players_path = player_stats_dir / f"{season_name}.parquet"
-    existing_shots_path = shots_dir / f"{season_name}.parquet"
+        if isinstance(new_data[0], pd.DataFrame):
+            new_df = pd.concat(new_data, ignore_index=True)
+        else:
+            new_df = pd.DataFrame(new_data)
 
-    # Combine player stats
-    if existing_players_path.exists() and all_player_stats:
-        existing_players = pd.read_parquet(existing_players_path)
-        new_players = pd.concat(all_player_stats, ignore_index=True)
-        combined_players = pd.concat([existing_players, new_players], ignore_index=True)
-        combined_players = combined_players.drop_duplicates(subset=['match_id', 'player_id'])
-    elif all_player_stats:
-        combined_players = pd.concat(all_player_stats, ignore_index=True)
-    elif existing_players_path.exists():
-        combined_players = pd.read_parquet(existing_players_path)
-    else:
-        combined_players = pd.DataFrame()
+        if output_path.exists():
+            existing_df = pd.read_parquet(output_path)
+            combined = pd.concat([existing_df, new_df], ignore_index=True)
+            combined = combined.drop_duplicates(subset=dedup_cols)
+        else:
+            combined = new_df
 
-    # Combine shots
-    if existing_shots_path.exists() and all_shots:
-        existing_shots = pd.read_parquet(existing_shots_path)
-        new_shots = pd.DataFrame(all_shots)
-        combined_shots = pd.concat([existing_shots, new_shots], ignore_index=True)
-        combined_shots = combined_shots.drop_duplicates(subset=['match_id', 'player_id'])
-    elif all_shots:
-        combined_shots = pd.DataFrame(all_shots)
-    elif existing_shots_path.exists():
-        combined_shots = pd.read_parquet(existing_shots_path)
-    else:
-        combined_shots = pd.DataFrame()
+        if not combined.empty:
+            combined.to_parquet(output_path, index=False)
+        return combined
 
-    # Save to pannadata/data/opta/
-    if not combined_players.empty:
-        combined_players.to_parquet(existing_players_path, index=False)
-        print(f"  Saved: {existing_players_path}")
-    if not combined_shots.empty:
-        combined_shots.to_parquet(existing_shots_path, index=False)
-        print(f"  Saved: {existing_shots_path}")
+    # Combine and save all data types
+    results = {}
+    results["player_stats"] = combine_and_save(
+        all_player_stats,
+        output_dirs["player_stats"] / f"{season_name}.parquet",
+        ["match_id", "player_id"]
+    )
+    results["shots"] = combine_and_save(
+        all_shots,
+        output_dirs["shots"] / f"{season_name}.parquet",
+        ["match_id", "player_id"]
+    )
+    results["shot_events"] = combine_and_save(
+        all_shot_events,
+        output_dirs["shot_events"] / f"{season_name}.parquet",
+        ["match_id", "event_id"]
+    )
+    results["events"] = combine_and_save(
+        all_events,
+        output_dirs["events"] / f"{season_name}.parquet",
+        ["match_id", "event_type", "minute", "player_id"]
+    )
+    results["lineups"] = combine_and_save(
+        all_lineups,
+        output_dirs["lineups"] / f"{season_name}.parquet",
+        ["match_id", "player_id"]
+    )
 
     # Summary
     print(f"\n{competition} {season_name} Complete:")
     print(f"  New matches scraped: {new_matches_scraped}")
     print(f"  Total matches: {len(existing_match_ids)}")
-    print(f"  Total player records: {len(combined_players)}")
-    print(f"  Total shot records: {len(combined_shots)}")
+    for name, df in results.items():
+        if not df.empty:
+            print(f"  {name}: {len(df)} records")
 
     return {
         "competition": competition,
         "season": season_name,
         "new_matches": new_matches_scraped,
         "total_matches": len(existing_match_ids),
-        "player_records": len(combined_players),
-        "shot_records": len(combined_shots),
+        "player_records": len(results["player_stats"]),
+        "shot_records": len(results["shots"]),
+        "shot_event_records": len(results["shot_events"]),
+        "event_records": len(results["events"]),
+        "lineup_records": len(results["lineups"]),
     }
 
 

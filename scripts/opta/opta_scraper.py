@@ -6,8 +6,17 @@ for building xG models and augmenting panna ratings.
 
 API Endpoints:
 - Match list: /soccerdata/match/{provider_id}?tmcl={season_id}&...
-- Match stats: /soccerdata/matchstats/{provider_id}/{match_id}
+- Match stats: /soccerdata/matchstats/{provider_id}/{match_id} - Player stats, lineups
+- Match events: /soccerdata/matchevent/{provider_id}/{match_id} - Event-level data with x/y
+- Possession: /soccerdata/possession/{provider_id}/{match_id} - Possession stats
+- Pass matrix: /soccerdata/passmatrix/{provider_id}/{match_id} - Pass networks
 - Tournament calendar: /soccerdata/tournamentcalendar/{provider_id}/active?comp={comp_id}
+
+Data extracted:
+- player_stats: 263+ columns per player-match
+- events: Goal/card/sub timing for splint boundaries
+- shots: Individual shots with x/y coords for xG modeling
+- lineups: Starting XI with positions and minutes played
 """
 
 import requests
@@ -23,7 +32,7 @@ import pandas as pd
 
 @dataclass
 class Shot:
-    """Represents a shot event extracted from player stats"""
+    """Represents a shot event extracted from player stats (aggregated per player-match)"""
     match_id: str
     player_id: str
     player_name: str
@@ -57,6 +66,67 @@ class Shot:
     big_chance_created: int = 0
     big_chance_missed: int = 0
     big_chance_scored: int = 0
+
+
+@dataclass
+class ShotEvent:
+    """Represents an individual shot event with x/y coordinates"""
+    match_id: str
+    event_id: int
+    player_id: str
+    player_name: str
+    team_id: str
+    minute: int
+    second: int
+    x: float
+    y: float
+    outcome: int  # 1=on target, 0=off target
+    is_goal: bool
+    type_id: int  # 13=attempt saved, 14=post, 15=miss, 16=goal
+    # Qualifiers (extracted from qualifier list)
+    body_part: str = ""  # Head, RightFoot, LeftFoot
+    situation: str = ""  # OpenPlay, SetPiece, Corner, Penalty, etc.
+    big_chance: bool = False
+
+
+@dataclass
+class MatchEvent:
+    """Represents a match event (goal, card, substitution) with timing"""
+    match_id: str
+    event_type: str  # goal, yellow_card, red_card, substitution
+    minute: int
+    second: int = 0
+    team_id: str = ""
+    player_id: str = ""
+    player_name: str = ""
+    # For substitutions
+    player_on_id: str = ""
+    player_on_name: str = ""
+    player_off_id: str = ""
+    player_off_name: str = ""
+    # For goals
+    assist_player_id: str = ""
+    assist_player_name: str = ""
+
+
+@dataclass
+class PlayerLineup:
+    """Represents a player's lineup info with minutes played"""
+    match_id: str
+    match_date: str
+    player_id: str
+    player_name: str
+    team_id: str
+    team_name: str
+    team_position: str  # home/away
+    position: str
+    position_side: str
+    formation_place: str
+    shirt_number: int
+    is_starter: bool
+    minutes_played: int = 0
+    sub_on_minute: int = 0
+    sub_off_minute: int = 0
 
 
 class OptaScraper:
@@ -195,6 +265,24 @@ class OptaScraper:
         params = {"detailed": "yes", "_lcl": "en"}
         return self._fetch(endpoint, params)
 
+    def get_match_events(self, match_id: str) -> Optional[Dict]:
+        """Get event-level data with x/y coordinates for all match events"""
+        endpoint = f"matchevent/{self.PROVIDER_ID}/{match_id}"
+        params = {}
+        return self._fetch(endpoint, params)
+
+    def get_possession(self, match_id: str) -> Optional[Dict]:
+        """Get possession statistics"""
+        endpoint = f"possession/{self.PROVIDER_ID}/{match_id}"
+        params = {}
+        return self._fetch(endpoint, params)
+
+    def get_pass_matrix(self, match_id: str) -> Optional[Dict]:
+        """Get pass matrix (passing network) data"""
+        endpoint = f"passmatrix/{self.PROVIDER_ID}/{match_id}"
+        params = {}
+        return self._fetch(endpoint, params)
+
     def extract_player_shots(self, match_data: Dict) -> List[Shot]:
         """Extract shot data from match stats for xG model"""
         shots = []
@@ -322,19 +410,233 @@ class OptaScraper:
 
         return pd.DataFrame(rows)
 
+    def extract_match_events(self, match_data: Dict) -> List[MatchEvent]:
+        """Extract goals, cards, and substitutions with timing from matchstats data"""
+        events = []
+        match_id = match_data.get("matchInfo", {}).get("id", "")
+        live_data = match_data.get("liveData", {})
+
+        # Extract goals
+        for goal in live_data.get("goal", []):
+            minute_str = goal.get("timeMinSec", "0:0")
+            parts = minute_str.split(":")
+            minute = int(parts[0]) if parts else 0
+            second = int(parts[1].split(".")[0]) if len(parts) > 1 else 0
+
+            events.append(MatchEvent(
+                match_id=match_id,
+                event_type="goal",
+                minute=minute,
+                second=second,
+                team_id=goal.get("contestantId", ""),
+                player_id=goal.get("scorerId", ""),
+                player_name=goal.get("scorerName", ""),
+                assist_player_id=goal.get("assistPlayerId", ""),
+                assist_player_name=goal.get("assistPlayerName", ""),
+            ))
+
+        # Extract cards
+        for card in live_data.get("card", []):
+            minute_str = card.get("timeMinSec", "0:0")
+            parts = minute_str.split(":")
+            minute = int(parts[0]) if parts else 0
+            second = int(parts[1].split(".")[0]) if len(parts) > 1 else 0
+
+            card_type = card.get("type", "")
+            if card_type == "YC":
+                event_type = "yellow_card"
+            elif card_type == "RC":
+                event_type = "red_card"
+            elif card_type == "Y2C":
+                event_type = "second_yellow"
+            else:
+                event_type = f"card_{card_type}"
+
+            events.append(MatchEvent(
+                match_id=match_id,
+                event_type=event_type,
+                minute=minute,
+                second=second,
+                team_id=card.get("contestantId", ""),
+                player_id=card.get("playerId", ""),
+                player_name=card.get("playerName", ""),
+            ))
+
+        # Extract substitutions
+        for sub in live_data.get("substitute", []):
+            minute_str = sub.get("timeMinSec", "0:0")
+            parts = minute_str.split(":")
+            minute = int(parts[0]) if parts else 0
+            second = int(parts[1].split(".")[0]) if len(parts) > 1 else 0
+
+            events.append(MatchEvent(
+                match_id=match_id,
+                event_type="substitution",
+                minute=minute,
+                second=second,
+                team_id=sub.get("contestantId", ""),
+                player_on_id=sub.get("playerOnId", ""),
+                player_on_name=sub.get("playerOnName", ""),
+                player_off_id=sub.get("playerOffId", ""),
+                player_off_name=sub.get("playerOffName", ""),
+            ))
+
+        return events
+
+    def extract_shot_events(self, event_data: Dict) -> List[ShotEvent]:
+        """Extract individual shot events with x/y coordinates from matchevent data"""
+        shots = []
+        match_id = event_data.get("matchInfo", {}).get("id", "")
+
+        # Shot type IDs in Opta: 13=attempt saved, 14=post, 15=miss, 16=goal
+        shot_type_ids = {13, 14, 15, 16}
+
+        for event in event_data.get("liveData", {}).get("event", []):
+            type_id = event.get("typeId")
+            if type_id not in shot_type_ids:
+                continue
+
+            # Extract qualifiers
+            qualifiers = {q.get("qualifierId"): q.get("value")
+                         for q in event.get("qualifier", [])}
+
+            # Body part from qualifiers (15=Head, 72=LeftFoot, 72=RightFoot)
+            body_part = ""
+            if 15 in qualifiers:
+                body_part = "Head"
+            elif 72 in qualifiers:
+                body_part = "LeftFoot"
+            elif qualifiers.get(72) is None and 15 not in qualifiers:
+                body_part = "RightFoot"  # Default for non-header shots
+
+            # Situation from qualifiers
+            situation = "OpenPlay"
+            if 22 in qualifiers:
+                situation = "SetPiece"
+            if 24 in qualifiers:
+                situation = "Corner"
+            if 9 in qualifiers:
+                situation = "Penalty"
+
+            # Big chance (qualifier 214)
+            big_chance = 214 in qualifiers
+
+            shots.append(ShotEvent(
+                match_id=match_id,
+                event_id=event.get("id", 0),
+                player_id=event.get("playerId", ""),
+                player_name=event.get("playerName", ""),
+                team_id=event.get("contestantId", ""),
+                minute=event.get("timeMin", 0),
+                second=event.get("timeSec", 0),
+                x=float(event.get("x", 0)),
+                y=float(event.get("y", 0)),
+                outcome=event.get("outcome", 0),
+                is_goal=(type_id == 16),
+                type_id=type_id,
+                body_part=body_part,
+                situation=situation,
+                big_chance=big_chance,
+            ))
+
+        return shots
+
+    def extract_lineups(self, match_data: Dict) -> List[PlayerLineup]:
+        """Extract lineup data with minutes played"""
+        lineups = []
+        match_id = match_data.get("matchInfo", {}).get("id", "")
+        match_date = match_data.get("matchInfo", {}).get("date", "")
+
+        # Get team info
+        contestants = match_data.get("matchInfo", {}).get("contestant", [])
+        team_map = {c["id"]: c for c in contestants}
+
+        # Get substitution info for calculating minutes
+        subs = match_data.get("liveData", {}).get("substitute", [])
+        sub_on_times = {}  # player_id -> minute
+        sub_off_times = {}  # player_id -> minute
+
+        for sub in subs:
+            minute_str = sub.get("timeMinSec", "0:0")
+            minute = int(minute_str.split(":")[0]) if minute_str else 0
+            if sub.get("playerOnId"):
+                sub_on_times[sub["playerOnId"]] = minute
+            if sub.get("playerOffId"):
+                sub_off_times[sub["playerOffId"]] = minute
+
+        # Process lineups
+        for lineup in match_data.get("liveData", {}).get("lineUp", []):
+            team_id = lineup.get("contestantId", "")
+            team_info = team_map.get(team_id, {})
+            team_name = team_info.get("name", "Unknown")
+            team_position = team_info.get("position", "")
+
+            for player in lineup.get("player", []):
+                player_id = player.get("playerId", "")
+
+                # Get minutes played from stats
+                stats = {s["type"]: s.get("value", 0) for s in player.get("stat", [])}
+                mins_played = int(stats.get("minsPlayed", 0))
+
+                # Determine if starter (formation_place 1-11 or gameStarted stat)
+                formation_place = player.get("formationPlace", "")
+                is_starter = (
+                    formation_place.isdigit() and int(formation_place) <= 11
+                ) or int(stats.get("gameStarted", 0)) == 1
+
+                # Get sub times
+                sub_on = sub_on_times.get(player_id, 0)
+                sub_off = sub_off_times.get(player_id, 0)
+
+                lineups.append(PlayerLineup(
+                    match_id=match_id,
+                    match_date=match_date,
+                    player_id=player_id,
+                    player_name=player.get("matchName", ""),
+                    team_id=team_id,
+                    team_name=team_name,
+                    team_position=team_position,
+                    position=player.get("position", ""),
+                    position_side=player.get("positionSide", ""),
+                    formation_place=formation_place,
+                    shirt_number=int(player.get("shirtNumber", 0)),
+                    is_starter=is_starter,
+                    minutes_played=mins_played,
+                    sub_on_minute=sub_on,
+                    sub_off_minute=sub_off,
+                ))
+
+        return lineups
+
     def scrape_season(self, competition: str, season: str,
                       start_date: str, end_date: str,
                       max_matches: Optional[int] = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
-        Scrape all matches for a season
+        Scrape all matches for a season (legacy method for backwards compatibility)
 
         Returns:
             Tuple of (player_stats_df, shots_df)
         """
+        result = self.scrape_season_full(competition, season, start_date, end_date, max_matches)
+        return result.get("player_stats", pd.DataFrame()), result.get("shots", pd.DataFrame())
+
+    def scrape_season_full(self, competition: str, season: str,
+                           start_date: str, end_date: str,
+                           max_matches: Optional[int] = None) -> Dict[str, pd.DataFrame]:
+        """
+        Scrape all matches for a season with full data extraction.
+
+        Collects from multiple API endpoints:
+        - matchstats: Player stats (263+ columns), lineups, goals, cards, subs
+        - matchevent: Event-level data with x/y coords (shots, passes, etc.)
+
+        Returns:
+            Dict with keys: player_stats, shots, shot_events, events, lineups
+        """
         season_key = f"{competition}_{season}"
         if season_key not in self.SEASONS:
             print(f"Unknown season: {season_key}")
-            return pd.DataFrame(), pd.DataFrame()
+            return {}
 
         season_id = self.SEASONS[season_key]
 
@@ -352,52 +654,92 @@ class OptaScraper:
         if max_matches:
             played_matches = played_matches[:max_matches]
 
+        # Collectors for all data types
         all_player_stats = []
         all_shots = []
+        all_shot_events = []
+        all_events = []
+        all_lineups = []
 
         for i, match in enumerate(played_matches):
             match_id = match["matchInfo"]["id"]
             match_desc = match["matchInfo"]["description"]
-            print(f"  [{i+1}/{len(played_matches)}] {match_desc}...")
+            print(f"  [{i+1}/{len(played_matches)}] {match_desc}...", end=" ", flush=True)
 
-            # Get detailed stats
+            # Get matchstats data (player stats, lineups, goals, cards, subs)
             stats = self.get_match_stats(match_id)
             if not stats:
-                print(f"    Failed to get stats")
+                print("FAILED (stats)")
                 continue
 
-            # Extract player stats
+            # Extract from matchstats
             player_df = self.extract_all_player_stats(stats)
             all_player_stats.append(player_df)
 
-            # Extract shots
             shots = self.extract_player_shots(stats)
-            shot_dicts = [asdict(s) for s in shots]
-            all_shots.extend(shot_dicts)
+            all_shots.extend([asdict(s) for s in shots])
 
-            # Save raw JSON
+            events = self.extract_match_events(stats)
+            all_events.extend([asdict(e) for e in events])
+
+            lineups = self.extract_lineups(stats)
+            all_lineups.extend([asdict(l) for l in lineups])
+
+            # Get matchevent data (event-level with x/y coords)
+            event_data = self.get_match_events(match_id)
+            if event_data:
+                shot_events = self.extract_shot_events(event_data)
+                all_shot_events.extend([asdict(s) for s in shot_events])
+
+            # Save raw JSON files
             raw_dir = self.data_dir / "raw" / competition / season
             raw_dir.mkdir(parents=True, exist_ok=True)
-            with open(raw_dir / f"{match_id}.json", "w") as f:
+            with open(raw_dir / f"{match_id}_stats.json", "w") as f:
                 json.dump(stats, f)
+            if event_data:
+                with open(raw_dir / f"{match_id}_events.json", "w") as f:
+                    json.dump(event_data, f)
 
-        # Combine all data
-        player_stats_df = pd.concat(all_player_stats, ignore_index=True) if all_player_stats else pd.DataFrame()
-        shots_df = pd.DataFrame(all_shots)
+            print("OK")
+
+        # Combine all data into DataFrames
+        result = {}
+
+        if all_player_stats:
+            result["player_stats"] = pd.concat(all_player_stats, ignore_index=True)
+        else:
+            result["player_stats"] = pd.DataFrame()
+
+        if all_shots:
+            result["shots"] = pd.DataFrame(all_shots)
+        else:
+            result["shots"] = pd.DataFrame()
+
+        if all_shot_events:
+            result["shot_events"] = pd.DataFrame(all_shot_events)
+        else:
+            result["shot_events"] = pd.DataFrame()
+
+        if all_events:
+            result["events"] = pd.DataFrame(all_events)
+        else:
+            result["events"] = pd.DataFrame()
+
+        if all_lineups:
+            result["lineups"] = pd.DataFrame(all_lineups)
+        else:
+            result["lineups"] = pd.DataFrame()
 
         # Save processed data
         processed_dir = self.data_dir / "processed" / competition / season
         processed_dir.mkdir(parents=True, exist_ok=True)
 
-        if not player_stats_df.empty:
-            player_stats_df.to_parquet(processed_dir / "player_stats.parquet", index=False)
-            print(f"Saved player stats: {len(player_stats_df)} rows")
+        for name, df in result.items():
+            if not df.empty:
+                df.to_parquet(processed_dir / f"{name}.parquet", index=False)
+                print(f"Saved {name}: {len(df)} rows")
 
-        if not shots_df.empty:
-            shots_df.to_parquet(processed_dir / "shots.parquet", index=False)
-            print(f"Saved shots: {len(shots_df)} rows")
-
-        return player_stats_df, shots_df
+        return result
 
 
 def main():
@@ -405,41 +747,58 @@ def main():
     scraper = OptaScraper()
 
     print("=" * 60)
-    print("Opta Data Scraper - Test Run")
+    print("Opta Data Scraper - Full Data Test")
     print("=" * 60)
 
-    # Scrape a few recent matches
-    player_df, shots_df = scraper.scrape_season(
+    # Scrape a few recent matches with full data extraction
+    result = scraper.scrape_season_full(
         competition="EPL",
-        season="2025-2026",
-        start_date="2026-01-01",
-        end_date="2026-01-21",
-        max_matches=5  # Limit for testing
+        season="2024-2025",
+        start_date="2025-01-01",
+        end_date="2025-01-28",
+        max_matches=3  # Limit for testing
     )
 
     print("\n" + "=" * 60)
     print("Summary")
     print("=" * 60)
 
+    # Player stats summary
+    player_df = result.get("player_stats", pd.DataFrame())
     if not player_df.empty:
         print(f"\nPlayer Stats: {len(player_df)} player-match records")
-        print(f"Unique players: {player_df['player_id'].nunique()}")
-        print(f"Unique matches: {player_df['match_id'].nunique()}")
-
-        # Show available stats
+        print(f"  Unique players: {player_df['player_id'].nunique()}")
+        print(f"  Unique matches: {player_df['match_id'].nunique()}")
         stat_cols = [c for c in player_df.columns if c not in [
             'match_id', 'match_date', 'match_description', 'player_id',
             'player_name', 'first_name', 'last_name', 'shirt_number',
             'position', 'position_side', 'formation_place', 'team_id',
             'team_name', 'team_position', 'team_formation', 'home_score', 'away_score'
         ]]
-        print(f"Available stats ({len(stat_cols)}): {stat_cols[:10]}...")
+        print(f"  Stat columns: {len(stat_cols)}")
 
-    if not shots_df.empty:
-        print(f"\nShots Data: {len(shots_df)} player-match records with shots")
-        print(f"Total shots: {shots_df['total_shots'].sum()}")
-        print(f"Total goals: {shots_df['goals'].sum()}")
-        print(f"Conversion rate: {shots_df['goals'].sum() / shots_df['total_shots'].sum():.1%}")
+    # Shot events summary (individual shots with x/y)
+    shot_events_df = result.get("shot_events", pd.DataFrame())
+    if not shot_events_df.empty:
+        print(f"\nShot Events (with x/y coords): {len(shot_events_df)} shots")
+        print(f"  Goals: {shot_events_df['is_goal'].sum()}")
+        print(f"  Big chances: {shot_events_df['big_chance'].sum()}")
+        print(f"  Sample coords: x={shot_events_df['x'].mean():.1f}, y={shot_events_df['y'].mean():.1f}")
+
+    # Match events summary
+    events_df = result.get("events", pd.DataFrame())
+    if not events_df.empty:
+        print(f"\nMatch Events: {len(events_df)} events")
+        event_counts = events_df['event_type'].value_counts().to_dict()
+        for etype, count in event_counts.items():
+            print(f"  {etype}: {count}")
+
+    # Lineups summary
+    lineups_df = result.get("lineups", pd.DataFrame())
+    if not lineups_df.empty:
+        print(f"\nLineups: {len(lineups_df)} player records")
+        print(f"  Starters: {lineups_df['is_starter'].sum()}")
+        print(f"  Avg minutes played: {lineups_df['minutes_played'].mean():.1f}")
 
 
 if __name__ == "__main__":
