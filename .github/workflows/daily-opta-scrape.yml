@@ -71,8 +71,8 @@ jobs:
         if [ "${{ github.event.inputs.force_rescrape }}" = "true" ]; then
           ARGS="$ARGS --force"
         fi
-        echo "Running: python scrape_big5.py $ARGS"
-        python scrape_big5.py $ARGS
+        echo "Running: python scrape_opta.py $ARGS"
+        python scrape_opta.py $ARGS
 
     - name: Build consolidated parquet files
       run: |

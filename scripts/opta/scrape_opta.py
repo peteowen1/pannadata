@@ -329,7 +329,7 @@ def main():
     scraper = OptaScraper(data_dir=str(script_dir / "data"))
 
     print("=" * 60)
-    print("BIG 5 LEAGUES SCRAPER")
+    print("OPTA LEAGUES SCRAPER")
     print("=" * 60)
     print(f"Leagues: {leagues_to_scrape}")
     print(f"Scrape plan: {len(scrape_plan)} league-seasons")
