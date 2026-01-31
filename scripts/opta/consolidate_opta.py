@@ -58,10 +58,17 @@ def consolidate_opta(opta_dir="opta", output_dir="consolidated"):
         # Concatenate with pandas (handles type differences across seasons)
         combined = pd.concat(dfs, ignore_index=True)
 
-        # Deduplicate by match_id + player_id
+        # Deduplicate based on table type
+        # - Most tables use match_id + player_id
+        # - Event tables (shot_events, match_events) use match_id + event_id
         before_count = len(combined)
-        if 'match_id' in combined.columns and 'player_id' in combined.columns:
-            combined = combined.drop_duplicates(subset=['match_id', 'player_id'])
+        if 'match_id' in combined.columns:
+            if 'event_id' in combined.columns and table_type in ['shot_events', 'match_events']:
+                # Event tables: dedupe by match_id + event_id
+                combined = combined.drop_duplicates(subset=['match_id', 'event_id'])
+            elif 'player_id' in combined.columns:
+                # Player tables: dedupe by match_id + player_id
+                combined = combined.drop_duplicates(subset=['match_id', 'player_id'])
             if len(combined) < before_count:
                 print(f"  Removed {before_count - len(combined):,} duplicate rows")
 

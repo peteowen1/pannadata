@@ -23,6 +23,7 @@ import requests
 import json
 import re
 import time
+import random
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime, timedelta
@@ -90,6 +91,89 @@ class ShotEvent:
 
 
 @dataclass
+class AllMatchEvent:
+    """Represents any match event with x/y coordinates from matchevent API.
+
+    This captures ALL events (passes, tackles, aerials, dribbles, shots, etc.)
+    with their x/y coordinates for advanced analysis like passing networks,
+    defensive action maps, and positional data.
+
+    Opta Event Type IDs (common):
+    - 1: Pass
+    - 2: Offside pass
+    - 3: Take on (dribble)
+    - 4: Foul
+    - 5: Out
+    - 6: Corner awarded
+    - 7: Tackle
+    - 8: Interception
+    - 9: Turnover
+    - 10: Save
+    - 11: Claim
+    - 12: Clearance
+    - 13: Miss (shot)
+    - 14: Post (shot)
+    - 15: Attempt saved (shot)
+    - 16: Goal
+    - 17: Card
+    - 18: Player off
+    - 19: Player on
+    - 27: Start delay
+    - 30: End (half/match)
+    - 32: Blocked pass
+    - 34: Resume
+    - 35: Ball touch
+    - 37: Shield ball opp
+    - 41: Ball recovery
+    - 42: Blocked pass
+    - 44: Aerial
+    - 45: Challenge
+    - 49: Ball touch
+    - 50: Second yellow
+    - 51: Temp off
+    - 52: Temp on
+    - 53: Tackle lost
+    - 54: Offside provoked
+    - 55: Shield ball opp
+    - 56: Ball touch
+    - 57: Temp injury
+    - 58: Resume from injury
+    - 59: Tackle
+    - 60: Cross not claimed
+    - 61: Keeper pick-up
+    - 63: Cross not claimed
+    - 64: Error
+    - 65: Good skill
+    - 66: Punch
+    - 67: Dispossessed
+    - 68: Tackle
+    - 69: Big chance
+    - 70: Chance missed
+    - 71: Foul won
+    - 72: Pass
+    - 73: Keeper sweeper
+    - 74: Offside
+    - 77: Key pass
+    """
+    match_id: str
+    event_id: int
+    type_id: int
+    player_id: str
+    player_name: str
+    team_id: str
+    minute: int
+    second: int
+    x: float
+    y: float
+    end_x: float = 0.0  # For passes/carries - where the ball ended
+    end_y: float = 0.0
+    outcome: int = 0  # 1=successful, 0=unsuccessful
+    period_id: int = 1  # 1=first half, 2=second half, etc.
+    # Key qualifiers stored as separate fields for convenience
+    qualifier_json: str = ""  # Full qualifiers as JSON string for advanced analysis
+
+
+@dataclass
 class MatchEvent:
     """Represents a match event (goal, card, substitution) with timing"""
     match_id: str
@@ -135,13 +219,207 @@ class OptaScraper:
     BASE_URL = "https://api.performfeeds.com/soccerdata"
     PROVIDER_ID = "1mjq6w6ezkxe611ykkj8rgz7f1"
 
-    # Big 5 league competition IDs
+    # Rotating User-Agent pool to help prevent rate limiting
+    # Mimics various browsers on Windows/Mac for realistic traffic patterns
+    USER_AGENTS = [
+        # Chrome on Windows
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+        # Chrome on Mac
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+        # Firefox on Windows
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0",
+        # Firefox on Mac
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:121.0) Gecko/20100101 Firefox/121.0",
+        # Edge on Windows
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36 Edg/119.0.0.0",
+        # Safari on Mac
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15",
+    ]
+
+    # Competition IDs - Organized by importance/priority
     COMPETITIONS = {
+        # ===========================================
+        # TIER 1: Big 5 European Leagues
+        # ===========================================
         "EPL": "2kwbbcootiqqgmrzs6o5inle5",
         "La_Liga": "34pl8szyvrbwcmfkuocjm3r6t",
         "Bundesliga": "6by3h89i2eykc341oz7lv1ddd",
         "Serie_A": "1r097lpxe0xn03ihb7wi98kao",
         "Ligue_1": "dm5ka0os1e3dxcp3vh05kmp33",
+
+        # ===========================================
+        # TIER 2: Major International Tournaments
+        # ===========================================
+        "World_Cup": "70excpe1synn9kadnbppahdn7",
+        "UEFA_Euros": "8tddm56zbasf57jkkay4kbf11",
+        "Copa_America": "45db8orh1qttbsqq9hqapmbit",
+        "CONCACAF_Gold_Cup": "f51991ex45qhp1p3iu74u4d4e",
+        "AFCON": "68zplepppndhl8bfdvgy9vgu1",
+        "UEFA_Nations_League": "595nsvo7ykvoe690b1e4u5n56",
+        "UEFA_Euro_Qualifiers": "gfskxsdituog2kqp9yiu7bzi",
+        "UEFA_WC_Qualifiers": "39q1hq42hxjfylxb7xpe9bvf9",
+
+        # ===========================================
+        # TIER 3: Major Club Competitions
+        # ===========================================
+        "UCL": "4oogyu6o156iphvdvphwpck10",
+        "UEL": "4c1nfi2j1m731hcay25fcgndq",
+        "Conference_League": "c7b8o53flg36wbuevfzy3lb10",
+        "Club_World_Cup": "dc4k1xh2984zbypbnunk7ncic",
+        "UEFA_Super_Cup": "a0f4gtru0oyxmpvty4thc5qkc",
+
+        # ===========================================
+        # TIER 4: Big 5 Domestic Cups
+        # ===========================================
+        "FA_Cup": "2hj3286pqov1g1g59k2t2qcgm",
+        "League_Cup": "725gd73msyt08xm76v7gkxj7u",
+        "Copa_del_Rey": "apdwh753fupxheygs8seahh7x",
+        "Supercopa": "sd8z02fe455z2fjvlxvxh0zo",
+        "DFB_Pokal": "486rhdgz7yc0sygziht7hje65",
+        "Coppa_Italia": "6694fff47wqxl10lrd9tb91f8",
+        "Coupe_de_France": "3n9mk5b2mxmq831wfmv6pu86i",
+        "Trophee_Champions": "1nsu863daf68kns4l7ou69orf",
+
+        # ===========================================
+        # TIER 5: Secondary European Leagues
+        # ===========================================
+        "Championship": "7ntvbsyq31jnzoqoa8850b9b8",
+        "League_One": "3frp1zxrqulrlrnk503n6l4l",
+        "League_Two": "bgen5kjer2ytfp7lo9949t72g",
+        "WSL": "6vq8j5p3av14nr3iuyi4okhjt",
+        "Primeira_Liga": "8yi6ejjd1zudcqtbn07haahg6",
+        "Eredivisie": "akmkihra9ruad09ljapsm84b3",
+        "Scottish_Premiership": "e21cf135btr8t3upw0vl6n6x0",
+        "Super_Lig": "482ofyysbdbeoxauk19yg7tdt",
+        "Belgian_First_Division": "4zwgbb66rif2spcoeeol2motx",
+        "Swiss_Super_League": "e0lck99w8meo9qoalfrxgo33o",
+        "Austrian_Bundesliga": "5c96g1zm7vo5ons9c42uy2w3r",
+        "Greek_Super_League": "c0r21rtokgnbtc0o2rldjmkxu",
+
+        # ===========================================
+        # TIER 6: Secondary European Domestic Cups
+        # ===========================================
+        "Taca_de_Portugal": "5jd0k2txwnq69frs79eulba8j",
+        "Taca_da_Liga": "bqvy41un7sf86rbse9tv810x7",
+        "KNVB_Beker": "cbdbziaqczfuyuwqsylqi26zd",
+        "Scottish_Cup": "8kt53kt3mfo29gldhkl05u25b",
+        "Scottish_League_Cup": "eog6knrkfei68si736fpquyzc",
+        "Turkish_Cup": "7af85xa75vozt2l4hzi6ryts7",
+        "Belgian_Cup": "1qt9bfl6dhydf4tpano6n1p7s",
+        "Schweizer_Pokal": "8cit3whr514nnd4zkaovsnqn",
+        "Austrian_Cup": "1ncmha8yglhyyhg6gtaujymqf",
+        "Greek_Cup": "10x5pvhifwo4y7hs3fz9hf245",
+
+        # ===========================================
+        # TIER 7: Americas Top Leagues & Cups
+        # ===========================================
+        "MLS": "287tckirbfj9nb2ar2k9r60vn",
+        "Liga_MX": "5vwz4siguym0udhj3cr4l2sz3",
+        "Brazilian_Serie_A": "scf9p4y91yjvqvg5jndxzhxj",
+        "Argentine_Liga_Profesional": "ecpu6zdp8s0l2zwrx0zprpqzl",
+        "CONMEBOL_Libertadores": "86rw2b2ml7rydq74bng6pzwbo",
+        "Copa_do_Brasil": "16bnz0wt7mzzrn92p2pza2k9n",
+
+        # ===========================================
+        # TIER 8: African Leagues & Competitions
+        # ===========================================
+        "CAF_CL": "cse5oqqt2pzfcy8uz6yz3tkbj",
+        "CAF_Confederation_Cup": "bx57cmq1edfq53ckfk791supi",
+        "Egyptian_Premier_League": "12ixvd3k8vfqf10qbfcqitgzo",
+        "South_African_PSL": "xvddvdgd2g40p82e3ztylmrqn",
+        "Botola_Pro": "1eruend45vd20g9hbrpiggs5u",
+        "Moroccan_Cup": "d1d1wnseo0ao8ojqtpxbirh2b",
+        "Tunisian_Ligue_1": "f4jc2cc5nq7flaoptpi5ua4k4",
+        "Tunisian_Cup": "138n7rt9ngbmktlhtwfeefqqp",
+        "Tunisian_Super_Cup": "8wmp2ym78qoluhmxpfe0o73mc",
+
+        # ===========================================
+        # TIER 9: Asian Leagues & Cups
+        # ===========================================
+        "J1_League": "ctms5njkdpwkl1lnopx1d0lxp",
+        "K_League_1": "xoxb38hl9k1l9e0yw6xm8qe",
+        "Saudi_League": "blmkbxq7l6dufmuzqv831y6w9",
+        "UAE_Pro_League": "f39uq10c8xhg5e6rwwcf6lhgc",
+        "UAE_League_Cup": "89v3ukjpui1gashsz3i1vphfa",
+        "UAE_Presidents_Cup": "2smaq6vx7pgwmkfkn15kp7ib",
+        "Gulf_Champions_League": "4gyhjrol8ycf1taamo21fvfh2",
+        "AFC_Champions_League_Elite": "3v16kc92h6xfv10c2b19f5owj",
+        "A_League": "xwnjb1az11zffwty3m6vn8y6",
+
+        # ===========================================
+        # TIER 9B: Oceania Leagues & Cups
+        # ===========================================
+        "NZ_National_League": "1vyghvhuy6abu4htoemdi79bd",
+        "OFC_Champions_League": "4y9msam43q5ddjdrhsvd7fo85",
+        "NZ_Chatham_Cup": "c9n0iioc66668md31jzkpmfmj",
+        "FIFA_Intercontinental_Cup": "cmvff99i4w10udooqckzt8c2x",
+
+        # ===========================================
+        # TIER 10: Nordic & Baltic Leagues
+        # ===========================================
+        "Danish_Superliga": "29actv1ohj8r10kd9hu0jnb0n",
+        "Eliteserien": "9ynnnx1qmkizq1o3qr3v0nsuk",
+        "Allsvenskan": "b60nisd3qn427jm0hrg9kvmab",
+        "Veikkausliiga": "dvstmwnvw0mt5p38twn9yttyb",
+        "DBU_Pokalen": "8ztsv3pzrsyq5w1r3a0nfk1y5",
+        "Svenska_Cupen": "d9eaigzyfnfiraqc3ius757tl",
+        "Suomen_Cup": "6hlw7rhrpe9garwmfoxu4lebc",
+
+        # ===========================================
+        # TIER 11: Eastern European Leagues
+        # ===========================================
+        "Ukrainian_Premier_League": "6wubmo7di3kdpflluf6s8c7vs",
+        "Ekstraklasa": "7hl0svs2hg225i2zud0g3xzp2",
+        "Czech_Liga": "bu1l7ckihyr0errxw61p0m05",
+        "Romanian_Liga_I": "89ovpy1rarewwzqvi30bfdr8b",
+        "Serbian_Super_Liga": "3ww12jab49q8q8mk9avdwjqgk",
+        "Croatian_HNL": "1b70m6qtxrp75b4vtk8hxh8c3",
+        "NB_I": "47s2kt0e8m444ftqvsrqa3bvq",
+        "Bulgarian_First_League": "c0yqkbilbbg70ij2473xymmqv",
+        "Slovak_Liga": "1mpjd0vbxbtu9zw89yj09xk3z",
+        "Slovenian_Liga": "7nmz249q89qg5ezcvzlheljji",
+
+        # ===========================================
+        # TIER 12: Eastern European Cups
+        # ===========================================
+        "Ukrainian_Cup": "2kuyfkulm5lsgjxynrgh3vz70",
+        "Polish_Cup": "b3ufcd24wfnnd5j98ped6irfu",
+        "Czech_Cup": "193wqkyb0v5jnsblhvd2ocmyo",
+        "Cupa_Romaniei": "65q4uwm6ol1rkf5dp89m8omny",
+        "Serbian_Cup": "29lni33vxqrl1tqhadrnfid6t",
+        "Croatian_Cup": "3z6xfyd3ovi5x09orlo4rmskx",
+        "Magyar_Kupa": "chfah95whw2m0sbdq6cvfac7q",
+        "Bulgarian_Cup": "22euhl6zy56cp651ipq99rooq",
+        "Slovak_Cup": "ahl3vljaignq9ebaos4uqkrvo",
+        "Slovenian_Cup": "ggsjtgoapnah61wu939ni8js",
+
+        # ===========================================
+        # TIER 13: Middle East & Israel
+        # ===========================================
+        "Ligat_Haal": "2xg0qvif1rh7du6wmk2eleku3",
+        "Israeli_Cup": "481owj46t50pkw9k6qz1c4jm6",
+
+        # ===========================================
+        # TIER 14: Minor European Leagues & Cups
+        # ===========================================
+        "Irish_Premier": "4mbfidy8zum5u0aqjqo0vuqs2",
+        "Bosnian_Premier": "4yngyfinzd6bb1k7anqtqs0wt",
+        "Icelandic_Premier": "zilopfej2h0n3vpan5tcynpo",
+        "Macedonian_First": "dl5v19e4466jn4fuufhlae7jm",
+        "Kosovo_Superliga": "dwiqifdd70ytjytcs09vzosb3",
+        "Maltese_Premier": "5taraea6mqjjldg9zxswo825y",
+        "Gibraltar_Premier": "dzu6b07r25e3pk2uahxi5mzsz",
+        "Armenian_Premier": "dn9kmfdbz74lzt3m8e9g0vwjq",
+        "Cyprus_First": "btouq8t23agr62ij7e0ju5p6n",
+        "Azerbaijan_Premier": "3428tckxcirwwh3o3jgc1m8ji",
+        "Kazakhstan_Premier": "9ikchyu9fb8bvx0s673jofj6s",
+        "Azerbaijan_Cup": "9gvvndi7vk9fzvpe65pv5x2ir",
     }
 
     # Known season IDs (will be populated by discover_seasons)
@@ -163,22 +441,69 @@ class OptaScraper:
 
     def __init__(self, data_dir: str = "data"):
         self.session = requests.Session()
-        self.session.headers.update({
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Referer": "https://theanalyst.com/",
-        })
+        # Set comprehensive browser headers to mimic real browser traffic
+        self._set_random_headers()
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self._request_count = 0
         self._last_request_time = 0
 
-    def _rate_limit(self, min_delay: float = 1.0):
-        """Simple rate limiting"""
+    def _set_random_headers(self):
+        """Set randomized browser headers to help prevent rate limiting"""
+        ua = random.choice(self.USER_AGENTS)
+
+        # Determine browser type from User-Agent for sec-ch-ua
+        if "Edg/" in ua:
+            sec_ch_ua = '"Microsoft Edge";v="120", "Chromium";v="120", "Not-A.Brand";v="24"'
+        elif "Firefox" in ua:
+            sec_ch_ua = None  # Firefox doesn't send sec-ch-ua
+        elif "Safari" in ua and "Chrome" not in ua:
+            sec_ch_ua = None  # Safari doesn't send sec-ch-ua
+        else:
+            # Chrome
+            sec_ch_ua = '"Google Chrome";v="120", "Chromium";v="120", "Not-A.Brand";v="24"'
+
+        headers = {
+            "User-Agent": ua,
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Referer": "https://theanalyst.com/",
+            "Origin": "https://theanalyst.com",
+            "Connection": "keep-alive",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+        }
+
+        # Add Chromium-specific headers
+        if sec_ch_ua:
+            headers["sec-ch-ua"] = sec_ch_ua
+            headers["sec-ch-ua-mobile"] = "?0"
+            headers["sec-ch-ua-platform"] = '"Windows"' if "Windows" in ua else '"macOS"'
+            headers["Sec-Fetch-Dest"] = "empty"
+            headers["Sec-Fetch-Mode"] = "cors"
+            headers["Sec-Fetch-Site"] = "cross-site"
+
+        self.session.headers.update(headers)
+
+    def _rate_limit(self, min_delay: float = 1.0, max_delay: float = 2.0):
+        """Rate limiting with User-Agent rotation and randomized delays.
+
+        Args:
+            min_delay: Minimum delay between requests in seconds
+            max_delay: Maximum delay between requests in seconds
+        """
+        # Add random jitter to delay to make request pattern less predictable
+        delay = random.uniform(min_delay, max_delay)
         elapsed = time.time() - self._last_request_time
-        if elapsed < min_delay:
-            time.sleep(min_delay - elapsed)
+        if elapsed < delay:
+            time.sleep(delay - elapsed)
         self._last_request_time = time.time()
         self._request_count += 1
+
+        # Rotate User-Agent every 10 requests to vary traffic pattern
+        if self._request_count % 10 == 0:
+            self._set_random_headers()
 
     def _fetch(self, endpoint: str, params: Dict[str, str]) -> Optional[Dict]:
         """Fetch from API with JSON format"""
@@ -541,6 +866,60 @@ class OptaScraper:
 
         return shots
 
+    def extract_all_match_events(self, event_data: Dict) -> List[AllMatchEvent]:
+        """Extract ALL events with x/y coordinates from matchevent data.
+
+        This extracts every event type (passes, tackles, aerials, dribbles, shots, etc.)
+        for comprehensive analysis. Each match typically has ~2000 events.
+
+        Args:
+            event_data: Raw response from matchevent API endpoint
+
+        Returns:
+            List of AllMatchEvent dataclass objects with x/y coordinates
+        """
+        events = []
+        match_id = event_data.get("matchInfo", {}).get("id", "")
+
+        for event in event_data.get("liveData", {}).get("event", []):
+            type_id = event.get("typeId", 0)
+            if type_id is None:
+                continue
+
+            # Extract qualifiers for end coordinates (passEndX=140, passEndY=141)
+            qualifiers = {q.get("qualifierId"): q.get("value")
+                         for q in event.get("qualifier", [])}
+
+            # End coordinates for passes/carries
+            end_x = float(qualifiers.get(140, 0) or 0)  # passEndX
+            end_y = float(qualifiers.get(141, 0) or 0)  # passEndY
+
+            # Store qualifiers as JSON string for advanced analysis
+            qualifier_json = json.dumps(
+                {str(k): v for k, v in qualifiers.items()},
+                separators=(',', ':')
+            ) if qualifiers else ""
+
+            events.append(AllMatchEvent(
+                match_id=match_id,
+                event_id=event.get("id", 0),
+                type_id=type_id,
+                player_id=event.get("playerId", "") or "",
+                player_name=event.get("playerName", "") or "",
+                team_id=event.get("contestantId", "") or "",
+                minute=event.get("timeMin", 0) or 0,
+                second=event.get("timeSec", 0) or 0,
+                x=float(event.get("x", 0) or 0),
+                y=float(event.get("y", 0) or 0),
+                end_x=end_x,
+                end_y=end_y,
+                outcome=event.get("outcome", 0) or 0,
+                period_id=event.get("periodId", 1) or 1,
+                qualifier_json=qualifier_json,
+            ))
+
+        return events
+
     def extract_lineups(self, match_data: Dict) -> List[PlayerLineup]:
         """Extract lineup data with minutes played"""
         lineups = []
@@ -631,7 +1010,7 @@ class OptaScraper:
         - matchevent: Event-level data with x/y coords (shots, passes, etc.)
 
         Returns:
-            Dict with keys: player_stats, shots, shot_events, events, lineups
+            Dict with keys: player_stats, shots, shot_events, match_events, events, lineups
         """
         season_key = f"{competition}_{season}"
         if season_key not in self.SEASONS:
@@ -658,6 +1037,7 @@ class OptaScraper:
         all_player_stats = []
         all_shots = []
         all_shot_events = []
+        all_match_events = []  # ALL events with x/y coords (~2000/match)
         all_events = []
         all_lineups = []
 
@@ -691,6 +1071,10 @@ class OptaScraper:
                 shot_events = self.extract_shot_events(event_data)
                 all_shot_events.extend([asdict(s) for s in shot_events])
 
+                # Extract ALL events with x/y coords (passes, tackles, aerials, etc.)
+                match_events = self.extract_all_match_events(event_data)
+                all_match_events.extend([asdict(e) for e in match_events])
+
             # Save raw JSON files
             raw_dir = self.data_dir / "raw" / competition / season
             raw_dir.mkdir(parents=True, exist_ok=True)
@@ -719,6 +1103,11 @@ class OptaScraper:
             result["shot_events"] = pd.DataFrame(all_shot_events)
         else:
             result["shot_events"] = pd.DataFrame()
+
+        if all_match_events:
+            result["match_events"] = pd.DataFrame(all_match_events)
+        else:
+            result["match_events"] = pd.DataFrame()
 
         if all_events:
             result["events"] = pd.DataFrame(all_events)
@@ -785,10 +1174,19 @@ def main():
         print(f"  Big chances: {shot_events_df['big_chance'].sum()}")
         print(f"  Sample coords: x={shot_events_df['x'].mean():.1f}, y={shot_events_df['y'].mean():.1f}")
 
-    # Match events summary
+    # All match events summary (with x/y coords)
+    match_events_df = result.get("match_events", pd.DataFrame())
+    if not match_events_df.empty:
+        print(f"\nAll Match Events (with x/y coords): {len(match_events_df)} events")
+        print(f"  Unique event types: {match_events_df['type_id'].nunique()}")
+        type_counts = match_events_df['type_id'].value_counts().head(10).to_dict()
+        print(f"  Top 10 event types: {type_counts}")
+        print(f"  Events with end coords: {(match_events_df['end_x'] > 0).sum()}")
+
+    # Match events summary (goals, cards, subs from matchstats)
     events_df = result.get("events", pd.DataFrame())
     if not events_df.empty:
-        print(f"\nMatch Events: {len(events_df)} events")
+        print(f"\nMatch Events (goals/cards/subs): {len(events_df)} events")
         event_counts = events_df['event_type'].value_counts().to_dict()
         for etype, count in event_counts.items():
             print(f"  {etype}: {count}")

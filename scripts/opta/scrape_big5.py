@@ -24,7 +24,7 @@ import argparse
 import sys
 from pathlib import Path
 from datetime import datetime
-from opta_scraper import OptaScraper, MatchEvent, ShotEvent, PlayerLineup
+from opta_scraper import OptaScraper, MatchEvent, ShotEvent, PlayerLineup, AllMatchEvent
 from dataclasses import asdict
 import pandas as pd
 
@@ -52,16 +52,39 @@ def load_seasons_config():
 
 
 def get_season_date_range(season_name: str) -> tuple:
-    """Get start and end dates for a season (Aug-May typical)"""
-    year_start = int(season_name.split("-")[0])
+    """Get start and end dates for a season (Aug-May typical)
+
+    Handles both league seasons (2024-2025) and tournament seasons (2025 Morocco, 2024/2025)
+    """
+    import re
+
+    # Extract year(s) from season name
+    years = re.findall(r'20\d\d', season_name)
+
+    if len(years) >= 2:
+        # League format: 2024-2025 or 2024/2025
+        year_start = int(years[0])
+        year_end = int(years[1])
+    elif len(years) == 1:
+        # Tournament format: 2025 Morocco or just 2025
+        year = int(years[0])
+        # For single-year tournaments, cover the full year
+        year_start = year - 1  # Start from previous Aug
+        year_end = year
+    else:
+        # Fallback: current year
+        from datetime import datetime
+        year_start = datetime.now().year - 1
+        year_end = datetime.now().year
 
     # Date ranges to cover full season (API returns max 100 per request)
     date_ranges = [
         (f"{year_start}-08-01", f"{year_start}-09-30"),
         (f"{year_start}-10-01", f"{year_start}-11-30"),
-        (f"{year_start}-12-01", f"{year_start+1}-01-31"),
-        (f"{year_start+1}-02-01", f"{year_start+1}-03-31"),
-        (f"{year_start+1}-04-01", f"{year_start+1}-05-31"),
+        (f"{year_start}-12-01", f"{year_end}-01-31"),
+        (f"{year_end}-02-01", f"{year_end}-03-31"),
+        (f"{year_end}-04-01", f"{year_end}-05-31"),
+        (f"{year_end}-06-01", f"{year_end}-07-31"),  # For summer tournaments like AFCON
     ]
     return date_ranges
 
@@ -83,26 +106,26 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
     opta_dir = pannadata_dir / "opta"
 
     # Create all output directories
-    data_types = ["player_stats", "shots", "shot_events", "events", "lineups"]
+    data_types = ["player_stats", "shots", "shot_events", "match_events", "events", "lineups"]
     output_dirs = {dt: opta_dir / dt / competition for dt in data_types}
     for d in output_dirs.values():
         d.mkdir(parents=True, exist_ok=True)
 
-    # Check for existing matches
+    # Check for existing matches - only skip if match_events exists (the most complete table)
+    # This ensures we rescrape matches that are missing event data
     existing_match_ids = set()
     if not force_rescrape:
-        # Check raw JSON cache first (local development)
-        if raw_dir.exists():
-            # Match IDs from stats files (without _stats suffix)
-            existing_match_ids = {f.stem.replace("_stats", "").replace("_events", "")
-                                  for f in raw_dir.glob("*.json")}
-        # Also check existing parquet files (GitHub Actions workflow)
-        existing_players_path = output_dirs["player_stats"] / f"{season_name}.parquet"
-        if existing_players_path.exists():
-            existing_df = pd.read_parquet(existing_players_path, columns=['match_id'])
-            existing_match_ids.update(existing_df['match_id'].unique())
+        # Check match_events parquet - this is the critical table with all x/y event data
+        # Only skip matches that already have match_events scraped
+        existing_events_path = output_dirs["match_events"] / f"{season_name}.parquet"
+        if existing_events_path.exists():
+            try:
+                existing_df = pd.read_parquet(existing_events_path, columns=['match_id'])
+                existing_match_ids = set(existing_df['match_id'].unique())
+            except Exception:
+                pass  # If file is corrupt, rescrape everything
         if existing_match_ids:
-            print(f"Found {len(existing_match_ids)} already scraped matches")
+            print(f"Found {len(existing_match_ids)} matches with complete event data")
 
     date_ranges = get_season_date_range(season_name)
 
@@ -110,6 +133,7 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
     all_player_stats = []
     all_shots = []
     all_shot_events = []
+    all_match_events = []  # ALL events with x/y coords (~2000/match)
     all_events = []
     all_lineups = []
     new_matches_scraped = 0
@@ -161,6 +185,10 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
                 shot_events = scraper.extract_shot_events(event_data)
                 all_shot_events.extend([asdict(s) for s in shot_events])
 
+                # Extract ALL events with x/y coords (passes, tackles, aerials, etc.)
+                match_events = scraper.extract_all_match_events(event_data)
+                all_match_events.extend([asdict(e) for e in match_events])
+
             # Save raw JSON files
             raw_dir.mkdir(parents=True, exist_ok=True)
             with open(raw_dir / f"{match_id}_stats.json", "w") as f:
@@ -211,6 +239,11 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
         output_dirs["shot_events"] / f"{season_name}.parquet",
         ["match_id", "event_id"]
     )
+    results["match_events"] = combine_and_save(
+        all_match_events,
+        output_dirs["match_events"] / f"{season_name}.parquet",
+        ["match_id", "event_id"]
+    )
     results["events"] = combine_and_save(
         all_events,
         output_dirs["events"] / f"{season_name}.parquet",
@@ -238,6 +271,7 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
         "player_records": len(results["player_stats"]),
         "shot_records": len(results["shots"]),
         "shot_event_records": len(results["shot_events"]),
+        "match_event_records": len(results["match_events"]),
         "event_records": len(results["events"]),
         "lineup_records": len(results["lineups"]),
     }
