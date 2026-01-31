@@ -110,6 +110,43 @@ def load_seasons_config():
         return json.load(f)
 
 
+def is_future_season(season_name: str) -> bool:
+    """Check if a season is entirely in the future (hasn't started yet).
+
+    Returns True for seasons where the start date is in the future.
+    For league seasons like 2024-2025, checks if August 2024 has passed.
+    For tournaments like 2029 Morocco, checks if the year has started.
+    """
+    import re
+    from datetime import datetime
+
+    current_date = datetime.now()
+    current_year = current_date.year
+    current_month = current_date.month
+
+    # Extract year(s) from season name
+    years = re.findall(r'20\d\d', season_name)
+
+    if not years:
+        return False  # Can't determine, assume not future
+
+    if len(years) >= 2:
+        # League format: 2024-2025
+        start_year = int(years[0])
+        # Season starts in August of the first year
+        # If we're past August of start_year, season has started
+        if start_year > current_year:
+            return True
+        if start_year == current_year and current_month < 8:
+            return True  # Before August of the start year
+        return False
+    else:
+        # Tournament format: 2025 Morocco or just 2025
+        year = int(years[0])
+        # Single-year tournaments - consider future if year hasn't started
+        return year > current_year
+
+
 def get_season_date_range(season_name: str) -> tuple:
     """Get start and end dates for a season (Aug-May typical)
 
@@ -276,6 +313,12 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
                 has_events = True
 
             # Add manifest record for this match
+            # Don't mark as event_unavailable if match is recent (< 7 days old)
+            # Events may become available after a few days
+            from datetime import datetime, timedelta
+            match_dt = datetime.fromisoformat(match_date.replace('Z', '+00:00'))
+            is_recent = (datetime.now(match_dt.tzinfo) - match_dt) < timedelta(days=7)
+
             new_manifest_records.append({
                 'match_id': match_id,
                 'competition': competition,
@@ -284,7 +327,7 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
                 'has_shots': len(shots) > 0,
                 'has_match_events': has_events,
                 'has_lineups': len(lineups) > 0,
-                'event_unavailable': not has_events,  # True if we got 404 for events
+                'event_unavailable': not has_events and not is_recent,  # Only mark if old AND no events
             })
 
             # Save raw JSON files
@@ -424,6 +467,13 @@ def main():
 
         for season_name, season_id in seasons:
             scrape_plan.append((league, season_name, season_id))
+
+    # Filter out future seasons (e.g., Club_World_Cup 2029, UEFA_Euros 2028)
+    original_count = len(scrape_plan)
+    scrape_plan = [(l, s, sid) for l, s, sid in scrape_plan if not is_future_season(s)]
+    if len(scrape_plan) < original_count:
+        skipped = original_count - len(scrape_plan)
+        print(f"Filtered out {skipped} future seasons from scrape plan")
 
     # Initialize scraper
     script_dir = Path(__file__).parent
