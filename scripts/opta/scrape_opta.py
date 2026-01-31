@@ -1,22 +1,22 @@
 """
-Scrape Big 5 Leagues - Opta Data Collection
+Scrape Opta Leagues - Comprehensive Data Collection
 
-Comprehensive scraper for all Big 5 European leagues:
-- EPL (Premier League)
-- La_Liga (La Liga)
-- Bundesliga
-- Serie_A (Serie A)
-- Ligue_1 (Ligue 1)
+Scrapes all configured leagues from Opta API. Uses a manifest file to track
+which matches have already been scraped, avoiding the need to download
+gigabytes of data to check for existing matches.
 
 Data is saved to pannadata/data/opta/ with structure:
 - pannadata/data/opta/player_stats/{league}/{season}.parquet
 - pannadata/data/opta/shots/{league}/{season}.parquet
+- pannadata/data/opta/match_events/{league}/{season}.parquet
+- pannadata/data/opta/lineups/{league}/{season}.parquet
 
 Usage:
-    python scrape_big5.py                           # Scrape all leagues, current season
-    python scrape_big5.py --leagues EPL La_Liga     # Specific leagues
-    python scrape_big5.py --seasons 2024-2025 2023-2024  # Specific seasons
-    python scrape_big5.py --leagues EPL --seasons 2024-2025 2023-2024
+    python scrape_opta.py                           # Scrape all leagues, current season
+    python scrape_opta.py --leagues EPL La_Liga     # Specific leagues
+    python scrape_opta.py --seasons 2024-2025 2023-2024  # Specific seasons
+    python scrape_opta.py --leagues EPL --seasons 2024-2025 2023-2024
+    python scrape_opta.py --recent 1                # Most recent season per league
 """
 
 import json
@@ -27,6 +27,52 @@ from datetime import datetime
 from opta_scraper import OptaScraper, MatchEvent, ShotEvent, PlayerLineup, AllMatchEvent
 from dataclasses import asdict
 import pandas as pd
+
+
+def load_manifest(manifest_path: Path) -> set:
+    """Load existing match IDs from manifest file.
+
+    Returns set of (match_id, competition, season) tuples that have match_events.
+    """
+    if not manifest_path.exists():
+        print("No manifest found - will scrape all matches")
+        return set()
+
+    try:
+        df = pd.read_parquet(manifest_path)
+        # Only consider matches with match_events as "complete"
+        complete = df[df['has_match_events'] == True]
+        existing = set(zip(complete['match_id'], complete['competition'], complete['season']))
+        print(f"Loaded manifest: {len(existing):,} matches with complete event data")
+        return existing
+    except Exception as e:
+        print(f"Warning: Error loading manifest: {e}")
+        return set()
+
+
+def update_manifest(manifest_path: Path, new_matches: list):
+    """Update manifest with newly scraped matches.
+
+    new_matches: list of dicts with match_id, competition, season, and has_* flags
+    """
+    if not new_matches:
+        return
+
+    new_df = pd.DataFrame(new_matches)
+
+    if manifest_path.exists():
+        existing_df = pd.read_parquet(manifest_path)
+        # Combine and deduplicate (keep new records for same match_id/competition/season)
+        combined = pd.concat([existing_df, new_df], ignore_index=True)
+        combined = combined.drop_duplicates(
+            subset=['match_id', 'competition', 'season'],
+            keep='last'
+        )
+    else:
+        combined = new_df
+
+    combined.to_parquet(manifest_path, index=False, compression='gzip')
+    print(f"Updated manifest: {len(combined):,} total matches")
 
 
 def get_pannadata_dir():
@@ -90,8 +136,20 @@ def get_season_date_range(season_name: str) -> tuple:
 
 
 def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
-                  season_id: str, force_rescrape: bool = False):
-    """Scrape a full season of data for a competition with all data types"""
+                  season_id: str, manifest_matches: set, force_rescrape: bool = False):
+    """Scrape a full season of data for a competition with all data types.
+
+    Args:
+        scraper: OptaScraper instance
+        competition: League name (e.g., "EPL")
+        season_name: Season identifier (e.g., "2024-2025")
+        season_id: Opta season ID
+        manifest_matches: Set of (match_id, competition, season) tuples already scraped
+        force_rescrape: If True, ignore manifest and rescrape all matches
+
+    Returns:
+        dict with scraping results and list of new match records for manifest
+    """
 
     print(f"\n{'='*60}")
     print(f"Scraping {competition} {season_name}")
@@ -111,21 +169,15 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
     for d in output_dirs.values():
         d.mkdir(parents=True, exist_ok=True)
 
-    # Check for existing matches - only skip if match_events exists (the most complete table)
-    # This ensures we rescrape matches that are missing event data
+    # Use manifest to check for existing matches
     existing_match_ids = set()
     if not force_rescrape:
-        # Check match_events parquet - this is the critical table with all x/y event data
-        # Only skip matches that already have match_events scraped
-        existing_events_path = output_dirs["match_events"] / f"{season_name}.parquet"
-        if existing_events_path.exists():
-            try:
-                existing_df = pd.read_parquet(existing_events_path, columns=['match_id'])
-                existing_match_ids = set(existing_df['match_id'].unique())
-            except Exception:
-                pass  # If file is corrupt, rescrape everything
+        # Get match_ids from manifest for this competition/season
+        for match_id, comp, season in manifest_matches:
+            if comp == competition and season == season_name:
+                existing_match_ids.add(match_id)
         if existing_match_ids:
-            print(f"Found {len(existing_match_ids)} matches with complete event data")
+            print(f"Manifest shows {len(existing_match_ids)} matches already scraped")
 
     date_ranges = get_season_date_range(season_name)
 
@@ -137,6 +189,7 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
     all_events = []
     all_lineups = []
     new_matches_scraped = 0
+    new_manifest_records = []  # Track new matches for manifest update
 
     for start_date, end_date in date_ranges:
         print(f"\nFetching {start_date} to {end_date}...")
@@ -166,6 +219,9 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
             existing_match_ids.add(match_id)
             new_matches_scraped += 1
 
+            # Track for manifest update
+            has_events = False  # Will be set to True if we get event data
+
             # Extract from matchstats
             player_df = scraper.extract_all_player_stats(stats)
             all_player_stats.append(player_df)
@@ -188,6 +244,18 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
                 # Extract ALL events with x/y coords (passes, tackles, aerials, etc.)
                 match_events = scraper.extract_all_match_events(event_data)
                 all_match_events.extend([asdict(e) for e in match_events])
+                has_events = True
+
+            # Add manifest record for this match
+            new_manifest_records.append({
+                'match_id': match_id,
+                'competition': competition,
+                'season': season_name,
+                'has_player_stats': True,
+                'has_shots': len(shots) > 0,
+                'has_match_events': has_events,
+                'has_lineups': len(lineups) > 0,
+            })
 
             # Save raw JSON files
             raw_dir.mkdir(parents=True, exist_ok=True)
@@ -274,6 +342,7 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
         "match_event_records": len(results["match_events"]),
         "event_records": len(results["events"]),
         "lineup_records": len(results["lineups"]),
+        "manifest_records": new_manifest_records,
     }
 
 
@@ -328,6 +397,11 @@ def main():
     script_dir = Path(__file__).parent
     scraper = OptaScraper(data_dir=str(script_dir / "data"))
 
+    # Load manifest (tracks which matches have been scraped)
+    pannadata_dir = get_pannadata_dir()
+    manifest_path = pannadata_dir / "opta-manifest.parquet"
+    manifest_matches = load_manifest(manifest_path) if not args.force else set()
+
     print("=" * 60)
     print("OPTA LEAGUES SCRAPER")
     print("=" * 60)
@@ -338,11 +412,15 @@ def main():
 
     # Execute scraping
     results = []
+    all_new_manifest_records = []
     for league, season_name, season_id in scrape_plan:
         try:
             result = scrape_season(scraper, league, season_name, season_id,
+                                   manifest_matches=manifest_matches,
                                    force_rescrape=args.force)
             results.append(result)
+            # Collect manifest records from this season
+            all_new_manifest_records.extend(result.get("manifest_records", []))
         except Exception as e:
             print(f"ERROR scraping {league} {season_name}: {e}")
             results.append({
@@ -350,6 +428,10 @@ def main():
                 "season": season_name,
                 "error": str(e)
             })
+
+    # Update manifest with new matches
+    if all_new_manifest_records:
+        update_manifest(manifest_path, all_new_manifest_records)
 
     # Final summary
     print("\n" + "=" * 60)

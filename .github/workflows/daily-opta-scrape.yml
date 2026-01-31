@@ -24,7 +24,7 @@ on:
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 360
 
     permissions:
       contents: write
@@ -46,18 +46,40 @@ jobs:
     - name: Install Python dependencies
       run: pip install -r scripts/opta/requirements.txt
 
-    - name: Download existing Opta data from GitHub Releases
+    - name: Download manifest from GitHub Releases
       run: |
-        mkdir -p data/opta
-        echo "Checking for existing Opta data..."
-        if gh release download opta-latest --pattern "opta-parquet.tar.gz" --dir . 2>/dev/null; then
-          echo "Downloaded existing opta-parquet.tar.gz"
-          tar -xzf opta-parquet.tar.gz -C data/
-          rm opta-parquet.tar.gz
-          echo "Existing parquet files: $(find data/opta -name '*.parquet' | wc -l)"
+        mkdir -p data
+        echo "Downloading manifest..."
+        if gh release download opta-latest --pattern "opta-manifest.parquet" --dir data/ 2>/dev/null; then
+          echo "Downloaded opta-manifest.parquet"
+          echo "Manifest size: $(ls -lh data/opta-manifest.parquet | awk '{print $5}')"
         else
-          echo "No existing data found (first run)"
+          echo "No manifest found (first run or new setup)"
         fi
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Download existing per-league parquet files
+      run: |
+        mkdir -p data/opta/player_stats data/opta/shots data/opta/match_events data/opta/lineups data/opta/events data/opta/shot_events
+        echo "Downloading existing consolidated files..."
+
+        # Download consolidated files (player_stats, shots, etc.)
+        for file in opta_player_stats.parquet opta_shots.parquet opta_shot_events.parquet opta_events.parquet opta_lineups.parquet; do
+          if gh release download opta-latest --pattern "$file" --dir data/ 2>/dev/null; then
+            echo "Downloaded $file"
+          fi
+        done
+
+        # Download per-league events files
+        mkdir -p data/consolidated/match_events
+        for file in $(gh release view opta-latest --json assets -q '.assets[].name' 2>/dev/null | grep "^events_" || true); do
+          if gh release download opta-latest --pattern "$file" --dir data/consolidated/match_events/ 2>/dev/null; then
+            echo "Downloaded $file"
+          fi
+        done
+
+        echo "Download complete"
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -86,22 +108,19 @@ jobs:
         mkdir -p consolidated
         python ../scripts/opta/consolidate_opta.py
 
-    - name: Create archive and upload to GitHub Releases
+    - name: Upload to GitHub Releases
       run: |
         cd data
-        PARQUET_COUNT=$(find opta -name "*.parquet" 2>/dev/null | wc -l)
-        if [ "$PARQUET_COUNT" -eq 0 ]; then
-          echo "No data to upload"
-          exit 0
-        fi
-
-        # Create tar.gz archive
-        tar -czvf opta-parquet.tar.gz opta/
-        echo "Created opta-parquet.tar.gz ($(ls -lh opta-parquet.tar.gz | awk '{print $5}'))"
 
         # Ensure release exists
         if ! gh release view opta-latest >/dev/null 2>&1; then
-          gh release create opta-latest --title "Opta Data (Latest)" --notes "Automated daily Opta data scrape." --prerelease
+          gh release create opta-latest --title "Opta Data (Latest)" --notes "Automated daily Opta data scrape. Uses manifest-based incremental updates." --prerelease
+        fi
+
+        # Upload manifest (critical for incremental scraping)
+        if [ -f "opta-manifest.parquet" ]; then
+          gh release upload opta-latest opta-manifest.parquet --clobber
+          echo "Uploaded opta-manifest.parquet ($(ls -lh opta-manifest.parquet | awk '{print $5}'))"
         fi
 
         # Upload consolidated parquets (by table type)
@@ -117,8 +136,6 @@ jobs:
           echo "Uploaded $(ls consolidated/match_events/events_*.parquet 2>/dev/null | wc -l) events files"
         fi
 
-        # Upload archive
-        gh release upload opta-latest opta-parquet.tar.gz --clobber
         echo "Upload complete"
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -126,6 +143,7 @@ jobs:
     - name: Summary
       run: |
         echo "Daily Opta scrape completed"
+        echo "Manifest: $(ls -lh data/opta-manifest.parquet 2>/dev/null | awk '{print $5}' || echo 'Not found')"
         echo "Raw parquet files: $(find data/opta -name '*.parquet' 2>/dev/null | wc -l)"
         echo "Consolidated by table:"
         ls -lh data/consolidated/opta_*.parquet 2>/dev/null || echo "  None"
