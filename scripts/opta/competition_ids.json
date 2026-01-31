@@ -1,0 +1,2402 @@
+{
+  "2bv3vanywkunm4bzt7i3121l1": {
+    "name": "Premier League",
+    "num_seasons": 9,
+    "latest_season": "2020",
+    "oldest_season": "2012"
+  },
+  "ax1yf4nlzqpcji4j8epdgx3zl": {
+    "name": "Africa Cup of Nations Qualification",
+    "num_seasons": 10,
+    "latest_season": "2027 Kenya/Tanzania/Uganda",
+    "oldest_season": "2008 Ghana"
+  },
+  "64fygrchlfuz3q4lc7k2ffj84": {
+    "name": "Africa U17 Cup of Nations Qualification",
+    "num_seasons": 9,
+    "latest_season": "2026",
+    "oldest_season": "2011 Rwanda"
+  },
+  "7dauoeun2gnkofl7f4y510s4f": {
+    "name": "Africa U20 Cup of Nations",
+    "num_seasons": 9,
+    "latest_season": "2027",
+    "oldest_season": "2011 South Africa"
+  },
+  "4fht4nyqpp5dzzv6ucm057dp0": {
+    "name": "Africa U20 Cup of Nations Qualification",
+    "num_seasons": 9,
+    "latest_season": "2027",
+    "oldest_season": "2011 South Africa"
+  },
+  "27zeqzs85uxv3eej1mhot6gic": {
+    "name": "Africa U23 Cup of Nations Qualification",
+    "num_seasons": 4,
+    "latest_season": "2027",
+    "oldest_season": "2015 Senegal"
+  },
+  "2cb7wex1kos0h0dtehlovab6c": {
+    "name": "Africa Women Cup of Nations Qualification",
+    "num_seasons": 12,
+    "latest_season": "2028",
+    "oldest_season": "2006 Nigeria"
+  },
+  "24xvg71qcrsiayaf2ljwu6z9w": {
+    "name": "African Football League",
+    "num_seasons": 1,
+    "latest_season": "2023",
+    "oldest_season": "2023"
+  },
+  "61ny7153y7f0nqpwop51qd49h": {
+    "name": "African Games",
+    "num_seasons": 5,
+    "latest_season": "2027",
+    "oldest_season": "2011 Maputo"
+  },
+  "93n3ie5xphxyiggdsg5xk3uok": {
+    "name": "African Games Women",
+    "num_seasons": 2,
+    "latest_season": "2027",
+    "oldest_season": "2023 Accra"
+  },
+  "ad8y7vdjhinfqv4wo8rod6dck": {
+    "name": "African Nations Championship Qualification",
+    "num_seasons": 9,
+    "latest_season": "2026",
+    "oldest_season": "2009 Côte d'Ivoire"
+  },
+  "68zplepppndhl8bfdvgy9vgu1": {
+    "name": "CAF Africa Cup of Nations",
+    "num_seasons": 16,
+    "latest_season": "2027 Kenya/Tanzania/Uganda",
+    "oldest_season": "1998 Burkina Faso"
+  },
+  "2r1hqz453bn9ljzt53kdr2lwb": {
+    "name": "CAF African Nations Championship",
+    "num_seasons": 9,
+    "latest_season": "2026",
+    "oldest_season": "2009 Côte d'Ivoire"
+  },
+  "cse5oqqt2pzfcy8uz6yz3tkbj": {
+    "name": "CAF Champions League",
+    "num_seasons": 22,
+    "latest_season": "2025/2026",
+    "oldest_season": "2005"
+  },
+  "bx57cmq1edfq53ckfk791supi": {
+    "name": "CAF Confederation Cup",
+    "num_seasons": 20,
+    "latest_season": "2025/2026",
+    "oldest_season": "2007"
+  },
+  "22dnvpi8qeluhs1f7y9l07a2x": {
+    "name": "CAF Super Cup",
+    "num_seasons": 20,
+    "latest_season": "2026/2027",
+    "oldest_season": "2008"
+  },
+  "aenz5625kw4280usgjnbo8mqz": {
+    "name": "CAF U17 Cup of Nations",
+    "num_seasons": 9,
+    "latest_season": "2026",
+    "oldest_season": "2011 Rwanda"
+  },
+  "7x9eojz1qgdq689kwmex501k9": {
+    "name": "CAF U23 Cup of Nations",
+    "num_seasons": 4,
+    "latest_season": "2027",
+    "oldest_season": "2015 Senegal"
+  },
+  "14bdhdgyjd4pqapxjhfq267ge": {
+    "name": "CAF Women's Africa Cup of Nations",
+    "num_seasons": 11,
+    "latest_season": "2026 Morocco",
+    "oldest_season": "2006 Nigeria"
+  },
+  "xu2nd3dkwdun0j71tnqabfo4": {
+    "name": "CAF Women's Champions League",
+    "num_seasons": 6,
+    "latest_season": "2026",
+    "oldest_season": "2021"
+  },
+  "3aa4mumjl6zyetg6o9hwd5hhx": {
+    "name": "CAF World Cup Qualifiers",
+    "num_seasons": 9,
+    "latest_season": "2030 Morocco/Portugal/Spain",
+    "oldest_season": "1934 Italy"
+  },
+  "3qixixbgvsajit71o6mxb7x4a": {
+    "name": "CECAFA Club Cup",
+    "num_seasons": 6,
+    "latest_season": "2026",
+    "oldest_season": "2018"
+  },
+  "bi1u4m4xssntipznvmocabh39": {
+    "name": "CECAFA Senior Challenge Cup",
+    "num_seasons": 9,
+    "latest_season": "2026",
+    "oldest_season": "2010 Tanzania"
+  },
+  "87t07zvqxyhz97trp3bep9c0k": {
+    "name": "CECAFA U20 Championship",
+    "num_seasons": 4,
+    "latest_season": "2025",
+    "oldest_season": "2020"
+  },
+  "8vr10yi3vrkiem3lqc3cdc4x5": {
+    "name": "CECAFA Women's Senior Challenge Cup",
+    "num_seasons": 6,
+    "latest_season": "2027",
+    "oldest_season": "2016 Uganda"
+  },
+  "5liafywveaf56s2nod8hg9nca": {
+    "name": "COSAFA Cup",
+    "num_seasons": 9,
+    "latest_season": "2026",
+    "oldest_season": "2017 South Africa"
+  },
+  "89xp61lrgd40cwvcsx9h2di0a": {
+    "name": "COSAFA U20 Championship",
+    "num_seasons": 8,
+    "latest_season": "2026",
+    "oldest_season": "2017 Zambia"
+  },
+  "f4vol68gjccwoajo0os2q09ka": {
+    "name": "COSAFA Women's Cup",
+    "num_seasons": 8,
+    "latest_season": "2026",
+    "oldest_season": "2018 South Africa"
+  },
+  "7qce1cyzv51an5furf31escx6": {
+    "name": "COSAFA Women's U20 Cup",
+    "num_seasons": 4,
+    "latest_season": "2026",
+    "oldest_season": "2019 South Africa"
+  },
+  "5se5e4dgm0tlqe0beietbe2tx": {
+    "name": "Nile Basin Tournament",
+    "num_seasons": 1,
+    "latest_season": "2011 Egypt",
+    "oldest_season": "2011 Egypt"
+  },
+  "5acukok3j1ozfgc266wgcy3je": {
+    "name": "SportPesa Super Cup",
+    "num_seasons": 2,
+    "latest_season": "2019",
+    "oldest_season": "2018"
+  },
+  "4kuej2okhbhexnyo542msavl6": {
+    "name": "U17 Women's World Cup Qualification Africa",
+    "num_seasons": 6,
+    "latest_season": "2026 Morocco",
+    "oldest_season": "2018 Uruguay"
+  },
+  "3lmcbdd5m14q5erbtool2o9en": {
+    "name": "U20 Women's World Cup Qualification Africa",
+    "num_seasons": 7,
+    "latest_season": "2026 Poland",
+    "oldest_season": "2013/2014"
+  },
+  "9dqigt7hlke2zrc3jvq735dgq": {
+    "name": "UNAF Women's Tournament",
+    "num_seasons": 2,
+    "latest_season": "2024",
+    "oldest_season": "2020 Tunisia"
+  },
+  "2p8utuu6n84ysofox2i11ezxm": {
+    "name": "UNIFFAC Women's Tournament",
+    "num_seasons": 2,
+    "latest_season": "2024",
+    "oldest_season": "2020"
+  },
+  "5krw9gokv1sxsmuc5sazclbmc": {
+    "name": "WAFU A Women's Cup",
+    "num_seasons": 2,
+    "latest_season": "2026",
+    "oldest_season": "2025 Mauritania"
+  },
+  "ca8rm2w4gfxgzerkukyxn5e96": {
+    "name": "WAFU Cup of Nations",
+    "num_seasons": 3,
+    "latest_season": "2024",
+    "oldest_season": "2017 Ghana"
+  },
+  "a1o520wpyhu8hjdsbf692j0tl": {
+    "name": "Women's Olympic Qualifying CAF",
+    "num_seasons": 4,
+    "latest_season": "2028 Los Angeles",
+    "oldest_season": "2016 Rio de Janeiro"
+  },
+  "5laava24i9c121nm1hooqrubl": {
+    "name": "1st Division",
+    "num_seasons": 19,
+    "latest_season": "2025/2026",
+    "oldest_season": "2007/2008"
+  },
+  "59d9gyqzygoewbix247fnbvpn": {
+    "name": "2nd Division",
+    "num_seasons": 18,
+    "latest_season": "2025/2026",
+    "oldest_season": "2008/2009"
+  },
+  "5h4rpn83aeqzc275kvc8mirxq": {
+    "name": "Cup",
+    "num_seasons": 22,
+    "latest_season": "2025/2026",
+    "oldest_season": "2004/2005"
+  },
+  "206lf2ygly8ishgchcy6jc5m2": {
+    "name": "Kampionati i Femrave",
+    "num_seasons": 10,
+    "latest_season": "2025/2026",
+    "oldest_season": "2016/2017"
+  },
+  "62tmn0smwchfftjkafaj5ts5x": {
+    "name": "Play-offs 1/2",
+    "num_seasons": 12,
+    "latest_season": "2025/2026",
+    "oldest_season": "2007/2008"
+  },
+  "6340ycwona6mel8qdkuyxbx05": {
+    "name": "Play-offs 2/3",
+    "num_seasons": 16,
+    "latest_season": "2025/2026",
+    "oldest_season": "2008/2009"
+  },
+  "9iqaslqco4yf8c1cmnqorope5": {
+    "name": "Super Cup",
+    "num_seasons": 17,
+    "latest_season": "2026/2027",
+    "oldest_season": "2010/2011"
+  },
+  "1zcp6rnjil25rnsv1ttcz3dhx": {
+    "name": "Superliga",
+    "num_seasons": 28,
+    "latest_season": "2025/2026",
+    "oldest_season": "1998/1999"
+  },
+  "dr6r77p0pavomlvzvdkjrj54h": {
+    "name": "Coupe Nationale",
+    "num_seasons": 16,
+    "latest_season": "2025/2026",
+    "oldest_season": "2008/2009"
+  },
+  "c984sgbjitqhheznzctfzprf8": {
+    "name": "Coupe de la Ligue",
+    "num_seasons": 1,
+    "latest_season": "2020/2021",
+    "oldest_season": "2020/2021"
+  },
+  "57nu0wygurzkp6fuy5hhrtaa2": {
+    "name": "Ligue 1",
+    "num_seasons": 22,
+    "latest_season": "2025/2026",
+    "oldest_season": "2004/2005"
+  },
+  "9hh6n2f84k31zmlcxyvmc1w2y": {
+    "name": "Ligue 2",
+    "num_seasons": 22,
+    "latest_season": "2025/2026",
+    "oldest_season": "2004/2005"
+  },
+  "9mjnt1mei5wcehylmffc19ic4": {
+    "name": "Reserve League",
+    "num_seasons": 2,
+    "latest_season": "2025/2026",
+    "oldest_season": "2024/2025"
+  },
+  "7eh9ynr7f0lcp7yv2rm8i3rba": {
+    "name": "Super Cup",
+    "num_seasons": 11,
+    "latest_season": "2026/2027",
+    "oldest_season": "2014"
+  },
+  "5a1bw1gcizd2iud370nc3yyob": {
+    "name": "U21 League 1",
+    "num_seasons": 11,
+    "latest_season": "2023/2024",
+    "oldest_season": "2013/2014"
+  },
+  "1jgddm8h9hi53ecy6p7qqisd6": {
+    "name": "Division 1",
+    "num_seasons": 2,
+    "latest_season": "2011/2012",
+    "oldest_season": "2010/2011"
+  },
+  "ejunkmfhjz9weugd2bqrkgobb": {
+    "name": "1a Divisió",
+    "num_seasons": 27,
+    "latest_season": "2025/2026",
+    "oldest_season": "1999/2000"
+  },
+  "3srzp139thd2ppo8ediqcasuq": {
+    "name": "2a Divisió",
+    "num_seasons": 20,
+    "latest_season": "2025/2026",
+    "oldest_season": "2006/2007"
+  },
+  "7yx3dmsu97t2azo5nsowt7vwo": {
+    "name": "Copa Constitució",
+    "num_seasons": 20,
+    "latest_season": "2025/2026",
+    "oldest_season": "2006/2007"
+  },
+  "2y7myq41xi0b0nvbmh6a4k3lh": {
+    "name": "Play-offs 1/2",
+    "num_seasons": 20,
+    "latest_season": "2025/2026",
+    "oldest_season": "2006/2007"
+  },
+  "9r9w9f59lfycbl6d4iyak2e67": {
+    "name": "Super Cup",
+    "num_seasons": 16,
+    "latest_season": "2026/2027",
+    "oldest_season": "2011/2012"
+  },
+  "6c76ua2pykvzepkmpprq4i8kf": {
+    "name": "Girabola",
+    "num_seasons": 21,
+    "latest_season": "2025/2026",
+    "oldest_season": "2006"
+  },
+  "71c1runfwtsf1gq8dj67b12na": {
+    "name": "Super Cup",
+    "num_seasons": 14,
+    "latest_season": "2026/2027",
+    "oldest_season": "2012"
+  },
+  "4ldempy7w5mi1yhxxhexquzkl": {
+    "name": "Premier Division",
+    "num_seasons": 17,
+    "latest_season": "2025/2026",
+    "oldest_season": "2007/2008"
+  },
+  "bdtat25m14jy85y484z3e6lf": {
+    "name": "Copa Argentina",
+    "num_seasons": 14,
+    "latest_season": "2026",
+    "oldest_season": "2011/2012"
+  },
+  "cttkdbft9ocoa7n2pwmuxej1l": {
+    "name": "Copa Bicentenario",
+    "num_seasons": 1,
+    "latest_season": "2016",
+    "oldest_season": "2016"
+  },
+  "3u6pw0a9888yqczfztofvgmi1": {
+    "name": "Copa Libertadores Play-off",
+    "num_seasons": 1,
+    "latest_season": "2015",
+    "oldest_season": "2015"
+  },
+  "6q6al9aofo1zlf9l11qcpmvl6": {
+    "name": "Copa Santa Fe",
+    "num_seasons": 7,
+    "latest_season": "2026",
+    "oldest_season": "2018"
+  },
+  "51dpxc3hxobmjwkqvcm1nv14a": {
+    "name": "Copa de la Superliga",
+    "num_seasons": 2,
+    "latest_season": "2020",
+    "oldest_season": "2019"
+  },
+  "8sdbanemu1l5xwu79ngxq62y2": {
+    "name": "Copa de la Superliga Reserves",
+    "num_seasons": 2,
+    "latest_season": "2020",
+    "oldest_season": "2019"
+  },
+  "581t4mywybx21wcpmpykhyzr3": {
+    "name": "Liga Profesional Argentina",
+    "num_seasons": 29,
+    "latest_season": "2026",
+    "oldest_season": "1999/2000"
+  },
+  "1bt857hwbr63i91c13mozk79x": {
+    "name": "Play-offs 1/2",
+    "num_seasons": 5,
+    "latest_season": "2011/2012",
+    "oldest_season": "2007/2008"
+  },
+  "1cdi9vmb33ihlj8ymldgl6579": {
+    "name": "Play-offs 2/3",
+    "num_seasons": 4,
+    "latest_season": "2020",
+    "oldest_season": "2009/2010"
+  },
+  "3d728ddcaa02vltiyo8g6d5ud": {
+    "name": "Play-offs 3/4",
+    "num_seasons": 2,
+    "latest_season": "2011/2012",
+    "oldest_season": "2010/2011"
+  },
+  "3ci62gdhzbbdykdh142bwnb9x": {
+    "name": "Play-offs 4/5",
+    "num_seasons": 3,
+    "latest_season": "2026/2027",
+    "oldest_season": "2011/2012"
+  },
+  "66nxwll8fur0rtp9q7wqaki1l": {
+    "name": "Prim B Metro",
+    "num_seasons": 21,
+    "latest_season": "2026",
+    "oldest_season": "2006/2007"
+  },
+  "8nbwkj392b0xzssqpw9jwmzdn": {
+    "name": "Primera A",
+    "num_seasons": 15,
+    "latest_season": "2026",
+    "oldest_season": "2012/2013"
+  },
+  "2tyo5z2kcb5eiv8u53ne72yn4": {
+    "name": "Primera C",
+    "num_seasons": 21,
+    "latest_season": "2026",
+    "oldest_season": "2006/2007"
+  },
+  "updshmymw8d768hdoii8wz0b": {
+    "name": "Primera D",
+    "num_seasons": 18,
+    "latest_season": "2023",
+    "oldest_season": "2006/2007"
+  },
+  "byu00jvt1j6csyv4y1lkt2fm2": {
+    "name": "Primera Nacional",
+    "num_seasons": 25,
+    "latest_season": "2026",
+    "oldest_season": "2003/2004"
+  },
+  "6u0gx8hh4lyci4fnbfvcvb3mc": {
+    "name": "Recopa de Campeones",
+    "num_seasons": 1,
+    "latest_season": "2026",
+    "oldest_season": "2026"
+  },
+  "1eimd27tu748g3q46i0qapem3": {
+    "name": "Super Copa",
+    "num_seasons": 12,
+    "latest_season": "2026",
+    "oldest_season": "2012/2013"
+  },
+  "cjfsodtfpi0mm2594rbj2urro": {
+    "name": "Super Copa International",
+    "num_seasons": 4,
+    "latest_season": "2026",
+    "oldest_season": "2023"
+  },
+  "a08z7wsz0uqx90wsj33g65fcd": {
+    "name": "Torneo Federal A",
+    "num_seasons": 21,
+    "latest_season": "2026",
+    "oldest_season": "2006/2007"
+  },
+  "57cs3ewfi1ql2l6lrm29kf6dw": {
+    "name": "Torneo Promocional Amateur",
+    "num_seasons": 3,
+    "latest_season": "2026",
+    "oldest_season": "2024"
+  },
+  "2f3fydvyjz2svhlc1eo3qflwd": {
+    "name": "Torneo Proyección",
+    "num_seasons": 14,
+    "latest_season": "2026",
+    "oldest_season": "2013/2014"
+  },
+  "5zfudxcld0kr6bspk1jauq3t9": {
+    "name": "Torneo Regional Federal Amateur",
+    "num_seasons": 21,
+    "latest_season": "2025/2026",
+    "oldest_season": "2006/2007"
+  },
+  "a81lq2nnsh2h11qr4z5cpieei": {
+    "name": "Trofeo de Campeones",
+    "num_seasons": 8,
+    "latest_season": "2026",
+    "oldest_season": "2019"
+  },
+  "2jag15vrwxiag9vu5n67l1ck2": {
+    "name": "Cup",
+    "num_seasons": 22,
+    "latest_season": "2025/2026",
+    "oldest_season": "2005"
+  },
+  "1be64lgp0chekkyu0iuyta8kc": {
+    "name": "First League",
+    "num_seasons": 19,
+    "latest_season": "2025/2026",
+    "oldest_season": "2007"
+  },
+  "dn9kmfdbz74lzt3m8e9g0vwjq": {
+    "name": "Premier League",
+    "num_seasons": 22,
+    "latest_season": "2025/2026",
+    "oldest_season": "2004"
+  },
+  "dbj7lzxnyhc6xuj3kwfz2bnq2": {
+    "name": "Super Cup",
+    "num_seasons": 15,
+    "latest_season": "2025/2026",
+    "oldest_season": "2010/2011"
+  },
+  "85syl2rt0j0ioste72bva9jrv": {
+    "name": "Copa Betico Croes",
+    "num_seasons": 13,
+    "latest_season": "2025/2026",
+    "oldest_season": "2014"
+  },
+  "ai1avxe03fp35cep030gkcwjs": {
+    "name": "Division di Honor",
+    "num_seasons": 19,
+    "latest_season": "2025/2026",
+    "oldest_season": "2007/2008"
+  },
+  "21unwecwwhmf87e9awiyd7ztg": {
+    "name": "Play-offs 1/2",
+    "num_seasons": 2,
+    "latest_season": "2025/2026",
+    "oldest_season": "2024/2025"
+  },
+  "93i7thp7zi0ympyt6l8aa1r2i": {
+    "name": "AFC Asian Cup",
+    "num_seasons": 7,
+    "latest_season": "2027 Saudi Arabia",
+    "oldest_season": "2004 China"
+  },
+  "96sa8o4edd5nq6b66aj3diptw": {
+    "name": "AFC Challenge Cup",
+    "num_seasons": 5,
+    "latest_season": "2014 Maldives",
+    "oldest_season": "2006 Bangladesh"
+  },
+  "93cgnp505neae8bj9n0ezhjwd": {
+    "name": "AFC Challenge League",
+    "num_seasons": 12,
+    "latest_season": "2025/2026",
+    "oldest_season": "2005"
+  },
+  "1fedahp0rws09tj451onten8r": {
+    "name": "AFC Champions League Elite",
+    "num_seasons": 21,
+    "latest_season": "2025/2026",
+    "oldest_season": "2005"
+  },
+  "e6vzdkz6l236s9p288mharefy": {
+    "name": "AFC Champions League Two",
+    "num_seasons": 21,
+    "latest_season": "2025/2026",
+    "oldest_season": "2005"
+  },
+  "4wnsmza2xvjpv5hncquf8nf8p": {
+    "name": "AFC Solidarity Cup",
+    "num_seasons": 1,
+    "latest_season": "2016 Malaysia",
+    "oldest_season": "2016 Malaysia"
+  },
+  "1rx7z1555431whwx7e22w5oip": {
+    "name": "AFC U16 Championship",
+    "num_seasons": 6,
+    "latest_season": "2020",
+    "oldest_season": "2010 Uzbekistan"
+  },
+  "d4etiuv6knrxxuqk85mhf2k9g": {
+    "name": "AFC U16 Championship Qualification",
+    "num_seasons": 6,
+    "latest_season": "2020",
+    "oldest_season": "2010 Uzbekistan"
+  },
+  "5hsre7qg837drlvp5nuatly39": {
+    "name": "AFC U16 Women's Championship",
+    "num_seasons": 4,
+    "latest_season": "2019 Thailand",
+    "oldest_season": "2013 China PR"
+  },
+  "36vh6edwygk0zgj53awcke238": {
+    "name": "AFC U16 Women's Championship Qualification",
+    "num_seasons": 4,
+    "latest_season": "2019 Thailand",
+    "oldest_season": "2013 China PR"
+  },
+  "2ffdvl11p1b2j5j7mnbxnuivo": {
+    "name": "AFC U17 Asian Cup",
+    "num_seasons": 3,
+    "latest_season": "2026 Saudi Arabia",
+    "oldest_season": "2023 Thailand"
+  },
+  "4xzpwbsg6q80i2aysnqf0krv8": {
+    "name": "AFC U17 Asian Cup Qualification",
+    "num_seasons": 4,
+    "latest_season": "2027 Saudi Arabia",
+    "oldest_season": "2023"
+  },
+  "9r3py108z10zvv71n50p9ymay": {
+    "name": "AFC U17 Women's Asian Cup",
+    "num_seasons": 2,
+    "latest_season": "2026 China",
+    "oldest_season": "2024 Indonesia"
+  },
+  "crj3kkgq679afvp4tyiifffca": {
+    "name": "AFC U17 Women's Asian Cup Qualification",
+    "num_seasons": 3,
+    "latest_season": "2027 China",
+    "oldest_season": "2024 Indonesia"
+  },
+  "d7uimxfsc9aphi4drehshj7ae": {
+    "name": "AFC U19 Championship",
+    "num_seasons": 6,
+    "latest_season": "2020",
+    "oldest_season": "2010 China PR"
+  },
+  "bbj9sl38rb39tbkw3rg2qit5g": {
+    "name": "AFC U19 Championship  Qualification",
+    "num_seasons": 6,
+    "latest_season": "2020",
+    "oldest_season": "2010 China PR"
+  },
+  "5ib9wakk8g629t5xl16rbfiz9": {
+    "name": "AFC U19 Women's Championship",
+    "num_seasons": 4,
+    "latest_season": "2019 Thailand",
+    "oldest_season": "2013 China PR"
+  },
+  "4yn9ayk9kth369uclgmxb63h0": {
+    "name": "AFC U19 Women's Championship Qualification",
+    "num_seasons": 4,
+    "latest_season": "2019 Thailand",
+    "oldest_season": "2013 China PR"
+  },
+  "a8zfs5watabzd386mqas8rn6c": {
+    "name": "AFC U20 Asian Cup",
+    "num_seasons": 3,
+    "latest_season": "2027",
+    "oldest_season": "2023 Uzbekistan"
+  },
+  "c889g8rf89us2wf9jga0v7xuc": {
+    "name": "AFC U20 Asian Cup Qualification",
+    "num_seasons": 3,
+    "latest_season": "2027",
+    "oldest_season": "2023"
+  },
+  "e72eouiobe3w4nnd6u846cz1m": {
+    "name": "AFC U20 Women's Asian Cup",
+    "num_seasons": 2,
+    "latest_season": "2026 Thailand",
+    "oldest_season": "2024 Uzbekistan"
+  },
+  "89edmwynhffa7dr9l5cvugmzu": {
+    "name": "AFC U20 Women's Asian Cup Qualification",
+    "num_seasons": 3,
+    "latest_season": "2028",
+    "oldest_season": "2024 Uzbekistan"
+  },
+  "60cy8g9m48912dc68jv1zu68d": {
+    "name": "AFC U22 Championship",
+    "num_seasons": 1,
+    "latest_season": "2013 Oman",
+    "oldest_season": "2013 Oman"
+  },
+  "dlf90uty1axvtr1vn2aaw9vqh": {
+    "name": "AFC U23 Asian Cup",
+    "num_seasons": 7,
+    "latest_season": "2028",
+    "oldest_season": "2016 Qatar"
+  },
+  "9c0sdh9dm7ktcvs7vojicls7o": {
+    "name": "AFC U23 Asian Cup Qualification",
+    "num_seasons": 7,
+    "latest_season": "2028",
+    "oldest_season": "2016 Qatar"
+  },
+  "107srxl6dq0esc8tfzz3dpit": {
+    "name": "AFC Women's Asian Cup",
+    "num_seasons": 7,
+    "latest_season": "2026 Australia",
+    "oldest_season": "2006 Australia"
+  },
+  "ep4po13e04rjg268pgete0fvu": {
+    "name": "AFC Women's Champions League",
+    "num_seasons": 6,
+    "latest_season": "2025/2026",
+    "oldest_season": "2019 Korea Republic"
+  },
+  "40yjcbx2sq6oq736iqqqczwt1": {
+    "name": "AFC World Cup Qualifiers",
+    "num_seasons": 8,
+    "latest_season": "2030 Morocco/Portugal/Spain",
+    "oldest_season": "2002 Korea Rep/Japan"
+  },
+  "a7hlzsrez13492q94edp2ffje": {
+    "name": "AFF U15 Women's Championship",
+    "num_seasons": 1,
+    "latest_season": "2019 Thailand",
+    "oldest_season": "2019 Thailand"
+  },
+  "4gyhjrol8ycf1taamo21fvfh2": {
+    "name": "AGCFF Gulf Champions League",
+    "num_seasons": 8,
+    "latest_season": "2025/2026",
+    "oldest_season": "2010"
+  },
+  "c88pedjcg92m39bxqdeogjbhs": {
+    "name": "AGCFF Gulf Cup U17",
+    "num_seasons": 7,
+    "latest_season": "2026",
+    "oldest_season": "2012 Kuwait"
+  },
+  "5xvfy8ah3utz2h925w9k5mtxw": {
+    "name": "AGCFF Gulf Cup U20",
+    "num_seasons": 2,
+    "latest_season": "2026",
+    "oldest_season": "2025 Saudi Arabia"
+  },
+  "9wco8ykrzgg2l8r7zkxw691jo": {
+    "name": "AGCFF Gulf Cup U23",
+    "num_seasons": 2,
+    "latest_season": "2026",
+    "oldest_season": "2025 Qatar"
+  },
+  "8dxsd8xnjm9n1ogo37yomgl3p": {
+    "name": "ASEAN Championship",
+    "num_seasons": 11,
+    "latest_season": "2026",
+    "oldest_season": "2007 Singapore/Thailand"
+  },
+  "a8r9qrfuol4noawf7u9kmqrys": {
+    "name": "ASEAN Championship Qualification",
+    "num_seasons": 9,
+    "latest_season": "2022",
+    "oldest_season": "2007 Singapore/Thailand"
+  },
+  "6j6x5731pkw3tzvm5gpvbspas": {
+    "name": "ASEAN Club Championship",
+    "num_seasons": 2,
+    "latest_season": "2025/2026",
+    "oldest_season": "2024/2025"
+  },
+  "8hqm35d8jz2xn1uaxxfbhhiso": {
+    "name": "ASEAN U16 Championship",
+    "num_seasons": 8,
+    "latest_season": "2026",
+    "oldest_season": "2013 Myanmar"
+  },
+  "3oou3t0rf7xf45w1zzvvgs9fx": {
+    "name": "ASEAN U19 Championship",
+    "num_seasons": 11,
+    "latest_season": "2025",
+    "oldest_season": "2012 Vietnam"
+  },
+  "5p0v7s4g7idym875mfb9m3k2y": {
+    "name": "ASEAN U23 Championship",
+    "num_seasons": 5,
+    "latest_season": "2027",
+    "oldest_season": "2019 Cambodia"
+  },
+  "5adng1a0v1k97emai1libg3h": {
+    "name": "ASEAN Women's Championship",
+    "num_seasons": 11,
+    "latest_season": "2028",
+    "oldest_season": "2011 Laos"
+  },
+  "86b30pmmbgqqgn6emfdf7tw4": {
+    "name": "ASEAN Women's Championship Qualification",
+    "num_seasons": 2,
+    "latest_season": "2026",
+    "oldest_season": "2024"
+  },
+  "ddiu4jbnme5knwu40sj2eppbe": {
+    "name": "Airmarine Cup",
+    "num_seasons": 1,
+    "latest_season": "2019",
+    "oldest_season": "2019"
+  },
+  "emy1ibc8fu2l0fukh4vlu5xl5": {
+    "name": "Asian Cup Qualification",
+    "num_seasons": 7,
+    "latest_season": "2027 Saudi Arabia",
+    "oldest_season": "2004 China"
+  },
+  "8c93rclta164ypkno054nkfyt": {
+    "name": "Asian Games",
+    "num_seasons": 6,
+    "latest_season": "2026 Japan",
+    "oldest_season": "2006 Qatar"
+  },
+  "ude9t6yj60lebbn356qzg4k4": {
+    "name": "CAFA Nations Cup",
+    "num_seasons": 3,
+    "latest_season": "2027",
+    "oldest_season": "2023"
+  },
+  "5y2gt23c30e73v2ei6m8qafbo": {
+    "name": "CAFA U20 Championship",
+    "num_seasons": 2,
+    "latest_season": "2026",
+    "oldest_season": "2025 Tajikistan"
+  },
+  "9vmvnul0y9un0lvln4zoobehg": {
+    "name": "CAFA Women's Championship",
+    "num_seasons": 3,
+    "latest_season": "2023",
+    "oldest_season": "2018"
+  },
+  "1nta6ljqryzmwl9njiqtt45at": {
+    "name": "EAFF E-1 Football Championship",
+    "num_seasons": 11,
+    "latest_season": "2028",
+    "oldest_season": "2003 Japan"
+  },
+  "5gprnr61il34svwh1j30w161h": {
+    "name": "EAFF E-1 Football Championship Women",
+    "num_seasons": 7,
+    "latest_season": "2026",
+    "oldest_season": "2013 Korea Republic"
+  },
+  "7ncu68l8o4qr5pj0lbta50xec": {
+    "name": "EAFF Football Championship Qualification",
+    "num_seasons": 10,
+    "latest_season": "2028",
+    "oldest_season": "2003 Japan"
+  },
+  "ahegfek1hfe5vz7aholo5w844": {
+    "name": "EAFF Football Championship Women Qualification",
+    "num_seasons": 4,
+    "latest_season": "2019 Korea Republic",
+    "oldest_season": "2013 Korea Republic"
+  },
+  "41rlvjolzjuridjuu2cyos8gz": {
+    "name": "East Asian Games",
+    "num_seasons": 1,
+    "latest_season": "2013 China PR",
+    "oldest_season": "2013 China PR"
+  },
+  "6yeu4m8ey7hcaa5wuf6oe81iw": {
+    "name": "Gulf Cup of Nations",
+    "num_seasons": 10,
+    "latest_season": "2025 Saudi Arabia",
+    "oldest_season": "2007 UAE"
+  },
+  "21cb0fknvja5vrcapybr2j1oc": {
+    "name": "Gulf Olympic Teams Cup",
+    "num_seasons": 4,
+    "latest_season": "2016 Qatar",
+    "oldest_season": "2012 Qatar"
+  },
+  "akfikpq2kinqw9zbzubojtkyy": {
+    "name": "Hassanal Bolkiah Trophy",
+    "num_seasons": 2,
+    "latest_season": "2022",
+    "oldest_season": "2018"
+  },
+  "18iyvzfoqdtlkr0ldyw0c0qju": {
+    "name": "M-150 Cup U23",
+    "num_seasons": 1,
+    "latest_season": "2017",
+    "oldest_season": "2017"
+  },
+  "91qrklav6ql00l8342g39aiqy": {
+    "name": "Merlion Cup U22",
+    "num_seasons": 3,
+    "latest_season": "2024",
+    "oldest_season": "2019"
+  },
+  "3rxs7jvbb6261smi4icx8ydhx": {
+    "name": "Nehru Cup",
+    "num_seasons": 2,
+    "latest_season": "2012",
+    "oldest_season": "2009"
+  },
+  "m302t7zh5cjqxb8hlygsj0no": {
+    "name": "Qatar-UAE Challenge Cup",
+    "num_seasons": 3,
+    "latest_season": "2027",
+    "oldest_season": "2025"
+  },
+  "epm8e31ji94fvjuhjz89sphqs": {
+    "name": "Qatar-UAE Super Cup",
+    "num_seasons": 4,
+    "latest_season": "2027",
+    "oldest_season": "2024"
+  },
+  "cvr0kb0e33p2twejhzn0tzyks": {
+    "name": "SAFF Championship",
+    "num_seasons": 9,
+    "latest_season": "2026",
+    "oldest_season": "2008 Maldives/Sri Lanka"
+  },
+  "balz0oq0ng3efzdraxks26ulm": {
+    "name": "SAFF U19 Championship",
+    "num_seasons": 4,
+    "latest_season": "2027",
+    "oldest_season": "2019 Nepal"
+  },
+  "b7fxyzn8b2mdsivx6s0pywu1g": {
+    "name": "SAFF U20 Championship",
+    "num_seasons": 3,
+    "latest_season": "2025",
+    "oldest_season": "2022 India"
+  },
+  "3g0hx0xh4r5bst7c4i941uead": {
+    "name": "SAFF Women's Championship",
+    "num_seasons": 7,
+    "latest_season": "2026",
+    "oldest_season": "2012 India"
+  },
+  "7bylkzri35914smr1pu56u7e4": {
+    "name": "Southeast Asian Games",
+    "num_seasons": 9,
+    "latest_season": "2027 Malaysia",
+    "oldest_season": "2011 Indonesia"
+  },
+  "aaaux0wnaqhajb8ruawy0pnm9": {
+    "name": "Southeast Asian Games Women",
+    "num_seasons": 7,
+    "latest_season": "2027 Malaysia",
+    "oldest_season": "2013 Myanmar"
+  },
+  "1u93egm8jozbb4n8omkty17je": {
+    "name": "Suramadu Super Cup",
+    "num_seasons": 1,
+    "latest_season": "2018",
+    "oldest_season": "2018"
+  },
+  "7k8sm9bfafxj4sauqt2osww0k": {
+    "name": "UAE-Qatar Challenge Shield",
+    "num_seasons": 3,
+    "latest_season": "2027",
+    "oldest_season": "2025"
+  },
+  "egmzlu53pj9hpl9huntztaluc": {
+    "name": "UAE-Qatar Super Shield",
+    "num_seasons": 4,
+    "latest_season": "2027",
+    "oldest_season": "2024"
+  },
+  "7e4ounedhu8yp4esas45tdvmy": {
+    "name": "Vietnamese International U21 Championship",
+    "num_seasons": 3,
+    "latest_season": "2019",
+    "oldest_season": "2017"
+  },
+  "emko6ygzp3os7yg7r1oeyq9us": {
+    "name": "WAFF Championship",
+    "num_seasons": 5,
+    "latest_season": "2026 Kuwait",
+    "oldest_season": "2010 Jordan"
+  },
+  "7tduxx5z8sx24odgyfenegb2s": {
+    "name": "WAFF Championship U23",
+    "num_seasons": 6,
+    "latest_season": "2026",
+    "oldest_season": "2021 Saudi Arabia"
+  },
+  "7dgu4kpb35cw24ttxmzdxjnfd": {
+    "name": "WAFF Women's Championship",
+    "num_seasons": 6,
+    "latest_season": "2026",
+    "oldest_season": "2014 Jordan"
+  },
+  "3hdxt5rbwqc8cmw840v2f76z8": {
+    "name": "WAFF Women's Club Championship",
+    "num_seasons": 1,
+    "latest_season": "2025",
+    "oldest_season": "2025"
+  },
+  "34zuqd7ylixhicu2zrk71indg": {
+    "name": "Women's Asian Cup Qualification",
+    "num_seasons": 8,
+    "latest_season": "2029 Uzbekistan",
+    "oldest_season": "2006 Australia"
+  },
+  "3s9mhguj7zxslsjg2ly7ziaj9": {
+    "name": "Women's Asian Games",
+    "num_seasons": 6,
+    "latest_season": "2026 Japan",
+    "oldest_season": "2006 Qatar"
+  },
+  "2ir53efig4wmzr7865165w4c3": {
+    "name": "Women's East Asian Games",
+    "num_seasons": 1,
+    "latest_season": "2013 China PR",
+    "oldest_season": "2013 China PR"
+  },
+  "3pyn6688uq9zars5srftk5ejt": {
+    "name": "Women's Olympic Qualifying Asia",
+    "num_seasons": 4,
+    "latest_season": "2028 Los Angeles",
+    "oldest_season": "2016 Rio de Janeiro"
+  },
+  "xwnjb1az11zffwty3m6vn8y6": {
+    "name": "A-League Men",
+    "num_seasons": 21,
+    "latest_season": "2025/2026",
+    "oldest_season": "2005/2006"
+  },
+  "9p3nnxhdjahfn8qswpzy8oyc3": {
+    "name": "A-League Women",
+    "num_seasons": 19,
+    "latest_season": "2025/2026",
+    "oldest_season": "2005"
+  },
+  "7e9umfbqyrmcv75ssjr3yrv3e": {
+    "name": "A-League Youth",
+    "num_seasons": 9,
+    "latest_season": "2024/2025",
+    "oldest_season": "2012/2013"
+  },
+  "2rdrisk4vlglfjxwu0precyqd": {
+    "name": "Australia Cup",
+    "num_seasons": 12,
+    "latest_season": "2026",
+    "oldest_season": "2014"
+  },
+  "463z7e1lkrsshifwgv65khqe6": {
+    "name": "Brisbane Canale Cup",
+    "num_seasons": 8,
+    "latest_season": "2021",
+    "oldest_season": "2013"
+  },
+  "b17roqjd5t85qgxhnaq78qrc9": {
+    "name": "Brisbane Capital League 1",
+    "num_seasons": 3,
+    "latest_season": "2017",
+    "oldest_season": "2015"
+  },
+  "50q1vcznjula7u7rkq2i8k7e2": {
+    "name": "Brisbane Silver Boot",
+    "num_seasons": 2,
+    "latest_season": "2020",
+    "oldest_season": "2019"
+  },
+  "2lgq3mlk18a4d2hpicg2dwgve": {
+    "name": "Brisbane Women's Cup",
+    "num_seasons": 5,
+    "latest_season": "2024",
+    "oldest_season": "2018"
+  },
+  "57ovaspa6pp8i345htwfoncdm": {
+    "name": "CT Australia Cup Preliminary",
+    "num_seasons": 8,
+    "latest_season": "2026",
+    "oldest_season": "2019"
+  },
+  "9wu6eng483zsmbkm1ad6vh0yc": {
+    "name": "CT Charity Shield Women",
+    "num_seasons": 4,
+    "latest_season": "2025",
+    "oldest_season": "2022"
+  },
+  "4aa5hgnr0inn2xtdtgxcptmy2": {
+    "name": "Capital Territory Charity Shield",
+    "num_seasons": 7,
+    "latest_season": "2026",
+    "oldest_season": "2019"
+  },
+  "eqz64pn0qsp2y7aq4m9id3fn6": {
+    "name": "Capital Territory NPL",
+    "num_seasons": 14,
+    "latest_season": "2026",
+    "oldest_season": "2008"
+  },
+  "3kzix5x6lqvik8xiw2242fmne": {
+    "name": "Capital Territory NPL 2",
+    "num_seasons": 8,
+    "latest_season": "2026",
+    "oldest_season": "2019"
+  },
+  "3ke8zwvvzg87zrt62g8empxxw": {
+    "name": "Capital Territory NPL 2 Youth",
+    "num_seasons": 7,
+    "latest_season": "2026",
+    "oldest_season": "2020"
+  },
+  "c94v1ygetqisxeijmyhta076y": {
+    "name": "Capital Territory NPL Women",
+    "num_seasons": 10,
+    "latest_season": "2026",
+    "oldest_season": "2017"
+  },
+  "9zmk2nvdaohu0lggtfc6vdo4q": {
+    "name": "Capital Territory NPL Youth League",
+    "num_seasons": 8,
+    "latest_season": "2026",
+    "oldest_season": "2019"
+  },
+  "7bfu7eibuzocmnbgq4bsh7dre": {
+    "name": "Capital Territory Women's Federation Cup",
+    "num_seasons": 7,
+    "latest_season": "2026",
+    "oldest_season": "2019"
+  },
+  "41hbf8hlc2hfpw0n9hnn1ow7o": {
+    "name": "Championship",
+    "num_seasons": 2,
+    "latest_season": "2026/2027",
+    "oldest_season": "2025/2026"
+  },
+  "3jlffacre45qv9p155t1yr7je": {
+    "name": "FQPL 3 Metro",
+    "num_seasons": 18,
+    "latest_season": "2026",
+    "oldest_season": "2009"
+  },
+  "bsfradgvkxh4xnsdv13fcpkz9": {
+    "name": "FQPL 3 Metro Youth",
+    "num_seasons": 13,
+    "latest_season": "2026",
+    "oldest_season": "2014"
+  },
+  "ejhhvdomnlmbj3z6gaytvuq22": {
+    "name": "FT Australia Cup Preliminary",
+    "num_seasons": 8,
+    "latest_season": "2026",
+    "oldest_season": "2019"
+  },
+  "84k8dy3w9vyzbw0ryu3tdqve2": {
+    "name": "NNSW Australia Cup Preliminary",
+    "num_seasons": 8,
+    "latest_season": "2026",
+    "oldest_season": "2019"
+  },
+  "89pl2v42jxlru0onso5bzh4yy": {
+    "name": "NNSW League 1",
+    "num_seasons": 8,
+    "latest_season": "2026",
+    "oldest_season": "2019"
+  },
+  "bdpnkcbz2srzv6yu8orqjdbf8": {
+    "name": "NNSW League 1 Reserves",
+    "num_seasons": 7,
+    "latest_season": "2026",
+    "oldest_season": "2020"
+  },
+  "4nyo1il55n4u4sim9o7siyuy": {
+    "name": "NPL Finals",
+    "num_seasons": 8,
+    "latest_season": "2023",
+    "oldest_season": "2013"
+  },
+  "968vth6vrf9dkm5n2otvg4z0f": {
+    "name": "NPL Youth League",
+    "num_seasons": 5,
+    "latest_season": "2018",
+    "oldest_season": "2014"
+  },
+  "a8lmjg1jvhozapqm0cfjcr0t1": {
+    "name": "NSL",
+    "num_seasons": 4,
+    "latest_season": "2003/2004",
+    "oldest_season": "2000/2001"
+  },
+  "dv7ozo4arr941h63dsv6lvq0a": {
+    "name": "NSW Australia Cup Preliminary",
+    "num_seasons": 8,
+    "latest_season": "2026",
+    "oldest_season": "2019"
+  },
+  "5f4vmg8dv2d0y8fuw60f0kbca": {
+    "name": "NSW League One",
+    "num_seasons": 8,
+    "latest_season": "2026",
+    "oldest_season": "2019"
+  },
+  "axmk1ke9j3idwqdxurn5d33mc": {
+    "name": "NSW League One Youth",
+    "num_seasons": 7,
+    "latest_season": "2026",
+    "oldest_season": "2020"
+  },
+  "aed8nciihgj74iq4tv6mrq39w": {
+    "name": "NSW League Two",
+    "num_seasons": 6,
+    "latest_season": "2026",
+    "oldest_season": "2021"
+  },
+  "ersxdrcro9s4i0etjlsebfaj8": {
+    "name": "NSW League Two Youth",
+    "num_seasons": 6,
+    "latest_season": "2026",
+    "oldest_season": "2021"
+  },
+  "610n5m1lx1y35jlo0ttfvuck4": {
+    "name": "NSW Play-offs 1/2",
+    "num_seasons": 4,
+    "latest_season": "2026",
+    "oldest_season": "2023"
+  },
+  "bzajdavf25nuvt03llalv6yac": {
+    "name": "NSW Play-offs 2/3",
+    "num_seasons": 4,
+    "latest_season": "2026",
+    "oldest_season": "2023"
+  },
+  "4ozw1r6lrnpwn9p6th4sja3ca": {
+    "name": "NT Australia Cup Preliminary",
+    "num_seasons": 7,
+    "latest_season": "2026",
+    "oldest_season": "2019"
+  },
+  "atm8sfnb1qa5qv182fsyg0lqs": {
+    "name": "NT Women's Challenge Cup",
+    "num_seasons": 5,
+    "latest_season": "2026",
+    "oldest_season": "2022"
+  },
+  "6g8hw3acenrw828la7gwx4mvs": {
+    "name": "New South Wales NPL",
+    "num_seasons": 14,
+    "latest_season": "2026",
+    "oldest_season": "2008"
+  },
+  "69ruk23bbos6yc07zeogu0mzu": {
+    "name": "New South Wales NPL Women",
+    "num_seasons": 10,
+    "latest_season": "2026",
+    "oldest_season": "2017"
+  },
+  "ahqvf4v6ibao6885a6d7h8jmy": {
+    "name": "New South Wales NPL Youth League",
+    "num_seasons": 8,
+    "latest_season": "2026",
+    "oldest_season": "2019"
+  },
+  "ryxmu7v87t28i0gq29buau3t": {
+    "name": "New South Wales Pre-Season Cup",
+    "num_seasons": 1,
+    "latest_season": "2017",
+    "oldest_season": "2017"
+  },
+  "bs0qrahyh2pltu0pzt0oe9qmx": {
+    "name": "New South Wales Waratah Cup",
+    "num_seasons": 13,
+    "latest_season": "2026",
+    "oldest_season": "2013"
+  },
+  "9u4pm8x0lfmfq3r0pypmrls71": {
+    "name": "Northern NSW NPL",
+    "num_seasons": 14,
+    "latest_season": "2026",
+    "oldest_season": "2008"
+  },
+  "dk8zx83g3lq52k2cpxf8qo178": {
+    "name": "Northern NSW NPL Women",
+    "num_seasons": 6,
+    "latest_season": "2026",
+    "oldest_season": "2021"
+  },
+  "c4he7xv70uxxnwt4hp9dgekbu": {
+    "name": "Northern NSW NPL Youth League",
+    "num_seasons": 1,
+    "latest_season": "2019",
+    "oldest_season": "2019"
+  },
+  "espejfepwimt8v61yj9dze7tg": {
+    "name": "Northern NSW Play-offs 1/2",
+    "num_seasons": 3,
+    "latest_season": "2026",
+    "oldest_season": "2024"
+  },
+  "dsfsc331xql4nt7uathmu1tnu": {
+    "name": "Northern NSW Reserve League",
+    "num_seasons": 7,
+    "latest_season": "2026",
+    "oldest_season": "2020"
+  },
+  "dgxf9h69lnllbyh5k6jdtk0bu": {
+    "name": "Northern Territory Premier League",
+    "num_seasons": 19,
+    "latest_season": "2026",
+    "oldest_season": "2008"
+  },
+  "4kzijlafckj6uza4qh9hzw4q": {
+    "name": "Northern Territory Women's Premier League",
+    "num_seasons": 7,
+    "latest_season": "2026",
+    "oldest_season": "2020"
+  },
+  "ue28wapebfay4u3zsjty4t4a": {
+    "name": "PSC Championship",
+    "num_seasons": 3,
+    "latest_season": "2022",
+    "oldest_season": "2020"
+  },
+  "ch6p6wy5ns19tbzunslk2remt": {
+    "name": "Pre-Season Cup",
+    "num_seasons": 4,
+    "latest_season": "2008/2009",
+    "oldest_season": "2005/2006"
+  },
+  "7xpnr5mz850a1dt4h9umvp2zu": {
+    "name": "QLD Australia Cup Preliminary",
+    "num_seasons": 8,
+    "latest_season": "2026",
+    "oldest_season": "2019"
+  },
+  "60ws3ygplmsq3v1yoe9xu3spg": {
+    "name": "QLD FQPL 1 Women",
+    "num_seasons": 5,
+    "latest_season": "2026",
+    "oldest_season": "2022"
+  },
+  "6igbnojan87b128fnfmvdvris": {
+    "name": "QLD NPL Women's Pre Season Cup",
+    "num_seasons": 0,
+    "latest_season": "N/A",
+    "oldest_season": "N/A"
+  },
+  "4xc9ve09y4iyjfmv35hhjlxxw": {
+    "name": "QLD Pro Series",
+    "num_seasons": 4,
+    "latest_season": "2026",
+    "oldest_season": "2023"
+  },
+  "ypudawl8gnrctidcl88385t6": {
+    "name": "Queensland Macron Cup",
+    "num_seasons": 3,
+    "latest_season": "2021",
+    "oldest_season": "2018"
+  },
+  "61fzfjogstjuukzcehighq7mu": {
+    "name": "Queensland NPL",
+    "num_seasons": 14,
+    "latest_season": "2026",
+    "oldest_season": "2008"
+  },
+  "ehmpyfw70d7gs99hb9gz74wve": {
+    "name": "Queensland NPL Women",
+    "num_seasons": 10,
+    "latest_season": "2026",
+    "oldest_season": "2017"
+  },
+  "def5np5rjklzsnfgumw0uo60a": {
+    "name": "Queensland NPL Youth League",
+    "num_seasons": 8,
+    "latest_season": "2026",
+    "oldest_season": "2019"
+  },
+  "3u7nmxerhhajcsqlykf5s5d9m": {
+    "name": "Queensland PL Youth",
+    "num_seasons": 7,
+    "latest_season": "2026",
+    "oldest_season": "2020"
+  },
+  "54gwxepsovx9ig94d204j9hxw": {
+    "name": "Queensland PL2 Youth",
+    "num_seasons": 6,
+    "latest_season": "2026",
+    "oldest_season": "2021"
+  },
+  "9zvu736m8f9jzeyukisgey356": {
+    "name": "Queensland Premier League",
+    "num_seasons": 8,
+    "latest_season": "2026",
+    "oldest_season": "2019"
+  },
+  "3a1kagik7bnoofrhr6qqp0dn8": {
+    "name": "Queensland Premier League 2",
+    "num_seasons": 6,
+    "latest_season": "2026",
+    "oldest_season": "2021"
+  },
+  "azg178c1tk503dilpkxhznlzo": {
+    "name": "Queensland Women's Super Cup",
+    "num_seasons": 6,
+    "latest_season": "2026",
+    "oldest_season": "2021"
+  },
+  "bvdnxtn2v8qvic567llt2ii5m": {
+    "name": "SA Australia Cup Preliminary",
+    "num_seasons": 7,
+    "latest_season": "2026",
+    "oldest_season": "2019"
+  },
+  "6wk617imwz2y7d8sx9apul3bo": {
+    "name": "SA Federation Cup",
+    "num_seasons": 5,
+    "latest_season": "2026",
+    "oldest_season": "2022"
+  },
+  "ay4u6j7lfkcg7x21mx5q121j": {
+    "name": "South Australia NPL",
+    "num_seasons": 14,
+    "latest_season": "2026",
+    "oldest_season": "2008"
+  },
+  "awlih5a6wxegtxcx2gtps77my": {
+    "name": "South Australia NPL Women",
+    "num_seasons": 10,
+    "latest_season": "2026",
+    "oldest_season": "2017"
+  },
+  "18lpeac1n3y80vs83k6bejulm": {
+    "name": "South Australia Reserves Premier League",
+    "num_seasons": 13,
+    "latest_season": "2026",
+    "oldest_season": "2014"
+  },
+  "bjzrti3ijoyjz8xqee72rfz3e": {
+    "name": "South Australia State League 1",
+    "num_seasons": 8,
+    "latest_season": "2026",
+    "oldest_season": "2019"
+  },
+  "2ibj3wubgd634osdpbj7q70us": {
+    "name": "South Australia State League 1 Reserves",
+    "num_seasons": 7,
+    "latest_season": "2026",
+    "oldest_season": "2020"
+  },
+  "7440ayt6yigdcogbfodns67ai": {
+    "name": "South Australia Women's Pre-Season Cup",
+    "num_seasons": 8,
+    "latest_season": "2026",
+    "oldest_season": "2019"
+  },
+  "5h0586manqqlhqy64m3kh0j8q": {
+    "name": "South Australia Women's Premier & State Cup",
+    "num_seasons": 9,
+    "latest_season": "2026",
+    "oldest_season": "2018"
+  },
+  "djywwu0x201lzgkcsxt0bf1m1": {
+    "name": "State Leagues",
+    "num_seasons": 3,
+    "latest_season": "2018",
+    "oldest_season": "2016"
+  },
+  "zcu5q286xuayu69mjchhy7yn": {
+    "name": "T-League (Victory League)",
+    "num_seasons": 1,
+    "latest_season": "2013",
+    "oldest_season": "2013"
+  },
+  "f50qskgnnbebsauw5fruumtqs": {
+    "name": "TAS NPL Youth",
+    "num_seasons": 4,
+    "latest_season": "2026",
+    "oldest_season": "2023"
+  },
+  "ev3h7p0gr0h7gxbg4jpxm4w7o": {
+    "name": "TAS Women's Summer Cup",
+    "num_seasons": 3,
+    "latest_season": "2025",
+    "oldest_season": "2023"
+  },
+  "8q60vlvn3krynkob6igrncdjq": {
+    "name": "Tasmania NPL",
+    "num_seasons": 16,
+    "latest_season": "2026",
+    "oldest_season": "2008"
+  },
+  "debkdrh4lhq700083h9am0q5m": {
+    "name": "Tasmania Northern Championship",
+    "num_seasons": 8,
+    "latest_season": "2026",
+    "oldest_season": "2019"
+  },
+  "4h4rp8exj48lxphafox9vr1be": {
+    "name": "Tasmania Northern Summer Series",
+    "num_seasons": 2,
+    "latest_season": "2023",
+    "oldest_season": "2018"
+  },
+  "ew7efkbz44yu4gu7ox7j315re": {
+    "name": "Tasmania Southern Championship",
+    "num_seasons": 8,
+    "latest_season": "2026",
+    "oldest_season": "2019"
+  },
+  "4u8j6i3kjlzuq1rxwwg6fk2ui": {
+    "name": "Tasmania Southern Summer Series",
+    "num_seasons": 3,
+    "latest_season": "2023",
+    "oldest_season": "2018"
+  },
+  "xs4m7bwslsixna8z6evicnze": {
+    "name": "Tasmania Summer Cup",
+    "num_seasons": 6,
+    "latest_season": "2025",
+    "oldest_season": "2020"
+  },
+  "f1vkh1qodxnka0uv9gducpk44": {
+    "name": "Tasmania Women's Statewide Cup",
+    "num_seasons": 6,
+    "latest_season": "2026",
+    "oldest_season": "2021"
+  },
+  "1e7j22x4rx4kfwn4dxjf35e6s": {
+    "name": "Tasmania Women's Super League",
+    "num_seasons": 6,
+    "latest_season": "2026",
+    "oldest_season": "2021"
+  },
+  "a6fqymlfhatmallmhx3coy7hm": {
+    "name": "VA Australia Cup Preliminary",
+    "num_seasons": 8,
+    "latest_season": "2026",
+    "oldest_season": "2019"
+  },
+  "8jwj6v6wqw01erqkaig8nrndg": {
+    "name": "VIC Premier League Womens",
+    "num_seasons": 5,
+    "latest_season": "2026",
+    "oldest_season": "2022"
+  },
+  "5ruq5rueie2bv3pn61ghyjqei": {
+    "name": "Victoria Community Shield",
+    "num_seasons": 7,
+    "latest_season": "2026",
+    "oldest_season": "2017"
+  },
+  "e874wie5vtd2r11jc787wypnu": {
+    "name": "Victoria Dockerty Cup",
+    "num_seasons": 9,
+    "latest_season": "2026",
+    "oldest_season": "2017"
+  },
+  "2mdmx668tyhy4u4z9zszwjv5v": {
+    "name": "Victoria NPL",
+    "num_seasons": 14,
+    "latest_season": "2026",
+    "oldest_season": "2008"
+  },
+  "5jej246l7zaj0c7cesk23wbug": {
+    "name": "Victoria NPL Women",
+    "num_seasons": 13,
+    "latest_season": "2026",
+    "oldest_season": "2014"
+  },
+  "ezdsrofi27pck8v4ifpcg24bu": {
+    "name": "Victoria NPL Youth League",
+    "num_seasons": 8,
+    "latest_season": "2026",
+    "oldest_season": "2019"
+  },
+  "1n9l0ex47bu0762qg574hzjtd": {
+    "name": "Victoria PL 1",
+    "num_seasons": 11,
+    "latest_season": "2026",
+    "oldest_season": "2013"
+  },
+  "9i6k76jrh4elmn91usdc1rlec": {
+    "name": "Victoria PL 1 Youth",
+    "num_seasons": 6,
+    "latest_season": "2026",
+    "oldest_season": "2021"
+  },
+  "demi2fsrdwddt2314p6j11lyi": {
+    "name": "Victoria PL 2",
+    "num_seasons": 7,
+    "latest_season": "2026",
+    "oldest_season": "2020"
+  },
+  "12dhy6ieslk3j4i4a3gl0hno4": {
+    "name": "Victoria PL 2 Youth",
+    "num_seasons": 6,
+    "latest_season": "2026",
+    "oldest_season": "2021"
+  },
+  "8w1khpjgefflso5lvotv1elex": {
+    "name": "Victoria Play-offs 1/2",
+    "num_seasons": 5,
+    "latest_season": "2019",
+    "oldest_season": "2015"
+  },
+  "876cho21ls69w6vc9zqwjqm8k": {
+    "name": "Victoria Play-offs 2/3",
+    "num_seasons": 2,
+    "latest_season": "2024",
+    "oldest_season": "2022"
+  },
+  "72v8lkcx2hninnwufj4rud7qi": {
+    "name": "Victoria Women's Community Shield",
+    "num_seasons": 5,
+    "latest_season": "2026",
+    "oldest_season": "2019"
+  },
+  "d5tn0wyhydxicnn14l13opmju": {
+    "name": "Victoria Women's State Knockout Cup",
+    "num_seasons": 8,
+    "latest_season": "2026",
+    "oldest_season": "2018"
+  },
+  "2llbrdnkk3if4vb44y2taml4a": {
+    "name": "WA Australia Cup Preliminary",
+    "num_seasons": 7,
+    "latest_season": "2026",
+    "oldest_season": "2019"
+  },
+  "9c0nk6hr680duvepn57tye80k": {
+    "name": "WA Play-offs 1/2",
+    "num_seasons": 4,
+    "latest_season": "2026",
+    "oldest_season": "2023"
+  },
+  "ajm86skyzse4ym8g6fpgzncxa": {
+    "name": "Western Australia NPL",
+    "num_seasons": 14,
+    "latest_season": "2026",
+    "oldest_season": "2008"
+  },
+  "d7qpepjf9rdgkb1ehg8yl2xd6": {
+    "name": "Western Australia NPL Night Series",
+    "num_seasons": 9,
+    "latest_season": "2026",
+    "oldest_season": "2018"
+  },
+  "1pptcuhbrktn3aia6khf9edt6": {
+    "name": "Western Australia NPL Women",
+    "num_seasons": 10,
+    "latest_season": "2026",
+    "oldest_season": "2017"
+  },
+  "z1jegisr1gyeusokq5sgukbu": {
+    "name": "Western Australia NPL Youth League",
+    "num_seasons": 8,
+    "latest_season": "2026",
+    "oldest_season": "2019"
+  },
+  "cqkapgow5pb4278cnkq3chizu": {
+    "name": "Western Australia Play-offs 2/3",
+    "num_seasons": 1,
+    "latest_season": "2017",
+    "oldest_season": "2017"
+  },
+  "bdnm7pmbwlfvondl4eqcmnrsa": {
+    "name": "Western Australia State Cup",
+    "num_seasons": 9,
+    "latest_season": "2026",
+    "oldest_season": "2017"
+  },
+  "2xkxwl03668hb7d7y63naupgq": {
+    "name": "Western Australia State League 1",
+    "num_seasons": 8,
+    "latest_season": "2026",
+    "oldest_season": "2019"
+  },
+  "dxgcsf3azheuf3shs09myyqs4": {
+    "name": "Western Australia State League 1 Reserves",
+    "num_seasons": 6,
+    "latest_season": "2026",
+    "oldest_season": "2021"
+  },
+  "5ludymuo5cspgob0hoya3ih62": {
+    "name": "Western Australia State League Night Series",
+    "num_seasons": 8,
+    "latest_season": "2026",
+    "oldest_season": "2019"
+  },
+  "1yksf9jb0zz7e6n8bjsbh4okq": {
+    "name": "Western Australia Women's Night Series",
+    "num_seasons": 9,
+    "latest_season": "2026",
+    "oldest_season": "2018"
+  },
+  "3qbhpz67mks22ht54f2os3t62": {
+    "name": "Western Australia Women's State Cup",
+    "num_seasons": 8,
+    "latest_season": "2026",
+    "oldest_season": "2018"
+  },
+  "deg7ce236f3i4rj9xtvn6xpex": {
+    "name": "Women's National Premier Leagues",
+    "num_seasons": 2,
+    "latest_season": "2018",
+    "oldest_season": "2017"
+  },
+  "ekzq8tphy3pap00km88pkhep7": {
+    "name": "2. Frauenliga",
+    "num_seasons": 19,
+    "latest_season": "2025/2026",
+    "oldest_season": "2007/2008"
+  },
+  "a7247po5qs29o3zsfmt222ydu": {
+    "name": "2. Liga",
+    "num_seasons": 26,
+    "latest_season": "2025/2026",
+    "oldest_season": "2000/2001"
+  },
+  "9aybz8ljherwfhaz6tjbmtune": {
+    "name": "BFV Cup",
+    "num_seasons": 9,
+    "latest_season": "2025/2026",
+    "oldest_season": "2017/2018"
+  },
+  "5c96g1zm7vo5ons9c42uy2w3r": {
+    "name": "Bundesliga",
+    "num_seasons": 33,
+    "latest_season": "2025/2026",
+    "oldest_season": "1993/1994"
+  },
+  "1ncmha8yglhyyhg6gtaujymqf": {
+    "name": "Cup",
+    "num_seasons": 21,
+    "latest_season": "2025/2026",
+    "oldest_season": "2004/2005"
+  },
+  "cbfgj4sfcj85s1ljyrgqqe78l": {
+    "name": "Frauenliga",
+    "num_seasons": 21,
+    "latest_season": "2025/2026",
+    "oldest_season": "2005/2006"
+  },
+  "8rfthfvq7sem1ov0ncbfvdqi2": {
+    "name": "Jugendliga U15",
+    "num_seasons": 7,
+    "latest_season": "2025/2026",
+    "oldest_season": "2019/2020"
+  },
+  "2p1w44xnkn227whf0keyutkdm": {
+    "name": "Jugendliga U16",
+    "num_seasons": 7,
+    "latest_season": "2025/2026",
+    "oldest_season": "2019/2020"
+  },
+  "44n0aq4akh2gpys2dlja27f8y": {
+    "name": "Jugendliga U18",
+    "num_seasons": 14,
+    "latest_season": "2025/2026",
+    "oldest_season": "2012/2013"
+  },
+  "635sgrsjdvls73c01r13iizje": {
+    "name": "KFV Cup",
+    "num_seasons": 9,
+    "latest_season": "2025/2026",
+    "oldest_season": "2017/2018"
+  },
+  "3e79p4eyu2prq96x39nt7djro": {
+    "name": "Landesliga",
+    "num_seasons": 18,
+    "latest_season": "2025/2026",
+    "oldest_season": "2008/2009"
+  },
+  "1zqdnk0f0ox05bh5drjqempuy": {
+    "name": "OOEFV Cup",
+    "num_seasons": 9,
+    "latest_season": "2025/2026",
+    "oldest_season": "2017/2018"
+  },
+  "c2justul94x71npl1qrkctj6y": {
+    "name": "Play-offs 1/2",
+    "num_seasons": 3,
+    "latest_season": "2024/2025",
+    "oldest_season": "2017/2018"
+  },
+  "cvyec5voz7d2yfk462mx13rwv": {
+    "name": "Play-offs 2/3",
+    "num_seasons": 5,
+    "latest_season": "2013/2014",
+    "oldest_season": "2009/2010"
+  },
+  "ekyhmsfi4utkxvmak9pq8se0s": {
+    "name": "Regionalliga",
+    "num_seasons": 19,
+    "latest_season": "2025/2026",
+    "oldest_season": "2007/2008"
+  },
+  "dx5yg0pu290w3b1swnwf87a0a": {
+    "name": "SFV Cup",
+    "num_seasons": 8,
+    "latest_season": "2025/2026",
+    "oldest_season": "2017/2018"
+  },
+  "4v6ngbno864jzfnsfl9pg7zai": {
+    "name": "STFV Cup",
+    "num_seasons": 9,
+    "latest_season": "2025/2026",
+    "oldest_season": "2017/2018"
+  },
+  "b3dldtln35tv1wv2281h96yqy": {
+    "name": "TFV Cup",
+    "num_seasons": 9,
+    "latest_season": "2025/2026",
+    "oldest_season": "2017/2018"
+  },
+  "1joa86bqn4j06j2f9igt2ilbe": {
+    "name": "VFV Cup",
+    "num_seasons": 9,
+    "latest_season": "2025/2026",
+    "oldest_season": "2017/2018"
+  },
+  "2rtq09tx2dn540fcm15bbibmy": {
+    "name": "WFV Cup",
+    "num_seasons": 9,
+    "latest_season": "2025/2026",
+    "oldest_season": "2017/2018"
+  },
+  "dgz4x3nfopdb7tfxhr5ws4ubn": {
+    "name": "Women's Cup",
+    "num_seasons": 18,
+    "latest_season": "2025/2026",
+    "oldest_season": "2008/2009"
+  },
+  "1pz0ch210cun5hthsvq0lb7x3": {
+    "name": "Birinci Dasta",
+    "num_seasons": 19,
+    "latest_season": "2025/2026",
+    "oldest_season": "2007/2008"
+  },
+  "9gvvndi7vk9fzvpe65pv5x2ir": {
+    "name": "Cup",
+    "num_seasons": 22,
+    "latest_season": "2025/2026",
+    "oldest_season": "2004/2005"
+  },
+  "3428tckxcirwwh3o3jgc1m8ji": {
+    "name": "Premyer Liqa",
+    "num_seasons": 23,
+    "latest_season": "2025/2026",
+    "oldest_season": "2003/2004"
+  },
+  "4ko7zrsqts6gv1wo94w29lny5": {
+    "name": "Reserve League",
+    "num_seasons": 8,
+    "latest_season": "2025/2026",
+    "oldest_season": "2013/2014"
+  },
+  "7l4i02cmdaifny8geu95xrikk": {
+    "name": "Super Cup",
+    "num_seasons": 1,
+    "latest_season": "2013/2014",
+    "oldest_season": "2013/2014"
+  },
+  "7q4h0710eljpiujg32hgs5tuy": {
+    "name": "Elite Cup",
+    "num_seasons": 1,
+    "latest_season": "2019",
+    "oldest_season": "2019"
+  },
+  "7cuesp4xpwivyjounh7163r4k": {
+    "name": "Federation Cup",
+    "num_seasons": 5,
+    "latest_season": "2024/2025",
+    "oldest_season": "2020/2021"
+  },
+  "41j4f3gpb4882mydgxa6nsv1i": {
+    "name": "King's Cup",
+    "num_seasons": 16,
+    "latest_season": "2025/2026",
+    "oldest_season": "2011"
+  },
+  "4x0hb0duvr678gpkdm06c2d0q": {
+    "name": "Play-offs 1/2",
+    "num_seasons": 9,
+    "latest_season": "2025/2026",
+    "oldest_season": "2017/2018"
+  },
+  "82wo38rqeizxlfjjhfjy4rx7u": {
+    "name": "Premier League",
+    "num_seasons": 22,
+    "latest_season": "2025/2026",
+    "oldest_season": "2004/2005"
+  },
+  "2z9rz5s0wn8de1nnrvxzddf2w": {
+    "name": "Second Division",
+    "num_seasons": 13,
+    "latest_season": "2025/2026",
+    "oldest_season": "2013/2014"
+  },
+  "2nlu4dcxb09mzfs0faf1gx2w9": {
+    "name": "Super Cup",
+    "num_seasons": 10,
+    "latest_season": "2025/2026",
+    "oldest_season": "2015"
+  },
+  "7wdscjiuzxhc31g9eyhmt5bzd": {
+    "name": "Federation Cup",
+    "num_seasons": 10,
+    "latest_season": "2025/2026",
+    "oldest_season": "2016"
+  },
+  "3c8633feplm71zs185iyado3t": {
+    "name": "Premier League",
+    "num_seasons": 18,
+    "latest_season": "2025/2026",
+    "oldest_season": "2007"
+  },
+  "bjxqgib2ebgol60tlg5ob43tq": {
+    "name": "Premier League",
+    "num_seasons": 19,
+    "latest_season": "2026",
+    "oldest_season": "2006"
+  },
+  "94fhddzkf01jsyynjy85y46zu": {
+    "name": "Super Cup",
+    "num_seasons": 1,
+    "latest_season": "2019",
+    "oldest_season": "2019"
+  },
+  "zs18qaehvhg3w1208874zvfa": {
+    "name": "1. Division",
+    "num_seasons": 22,
+    "latest_season": "2026",
+    "oldest_season": "2005"
+  },
+  "1zyn1kr09o52zt342r8r05366": {
+    "name": "2. Division",
+    "num_seasons": 14,
+    "latest_season": "2023",
+    "oldest_season": "2010"
+  },
+  "5whnn5zigs13dguy2cys7csiy": {
+    "name": "Belazovets Friendly Tournament",
+    "num_seasons": 7,
+    "latest_season": "2027",
+    "oldest_season": "2020"
+  },
+  "4vksk0d2q4c5w0itdl52lzek6": {
+    "name": "Cup",
+    "num_seasons": 22,
+    "latest_season": "2025/2026",
+    "oldest_season": "2004/2005"
+  },
+  "6ucojvton81459kqegawtrsm": {
+    "name": "Play-offs 1/2",
+    "num_seasons": 13,
+    "latest_season": "2026",
+    "oldest_season": "2010"
+  },
+  "ejmos00i8gq5pwi8p7al6tqms": {
+    "name": "Play-offs 2/3",
+    "num_seasons": 2,
+    "latest_season": "2024",
+    "oldest_season": "2020"
+  },
+  "8y29fg2s85ppcb8uugm5ee8s4": {
+    "name": "Premier League",
+    "num_seasons": 30,
+    "latest_season": "2026",
+    "oldest_season": "1997"
+  },
+  "2wdubihkd710flh9x901unsji": {
+    "name": "Premier League Women",
+    "num_seasons": 21,
+    "latest_season": "2026",
+    "oldest_season": "2006"
+  },
+  "ad9yk0pu3eqo5hpi565sbdteq": {
+    "name": "Reserve League",
+    "num_seasons": 11,
+    "latest_season": "2023",
+    "oldest_season": "2013"
+  },
+  "b9k9nbj6i8qla5lnlzde2pzq6": {
+    "name": "Super Cup",
+    "num_seasons": 17,
+    "latest_season": "2026",
+    "oldest_season": "2010"
+  },
+  "ewxwv1qr3405ocniydcps2m7": {
+    "name": "Super Cup Women",
+    "num_seasons": 17,
+    "latest_season": "2026",
+    "oldest_season": "2010"
+  },
+  "2yaf02586x47k9cp8g7d8w5iw": {
+    "name": "Women's Cup",
+    "num_seasons": 17,
+    "latest_season": "2026",
+    "oldest_season": "2010"
+  },
+  "9i4wgd4vinu7nynp1msno6ad6": {
+    "name": "1e Nationale Women",
+    "num_seasons": 21,
+    "latest_season": "2025/2026",
+    "oldest_season": "2005/2006"
+  },
+  "af79lqrc0ntom74zq13ccjslo": {
+    "name": "Challenger Pro League",
+    "num_seasons": 27,
+    "latest_season": "2025/2026",
+    "oldest_season": "1999/2000"
+  },
+  "1qt9bfl6dhydf4tpano6n1p7s": {
+    "name": "Cup",
+    "num_seasons": 22,
+    "latest_season": "2025/2026",
+    "oldest_season": "2004/2005"
+  },
+  "4qjmo9aphtgpboin0pldiwzc9": {
+    "name": "Division 1",
+    "num_seasons": 10,
+    "latest_season": "2025/2026",
+    "oldest_season": "2016/2017"
+  },
+  "58frfwi1ggvc2y45ux6a0t71b": {
+    "name": "Division 2",
+    "num_seasons": 25,
+    "latest_season": "2025/2026",
+    "oldest_season": "2001/2002"
+  },
+  "esxl38qxi3mp7hdznyxw1fx7v": {
+    "name": "Division 3",
+    "num_seasons": 19,
+    "latest_season": "2025/2026",
+    "oldest_season": "2007/2008"
+  },
+  "4zwgbb66rif2spcoeeol2motx": {
+    "name": "First Division A",
+    "num_seasons": 67,
+    "latest_season": "2025/2026",
+    "oldest_season": "1959/1960"
+  },
+  "6dtyb2014mq6riyvbl2dos4gh": {
+    "name": "Interprovinciale Women",
+    "num_seasons": 20,
+    "latest_season": "2025/2026",
+    "oldest_season": "2006/2007"
+  },
+  "229149nh9etuw45zn3a0bw8io": {
+    "name": "Play-offs 1/2",
+    "num_seasons": 14,
+    "latest_season": "2025/2026",
+    "oldest_season": "2005/2006"
+  },
+  "f2kvlw3nxk2037dctk9yyz6h4": {
+    "name": "Play-offs 2/3",
+    "num_seasons": 9,
+    "latest_season": "2013/2014",
+    "oldest_season": "2005/2006"
+  },
+  "8cz290fgb2wh7o26btpmw2rsp": {
+    "name": "Play-offs 3/4",
+    "num_seasons": 13,
+    "latest_season": "2022/2023",
+    "oldest_season": "2007/2008"
+  },
+  "41qlkrsyhgv1n9xdzoms2bwm8": {
+    "name": "Play-offs 4/5",
+    "num_seasons": 5,
+    "latest_season": "2014/2015",
+    "oldest_season": "2010/2011"
+  },
+  "3a63db1h3skgftkxqy7ev4f4m": {
+    "name": "Provincial",
+    "num_seasons": 16,
+    "latest_season": "2025/2026",
+    "oldest_season": "2010/2011"
+  },
+  "5eg2n7dfbhbc669h475d1chdg": {
+    "name": "Reserve Pro League 1",
+    "num_seasons": 13,
+    "latest_season": "2025/2026",
+    "oldest_season": "2013/2014"
+  },
+  "c3bgeq2gfppzsink2df9ya5wq": {
+    "name": "Reserve Pro League 2",
+    "num_seasons": 3,
+    "latest_season": "2021/2022",
+    "oldest_season": "2019/2020"
+  },
+  "d7mb7r8wg1nec0q66pjz5vp7u": {
+    "name": "Reserve Pro League Cup",
+    "num_seasons": 6,
+    "latest_season": "2023/2024",
+    "oldest_season": "2017/2018"
+  },
+  "6lk3uq6zu69qes9ghcc7rkjdx": {
+    "name": "Super Cup",
+    "num_seasons": 22,
+    "latest_season": "2026/2027",
+    "oldest_season": "2004/2005"
+  },
+  "3ed2de56etzon8a0r7y1ry9qt": {
+    "name": "Super Cup Women",
+    "num_seasons": 1,
+    "latest_season": "2012/2013",
+    "oldest_season": "2012/2013"
+  },
+  "79s9qgiydh9on34565f8suktl": {
+    "name": "Super League",
+    "num_seasons": 11,
+    "latest_season": "2025/2026",
+    "oldest_season": "2015/2016"
+  },
+  "53cyo8bwwpqhb9c8tfq91jo5w": {
+    "name": "U18 Elite",
+    "num_seasons": 1,
+    "latest_season": "2025/2026",
+    "oldest_season": "2025/2026"
+  },
+  "2jq0kvgjx7clmmtspj9ii7vo4": {
+    "name": "U18 Elite 2",
+    "num_seasons": 1,
+    "latest_season": "2025/2026",
+    "oldest_season": "2025/2026"
+  },
+  "7r2h6ebp0p3z4iq777mwrnzzd": {
+    "name": "UEFA Europa League Play-offs",
+    "num_seasons": 3,
+    "latest_season": "2018/2019",
+    "oldest_season": "2016/2017"
+  },
+  "3kdxat2sdnwdgnq7sdk4tds7s": {
+    "name": "Women's Cup",
+    "num_seasons": 18,
+    "latest_season": "2025/2026",
+    "oldest_season": "2008/2009"
+  },
+  "n1bdrjzf7g7mva01cekq7nf9": {
+    "name": "Women's Play-offs 1/2",
+    "num_seasons": 1,
+    "latest_season": "2011/2012",
+    "oldest_season": "2011/2012"
+  },
+  "rmzy6ro2dc4wr6zbgll9lmbx": {
+    "name": "Women's Play-offs 2/3",
+    "num_seasons": 3,
+    "latest_season": "2015/2016",
+    "oldest_season": "2012/2013"
+  },
+  "6gnffmfauvm3mohkusjt96fj4": {
+    "name": "Premier League",
+    "num_seasons": 19,
+    "latest_season": "2025/2026",
+    "oldest_season": "2007/2008"
+  },
+  "ddbbqccied7l21mo4lr44sbcr": {
+    "name": "Championnat National",
+    "num_seasons": 15,
+    "latest_season": "2025/2026",
+    "oldest_season": "2010/2011"
+  },
+  "cxjve7cb7vo52bn49j7l4vlil": {
+    "name": "Premier League",
+    "num_seasons": 20,
+    "latest_season": "2025/2026",
+    "oldest_season": "2007"
+  },
+  "3tvqr9pmxgq7ftlg34m85icmh": {
+    "name": "Premier League",
+    "num_seasons": 15,
+    "latest_season": "2026",
+    "oldest_season": "2012/2013"
+  },
+  "4own04thi0njdg9n4gzl7foht": {
+    "name": "Super League",
+    "num_seasons": 14,
+    "latest_season": "2026",
+    "oldest_season": "2010"
+  },
+  "5em08hhvd7komnfdsb1yagpas": {
+    "name": "Copa Bolivia",
+    "num_seasons": 3,
+    "latest_season": "2026",
+    "oldest_season": "2023"
+  },
+  "7759w3r5f8zlmu1ex87rl5dsk": {
+    "name": "Liga Femenina",
+    "num_seasons": 2,
+    "latest_season": "2026",
+    "oldest_season": "2025"
+  },
+  "2kottw7mwy3q6jsxj423z87yp": {
+    "name": "Nacional B",
+    "num_seasons": 15,
+    "latest_season": "2026",
+    "oldest_season": "2012/2013"
+  },
+  "8cq9dnpulnrvuhibe7j934wbc": {
+    "name": "Play-offs 1/2",
+    "num_seasons": 12,
+    "latest_season": "2026",
+    "oldest_season": "2012/2013"
+  },
+  "alpfd99yd3lfv7bhjo0biuq7b": {
+    "name": "Primera División",
+    "num_seasons": 23,
+    "latest_season": "2026",
+    "oldest_season": "2004"
+  },
+  "1ugh1duybtg4rqnistso3kduc": {
+    "name": "Torneo Amistoso de Verano",
+    "num_seasons": 2,
+    "latest_season": "2026",
+    "oldest_season": "2025"
+  },
+  "bq56xi6kc1626y8hxflp32ir3": {
+    "name": "1st League",
+    "num_seasons": 22,
+    "latest_season": "2025/2026",
+    "oldest_season": "2004/2005"
+  },
+  "dngxpyjjb58hmaowcupa8oq8x": {
+    "name": "Cup",
+    "num_seasons": 21,
+    "latest_season": "2025/2026",
+    "oldest_season": "2005/2006"
+  },
+  "4yngyfinzd6bb1k7anqtqs0wt": {
+    "name": "Premijer Liga",
+    "num_seasons": 24,
+    "latest_season": "2025/2026",
+    "oldest_season": "2002/2003"
+  },
+  "562ku1ho5kr9xjocep4t82c5w": {
+    "name": "Premijer omladinska liga",
+    "num_seasons": 2,
+    "latest_season": "2025/2026",
+    "oldest_season": "2024/2025"
+  },
+  "1bu0qocl84p1lbysxbuek66i2": {
+    "name": "Premijer Ženska Liga",
+    "num_seasons": 10,
+    "latest_season": "2025/2026",
+    "oldest_season": "2016/2017"
+  },
+  "acn9wh7ydt8vj9o43tu3ui2ac": {
+    "name": "Super Cup",
+    "num_seasons": 2,
+    "latest_season": "2025/2026",
+    "oldest_season": "2024/2025"
+  },
+  "3faz4auaxirmsh26ztmidb001": {
+    "name": "Premier League",
+    "num_seasons": 15,
+    "latest_season": "2025/2026",
+    "oldest_season": "2010/2011"
+  },
+  "9bhbv5iu5o9u3dt1h1xvqhbpw": {
+    "name": "Acreano",
+    "num_seasons": 22,
+    "latest_season": "2026",
+    "oldest_season": "2005"
+  },
+  "u7lq7crm0r53b0xfmzz5rw5d": {
+    "name": "Alagoano 1",
+    "num_seasons": 22,
+    "latest_season": "2026",
+    "oldest_season": "2005"
+  },
+  "6ngvi5p79y1la5bb58z7ek2z8": {
+    "name": "Alagoano 2",
+    "num_seasons": 6,
+    "latest_season": "2026",
+    "oldest_season": "2021"
+  },
+  "ba7pvv7f834y4gxsvkjakhp90": {
+    "name": "Alagoano Play-offs",
+    "num_seasons": 6,
+    "latest_season": "2025",
+    "oldest_season": "2020"
+  },
+  "2afcjlt7o0tdogfbvq5v17or8": {
+    "name": "Alagoano U20",
+    "num_seasons": 6,
+    "latest_season": "2026",
+    "oldest_season": "2021"
+  },
+  "a16rq5j0w7emxszjkgects1zo": {
+    "name": "Alagoano Women",
+    "num_seasons": 6,
+    "latest_season": "2026",
+    "oldest_season": "2021"
+  },
+  "996mhhz95lye3ciuvchb06cv9": {
+    "name": "Amapaense",
+    "num_seasons": 22,
+    "latest_season": "2026",
+    "oldest_season": "2005"
+  },
+  "dlcz2yedcz5h74e96opmb8awx": {
+    "name": "Amazonense 1",
+    "num_seasons": 23,
+    "latest_season": "2026",
+    "oldest_season": "2005"
+  },
+  "3duif527fdbfkp8ieja8q710": {
+    "name": "Amazonense 2",
+    "num_seasons": 6,
+    "latest_season": "2026",
+    "oldest_season": "2021"
+  },
+  "ban7ahw5lriu6pgxoks8o9k44": {
+    "name": "Amazonense U20",
+    "num_seasons": 4,
+    "latest_season": "2026",
+    "oldest_season": "2021"
+  },
+  "6i2lmvgrkrn7c8ocvfnvzau50": {
+    "name": "Amazonense Women",
+    "num_seasons": 6,
+    "latest_season": "2026",
+    "oldest_season": "2021"
+  },
+  "4sdxtqddcbnckfbb59m1xdalj": {
+    "name": "Baiano 1",
+    "num_seasons": 22,
+    "latest_season": "2026",
+    "oldest_season": "2005"
+  },
+  "78cedkttkxva7ic0mgzvqyu42": {
+    "name": "Baiano 2",
+    "num_seasons": 20,
+    "latest_season": "2026",
+    "oldest_season": "2007"
+  },
+  "41yyfmb35iyl4hb8zbeq8ad49": {
+    "name": "Baiano U20",
+    "num_seasons": 10,
+    "latest_season": "2026",
+    "oldest_season": "2017"
+  },
+  "ay2v0pz0v86hdyzx1nd3eeq6s": {
+    "name": "Baiano Women",
+    "num_seasons": 6,
+    "latest_season": "2026",
+    "oldest_season": "2021"
+  },
+  "8n9w0n3i9kk05echhtmstn6o9": {
+    "name": "Brasileiro Feminino A1",
+    "num_seasons": 14,
+    "latest_season": "2026",
+    "oldest_season": "2013"
+  },
+  "1nv1l1v2rt28oor798t7sarmy": {
+    "name": "Brasileiro Feminino A2",
+    "num_seasons": 8,
+    "latest_season": "2026",
+    "oldest_season": "2019"
+  },
+  "6qh67dsehgognav54qg2g9qfo": {
+    "name": "Brasileiro Feminino A3",
+    "num_seasons": 5,
+    "latest_season": "2026",
+    "oldest_season": "2022"
+  },
+  "7k9ok7x4oy5durmocw18o9adx": {
+    "name": "Brasileiro U17",
+    "num_seasons": 9,
+    "latest_season": "2026",
+    "oldest_season": "2012"
+  },
+  "enbl5suukhmjtlbdvadojmju1": {
+    "name": "Brasileiro U20 A",
+    "num_seasons": 12,
+    "latest_season": "2026",
+    "oldest_season": "2015"
+  },
+  "9p2i88ecbe41feuhfeyrax3is": {
+    "name": "Brasileiro U20 B",
+    "num_seasons": 2,
+    "latest_season": "2026",
+    "oldest_season": "2025"
+  },
+  "eioxyteg54hnpv70gegjgtjx0": {
+    "name": "Brasileiro Women U20",
+    "num_seasons": 4,
+    "latest_season": "2026",
+    "oldest_season": "2023"
+  },
+  "d1y4q8asxrmw4e80vp4uj8aju": {
+    "name": "Brasileiro de Aspirantes",
+    "num_seasons": 7,
+    "latest_season": "2024",
+    "oldest_season": "2017"
+  },
+  "823yw2xbtippuaqmli2fovpgs": {
+    "name": "Brasiliense A",
+    "num_seasons": 22,
+    "latest_season": "2026",
+    "oldest_season": "2005"
+  }
+}
