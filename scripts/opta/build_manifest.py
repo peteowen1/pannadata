@@ -83,14 +83,16 @@ def build_manifest(opta_dir: str = "../../data/opta", output_path: str = None):
 
     # Build manifest records
     for match_id, competition, season in sorted(all_matches):
+        has_events = (match_id, competition, season) in table_match_ids['match_events']
         record = {
             'match_id': match_id,
             'competition': competition,
             'season': season,
             'has_player_stats': (match_id, competition, season) in table_match_ids['player_stats'],
             'has_shots': (match_id, competition, season) in table_match_ids['shots'],
-            'has_match_events': (match_id, competition, season) in table_match_ids['match_events'],
+            'has_match_events': has_events,
             'has_lineups': (match_id, competition, season) in table_match_ids['lineups'],
+            'event_unavailable': not has_events,  # Mark as unavailable if no events
         }
         manifest_records.append(record)
 

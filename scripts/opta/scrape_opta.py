@@ -29,25 +29,38 @@ from dataclasses import asdict
 import pandas as pd
 
 
-def load_manifest(manifest_path: Path) -> set:
+def load_manifest(manifest_path: Path, include_unavailable: bool = True) -> tuple:
     """Load existing match IDs from manifest file.
 
-    Returns set of (match_id, competition, season) tuples that have match_events.
+    Args:
+        manifest_path: Path to manifest parquet file
+        include_unavailable: If True, also skip matches marked as event_unavailable
+
+    Returns:
+        Tuple of (complete_matches, unavailable_matches) as sets of (match_id, competition, season)
     """
     if not manifest_path.exists():
         print("No manifest found - will scrape all matches")
-        return set()
+        return set(), set()
 
     try:
         df = pd.read_parquet(manifest_path)
-        # Only consider matches with match_events as "complete"
+
+        # Matches with complete event data
         complete = df[df['has_match_events'] == True]
-        existing = set(zip(complete['match_id'], complete['competition'], complete['season']))
-        print(f"Loaded manifest: {len(existing):,} matches with complete event data")
-        return existing
+        complete_set = set(zip(complete['match_id'], complete['competition'], complete['season']))
+
+        # Matches where event data was unavailable (404)
+        unavailable_set = set()
+        if 'event_unavailable' in df.columns:
+            unavailable = df[df['event_unavailable'] == True]
+            unavailable_set = set(zip(unavailable['match_id'], unavailable['competition'], unavailable['season']))
+
+        print(f"Loaded manifest: {len(complete_set):,} complete, {len(unavailable_set):,} unavailable")
+        return complete_set, unavailable_set
     except Exception as e:
         print(f"Warning: Error loading manifest: {e}")
-        return set()
+        return set(), set()
 
 
 def update_manifest(manifest_path: Path, new_matches: list):
@@ -136,7 +149,8 @@ def get_season_date_range(season_name: str) -> tuple:
 
 
 def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
-                  season_id: str, manifest_matches: set, force_rescrape: bool = False):
+                  season_id: str, complete_matches: set, unavailable_matches: set,
+                  force_rescrape: bool = False, retry_unavailable: bool = False):
     """Scrape a full season of data for a competition with all data types.
 
     Args:
@@ -144,8 +158,10 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
         competition: League name (e.g., "EPL")
         season_name: Season identifier (e.g., "2024-2025")
         season_id: Opta season ID
-        manifest_matches: Set of (match_id, competition, season) tuples already scraped
+        complete_matches: Set of (match_id, competition, season) tuples with complete data
+        unavailable_matches: Set of (match_id, competition, season) tuples with 404 events
         force_rescrape: If True, ignore manifest and rescrape all matches
+        retry_unavailable: If True, retry matches that previously had 404 for events
 
     Returns:
         dict with scraping results and list of new match records for manifest
@@ -171,13 +187,26 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
 
     # Use manifest to check for existing matches
     existing_match_ids = set()
+    skipped_unavailable = 0
     if not force_rescrape:
-        # Get match_ids from manifest for this competition/season
-        for match_id, comp, season in manifest_matches:
+        # Get match_ids with complete data from manifest
+        for match_id, comp, season in complete_matches:
             if comp == competition and season == season_name:
                 existing_match_ids.add(match_id)
+
+        # Also skip matches where event data was unavailable (404), unless retrying
+        if not retry_unavailable:
+            for match_id, comp, season in unavailable_matches:
+                if comp == competition and season == season_name:
+                    if match_id not in existing_match_ids:
+                        existing_match_ids.add(match_id)
+                        skipped_unavailable += 1
+
         if existing_match_ids:
-            print(f"Manifest shows {len(existing_match_ids)} matches already scraped")
+            msg = f"Manifest shows {len(existing_match_ids)} matches to skip"
+            if skipped_unavailable:
+                msg += f" ({skipped_unavailable} with unavailable events)"
+            print(msg)
 
     date_ranges = get_season_date_range(season_name)
 
@@ -255,6 +284,7 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
                 'has_shots': len(shots) > 0,
                 'has_match_events': has_events,
                 'has_lineups': len(lineups) > 0,
+                'event_unavailable': not has_events,  # True if we got 404 for events
             })
 
             # Save raw JSON files
@@ -362,6 +392,8 @@ def main():
                        help="Specific seasons to scrape (e.g., 2024-2025 2023-2024)")
     parser.add_argument("--force", action="store_true",
                        help="Force re-scrape of existing matches")
+    parser.add_argument("--retry-unavailable", action="store_true",
+                       help="Retry matches that previously had 404 for event data")
     parser.add_argument("--recent", type=int, default=0,
                        help="Scrape only the N most recent seasons per league")
     args = parser.parse_args()
@@ -400,7 +432,10 @@ def main():
     # Load manifest (tracks which matches have been scraped)
     pannadata_dir = get_pannadata_dir()
     manifest_path = pannadata_dir / "opta-manifest.parquet"
-    manifest_matches = load_manifest(manifest_path) if not args.force else set()
+    if args.force:
+        complete_matches, unavailable_matches = set(), set()
+    else:
+        complete_matches, unavailable_matches = load_manifest(manifest_path)
 
     print("=" * 60)
     print("OPTA LEAGUES SCRAPER")
@@ -416,8 +451,10 @@ def main():
     for league, season_name, season_id in scrape_plan:
         try:
             result = scrape_season(scraper, league, season_name, season_id,
-                                   manifest_matches=manifest_matches,
-                                   force_rescrape=args.force)
+                                   complete_matches=complete_matches,
+                                   unavailable_matches=unavailable_matches,
+                                   force_rescrape=args.force,
+                                   retry_unavailable=args.retry_unavailable)
             results.append(result)
             # Collect manifest records from this season
             all_new_manifest_records.extend(result.get("manifest_records", []))
