@@ -104,10 +104,18 @@ jobs:
           gh release create opta-latest --title "Opta Data (Latest)" --notes "Automated daily Opta data scrape." --prerelease
         fi
 
-        # Upload consolidated parquets
+        # Upload consolidated parquets (by table type)
         for f in consolidated/opta_*.parquet; do
           [ -f "$f" ] && gh release upload opta-latest "$f" --clobber && echo "Uploaded $(basename $f)"
         done
+
+        # Upload per-league events files
+        if [ -d "consolidated/match_events" ]; then
+          for f in consolidated/match_events/events_*.parquet; do
+            [ -f "$f" ] && gh release upload opta-latest "$f" --clobber && echo "Uploaded $(basename $f)"
+          done
+          echo "Uploaded $(ls consolidated/match_events/events_*.parquet 2>/dev/null | wc -l) events files"
+        fi
 
         # Upload archive
         gh release upload opta-latest opta-parquet.tar.gz --clobber
@@ -118,5 +126,7 @@ jobs:
     - name: Summary
       run: |
         echo "Daily Opta scrape completed"
-        echo "Parquet files: $(find data/opta -name '*.parquet' 2>/dev/null | wc -l)"
-        ls -lh data/consolidated/*.parquet 2>/dev/null || echo "No consolidated files"
+        echo "Raw parquet files: $(find data/opta -name '*.parquet' 2>/dev/null | wc -l)"
+        echo "Consolidated by table:"
+        ls -lh data/consolidated/opta_*.parquet 2>/dev/null || echo "  None"
+        echo "Events by league: $(ls data/consolidated/match_events/events_*.parquet 2>/dev/null | wc -l) files"
