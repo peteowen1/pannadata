@@ -6,16 +6,18 @@ on:
     - cron: '0 7 * * *'
   workflow_dispatch:
     inputs:
-      start_id:
-        description: 'Start match ID (leave empty for auto-detect)'
+      lookback:
+        description: 'IDs to look back from max (default: 20)'
         required: false
         type: string
-      end_id:
-        description: 'End match ID (leave empty for auto-detect +500)'
+        default: '20'
+      max_misses:
+        description: 'Stop after N consecutive misses per league (default: 50)'
         required: false
         type: string
+        default: '50'
       force_rescrape:
-        description: 'Force rescrape cached matches'
+        description: 'Rebuild manifest from scratch'
         required: false
         type: boolean
         default: false
@@ -97,7 +99,49 @@ jobs:
         '
       shell: bash
 
-    - name: Run incremental Understat scrape
+    - name: Download manifest from GitHub Releases
+      run: |
+        echo "Downloading Understat manifest..."
+        gh release download understat-latest \
+          --pattern "understat-manifest.parquet" \
+          --dir data/ \
+          --repo peteowen1/pannadata 2>/dev/null || echo "No existing manifest found (first run)"
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Build manifest from cache if needed
+      run: |
+        Rscript -e '
+          library(panna)
+
+          pannadata_dir(file.path(getwd(), "data"))
+          manifest_path <- file.path(getwd(), "data", "understat-manifest.parquet")
+
+          force_rebuild <- as.logical("${{ github.event.inputs.force_rescrape }}")
+          if (is.na(force_rebuild)) force_rebuild <- FALSE
+
+          if (force_rebuild || !file.exists(manifest_path)) {
+            message("Building manifest from existing cache...")
+            manifest <- build_understat_manifest_from_cache(file.path(getwd(), "data"))
+
+            if (nrow(manifest) > 0) {
+              save_understat_manifest(manifest, manifest_path)
+              message(sprintf("Built manifest with %d matches", nrow(manifest)))
+
+              # Show league breakdown
+              message("\nLeague breakdown:")
+              print(table(manifest$league))
+            } else {
+              message("No existing data to build manifest from")
+            }
+          } else {
+            manifest <- load_understat_manifest(manifest_path)
+            message(sprintf("Loaded existing manifest with %d matches", nrow(manifest)))
+          }
+        '
+      shell: bash
+
+    - name: Run smart Understat scraper
       run: |
         Rscript -e '
           library(panna)
@@ -106,57 +150,29 @@ jobs:
           pannadata_dir(file.path(getwd(), "data"))
 
           # Configuration from inputs
-          input_start <- "${{ github.event.inputs.start_id }}"
-          input_end <- "${{ github.event.inputs.end_id }}"
-          skip_cached <- !as.logical("${{ github.event.inputs.force_rescrape }}")
-          if (is.na(skip_cached)) skip_cached <- TRUE
+          lookback <- as.integer("${{ github.event.inputs.lookback }}")
+          if (is.na(lookback)) lookback <- 20
 
-          # Auto-detect ID range if not provided
-          if (nzchar(input_start) && nzchar(input_end)) {
-            start_id <- as.integer(input_start)
-            end_id <- as.integer(input_end)
-            message(sprintf("Using manual ID range: %d to %d", start_id, end_id))
-          } else {
-            # Find max cached ID across all leagues
-            all_cached_ids <- c()
-            for (league in c("ENG", "ESP", "GER", "ITA", "FRA", "RUS")) {
-              for (season in 2014:2025) {
-                ids <- tryCatch(
-                  get_cached_understat_ids(league, season),
-                  error = function(e) character(0)
-                )
-                all_cached_ids <- c(all_cached_ids, as.integer(ids))
-              }
-            }
+          max_misses <- as.integer("${{ github.event.inputs.max_misses }}")
+          if (is.na(max_misses)) max_misses <- 50
 
-            if (length(all_cached_ids) > 0) {
-              max_cached <- max(all_cached_ids, na.rm = TRUE)
-              start_id <- max_cached + 1
-              end_id <- start_id + 499
-              message(sprintf("Auto-detected: max cached ID = %d", max_cached))
-              message(sprintf("Scraping ID range: %d to %d", start_id, end_id))
-            } else {
-              # First run - start from a known recent range
-              # 2024-25 season IDs are approximately 27000-29000+
-              start_id <- 28000
-              end_id <- 28499
-              message("No cached data found, starting fresh from ID 28000")
-            }
-          }
+          manifest_path <- file.path(getwd(), "data", "understat-manifest.parquet")
 
           cat("\n", strrep("=", 60), "\n")
-          cat("PANNA DAILY UNDERSTAT SCRAPE\n")
+          cat("PANNA SMART UNDERSTAT SCRAPE\n")
           cat(strrep("=", 60), "\n\n")
-          cat("ID Range:", start_id, "to", end_id, "\n")
-          cat("Skip cached:", skip_cached, "\n")
+          cat("Manifest path:", manifest_path, "\n")
+          cat("Lookback:", lookback, "IDs\n")
+          cat("Max misses per league:", max_misses, "\n")
           cat("Started:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n\n")
 
-          # Run bulk scrape with auto-detection
-          results <- bulk_scrape_understat(
-            start_id = start_id,
-            end_id = end_id,
+          # Run smart scraper with per-league tracking
+          results <- smart_scrape_understat(
+            manifest_path = manifest_path,
+            leagues = c("RUS", "ENG", "ESP", "FRA", "ITA", "GER"),
+            lookback = lookback,
+            max_misses = max_misses,
             delay = 3,
-            skip_cached = skip_cached,
             verbose = TRUE
           )
 
@@ -165,10 +181,17 @@ jobs:
           cat("SCRAPE SUMMARY\n")
           cat(strrep("=", 60), "\n")
           print(table(results$status))
+
           if (any(results$status == "success")) {
-            cat("\nLeague breakdown:\n")
+            cat("\nNew matches by league:\n")
             print(table(results$league[results$status == "success"]))
           }
+
+          # Show manifest stats
+          manifest <- load_understat_manifest(manifest_path)
+          cat("\nManifest totals by league:\n")
+          print(table(manifest$league))
+
           cat("\nFinished:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
         '
       shell: bash
@@ -200,7 +223,7 @@ jobs:
         '
       shell: bash
 
-    - name: Upload individual Understat parquet files to GitHub Releases
+    - name: Upload manifest to GitHub Releases
       run: |
         # Create release if it doesn't exist
         if ! gh release view understat-latest --repo peteowen1/pannadata >/dev/null 2>&1; then
@@ -208,10 +231,22 @@ jobs:
           gh release create understat-latest \
             --repo peteowen1/pannadata \
             --title "Understat Data (Latest)" \
-            --notes "Automated daily Understat data scrape. Individual parquet files for fast remote queries." \
+            --notes "Automated daily Understat data scrape with per-league tracking. Individual parquet files for fast remote queries." \
             --prerelease
         fi
 
+        # Upload manifest
+        if [ -f "data/understat-manifest.parquet" ]; then
+          echo "Uploading manifest..."
+          gh release upload understat-latest "data/understat-manifest.parquet" \
+            --repo peteowen1/pannadata \
+            --clobber
+        fi
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload consolidated Understat parquet files to GitHub Releases
+      run: |
         # Upload consolidated parquet files (understat_*.parquet)
         echo "Uploading consolidated Understat parquet files..."
         for f in data/consolidated/understat_*.parquet; do
@@ -270,7 +305,10 @@ jobs:
         echo "Daily Understat scrape completed successfully"
         echo "Check pannadata repo understat-latest release for updated data"
         echo ""
-        echo "Individual parquet files available for fast remote queries:"
+        echo "Manifest:"
+        ls -lh data/understat-manifest.parquet 2>/dev/null || echo "  (none)"
+        echo ""
+        echo "Consolidated parquet files:"
         ls -lh data/consolidated/understat_*.parquet 2>/dev/null || echo "  (none)"
         echo ""
         echo "Total Understat parquet files: $(find data/understat -name '*.parquet' 2>/dev/null | wc -l)"
