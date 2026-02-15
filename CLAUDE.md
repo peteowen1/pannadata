@@ -13,7 +13,7 @@ The repository stores data from three sources, each with its own folder structur
 | Source | Folder | Description |
 |--------|--------|-------------|
 | FBref | `data/fbref/` | Primary source - Big 5 leagues, cups, international |
-| Opta | `data/opta/` | Big 5 leagues since 2010, 271 columns per player |
+| Opta | `data/opta/` | 15 leagues (Big 5 + NED/POR/TUR/ENG2/SCO + UCL/UEL/UECL + WC/EURO), 2013+ |
 | Understat | `data/understat/` | Big 5 + Russia, xGChain/xGBuildup metrics |
 
 ## Data Source Scraping
@@ -57,12 +57,13 @@ These sources don't block GitHub Actions and use workflows in `.github/workflows
 ```
 data/fbref/{tabletype}/{league}/{season}/{fbref_id}.rds   # FBref individual matches
 data/fbref/{tabletype}/{league}/{season}.parquet          # FBref aggregated season
-data/opta/{league}/{season}/{opta_id}.rds                 # Opta individual matches
+data/opta/{tabletype}/{league}/{season}.parquet           # Opta aggregated season
 data/understat/{tabletype}/{league}/{season}.parquet      # Understat aggregated
 data/fixtures/{league}/{season}/fixtures.rds              # FBref match schedules (legacy location)
 ```
 
-Table types: `summary`, `passing`, `passing_types`, `defense`, `possession`, `misc`, `keeper`, `shots`, `events`, `metadata`
+FBref table types: `summary`, `passing`, `passing_types`, `defense`, `possession`, `misc`, `keeper`, `shots`, `events`, `metadata`
+Opta table types: `events`, `lineups`, `match_events`, `player_stats`, `shot_events`, `shots`, `xmetrics`
 
 Leagues: `ENG`, `ESP`, `GER`, `ITA`, `FRA` (Big 5), `UCL`, `UEL` (European), `FA_CUP`, `EFL_CUP`, `COPA_DEL_REY`, `COPPA_ITALIA`, `COUPE_DE_FRANCE`, `DFB_POKAL` (Cups), `WC`, `EURO`, `COPA_AMERICA`, `AFCON`, `ASIAN_CUP`, `GOLD_CUP`, `NATIONS_LEAGUE` (International)
 
@@ -99,25 +100,21 @@ source("data-raw/upload_to_release.R")    # Build parquet + upload to releases
 source("data-raw/debug_parquet.R")        # Verify parquet files are correct
 ```
 
-## FBref Match IDs
-
-**NEVER fabricate or guess FBref match IDs.** The 8-character hex IDs (e.g., `74125d47`) are specific to each match and cannot be derived from team names or dates.
-
-To find valid IDs:
-1. Check existing files: `list.files("data/fbref/metadata/ENG/2024-2025/")`
-2. Load metadata: `readRDS("data/fbref/metadata/ENG/2024-2025/74125d47.rds")$match_url`
-3. Navigate to FBref and copy from URL
-
 ## GitHub Actions
 
-The `daily-scrape.yml` workflow is currently **disabled** (renamed to `.disabled`). When enabled, it:
+The `daily-fbref-scrape.yml` workflow is currently **disabled** (renamed to `.disabled`). When enabled, it:
 - Runs at 6 AM UTC daily
 - Downloads existing parquet data from releases
 - Runs incremental scrape for current season (all leagues/cups)
 - Uses 4-second delay between requests
 - Builds parquet from RDS and uploads to releases
 
-To enable: rename `.github/workflows/daily-scrape.yml.disabled` to `daily-scrape.yml`
+To enable: rename `.github/workflows/daily-fbref-scrape.yml.disabled` to `daily-fbref-scrape.yml`
+
+### Active Workflows
+- `daily-opta-scrape.yml` - Daily Opta data scrape via GitHub Actions
+- `daily-understat-scrape.yml` - Daily Understat data scrape via GitHub Actions
+- `scrape-notification.yml` - Triggered on FBref scrape completion from VM
 
 ## Column Documentation
 
