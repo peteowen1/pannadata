@@ -63,7 +63,7 @@ data/fixtures/{league}/{season}/fixtures.rds              # FBref match schedule
 ```
 
 FBref table types: `summary`, `passing`, `passing_types`, `defense`, `possession`, `misc`, `keeper`, `shots`, `events`, `metadata`
-Opta table types: `events`, `lineups`, `match_events`, `player_stats`, `shot_events`, `shots`, `xmetrics`
+Opta table types: `events`, `lineups`, `match_events`, `player_stats`, `shot_events`, `shots`, `xmetrics`, `xmetrics`
 
 Leagues: `ENG`, `ESP`, `GER`, `ITA`, `FRA` (Big 5), `UCL`, `UEL` (European), `FA_CUP`, `EFL_CUP`, `COPA_DEL_REY`, `COPPA_ITALIA`, `COUPE_DE_FRANCE`, `DFB_POKAL` (Cups), `WC`, `EURO`, `COPA_AMERICA`, `AFCON`, `ASIAN_CUP`, `GOLD_CUP`, `NATIONS_LEAGUE` (International)
 
