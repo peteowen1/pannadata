@@ -217,7 +217,7 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
     opta_dir = pannadata_dir / "opta"
 
     # Create all output directories
-    data_types = ["player_stats", "shots", "shot_events", "match_events", "events", "lineups"]
+    data_types = ["player_stats", "shots", "shot_events", "match_events", "events", "lineups", "fixtures"]
     output_dirs = {dt: opta_dir / dt / competition for dt in data_types}
     for d in output_dirs.values():
         d.mkdir(parents=True, exist_ok=True)
@@ -257,6 +257,8 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
     new_matches_scraped = 0
     new_manifest_records = []  # Track new matches for manifest update
 
+    all_fixture_records = []
+
     for start_date, end_date in date_ranges:
         print(f"\nFetching {start_date} to {end_date}...")
 
@@ -265,6 +267,36 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
             m for m in matches
             if m.get("liveData", {}).get("matchDetails", {}).get("matchStatus") == "Played"
         ]
+
+        # Extract fixture data from ALL matches (played, fixture, postponed)
+        for m in matches:
+            match_info = m.get("matchInfo", {})
+            match_details = m.get("liveData", {}).get("matchDetails", {})
+            match_status = match_details.get("matchStatus", "Unknown")
+
+            # Extract team info from contestants
+            contestants = match_info.get("contestant", [])
+            home_team = away_team = home_team_id = away_team_id = None
+            for c in contestants:
+                if c.get("position") == "home":
+                    home_team = c.get("officialName", c.get("name", ""))
+                    home_team_id = c.get("id", "")
+                elif c.get("position") == "away":
+                    away_team = c.get("officialName", c.get("name", ""))
+                    away_team_id = c.get("id", "")
+
+            fixture_record = {
+                "match_id": match_info.get("id", ""),
+                "match_date": match_info.get("date", ""),
+                "match_status": match_status,
+                "home_team": home_team,
+                "away_team": away_team,
+                "home_team_id": home_team_id,
+                "away_team_id": away_team_id,
+                "competition": competition,
+                "season": season_name,
+            }
+            all_fixture_records.append(fixture_record)
 
         new_matches = [m for m in played if m["matchInfo"]["id"] not in existing_match_ids]
         print(f"  Found {len(matches)} total, {len(played)} played, {len(new_matches)} new")
@@ -395,6 +427,17 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
         output_dirs["lineups"] / f"{season_name}.parquet",
         ["match_id", "player_id"]
     )
+
+    # Save fixture data (always overwritten with latest from API)
+    if all_fixture_records:
+        fixture_df = pd.DataFrame(all_fixture_records)
+        fixture_df = fixture_df.drop_duplicates(subset=["match_id"])
+        fixture_path = output_dirs["fixtures"] / f"{season_name}.parquet"
+        fixture_df.to_parquet(fixture_path, index=False)
+        results["fixtures"] = fixture_df
+        print(f"\n  Fixtures: {len(fixture_df)} matches ({fixture_df['match_status'].value_counts().to_dict()})")
+    else:
+        results["fixtures"] = pd.DataFrame()
 
     # Summary
     print(f"\n{competition} {season_name} Complete:")
