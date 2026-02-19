@@ -61,11 +61,11 @@ jobs:
 
     - name: Download existing per-league parquet files
       run: |
-        mkdir -p data/opta/player_stats data/opta/shots data/opta/match_events data/opta/lineups data/opta/events data/opta/shot_events
+        mkdir -p data/opta/player_stats data/opta/shots data/opta/match_events data/opta/lineups data/opta/events data/opta/shot_events data/opta/fixtures
         echo "Downloading existing consolidated files..."
 
         # Download consolidated files (player_stats, shots, etc.)
-        for file in opta_player_stats.parquet opta_shots.parquet opta_shot_events.parquet opta_events.parquet opta_lineups.parquet; do
+        for file in opta_player_stats.parquet opta_shots.parquet opta_shot_events.parquet opta_events.parquet opta_lineups.parquet opta_fixtures.parquet; do
           if gh release download opta-latest --pattern "$file" --dir data/ 2>/dev/null; then
             echo "Downloaded $file"
           fi

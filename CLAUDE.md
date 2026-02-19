@@ -38,6 +38,26 @@ FBref blocks requests from GitHub Actions IP ranges. The daily FBref scrape runs
 ### Understat/Opta Scraping (GitHub Actions)
 These sources don't block GitHub Actions and use workflows in `.github/workflows/`.
 
+### Scraping Scripts
+
+Located in `scripts/`, organized by data source:
+
+```
+scripts/
+├── fbref/
+│   └── scrape_fbref.R        # FBref scraping (runs on VM, not GHA)
+├── opta/
+│   ├── scrape_opta.py         # Main Opta scraper (called by GHA workflow)
+│   ├── opta_scraper.py        # Opta scraping library
+│   ├── consolidate_opta.py    # Rebuild consolidated parquets from raw files
+│   ├── discover_seasons.py    # Find available seasons for each league
+│   └── build_manifest.py      # Build file manifest for validation
+└── understat/
+    ├── scrape_understat.R     # Main Understat scraper (called by GHA workflow)
+    ├── backfill_understat.R   # Historical data backfill
+    └── init_backfill.R        # Backfill initialization
+```
+
 ## Data Storage
 
 - **Local**: `data/` folder (gitignored, too large for git)
@@ -63,7 +83,11 @@ data/fixtures/{league}/{season}/fixtures.rds              # FBref match schedule
 ```
 
 FBref table types: `summary`, `passing`, `passing_types`, `defense`, `possession`, `misc`, `keeper`, `shots`, `events`, `metadata`
-Opta table types: `events`, `lineups`, `match_events`, `player_stats`, `shot_events`, `shots`, `xmetrics`, `xmetrics`
+Opta table types: `events`, `lineups`, `match_events`, `player_stats`, `shot_events`, `shots`, `xmetrics`, `fixtures`
+
+### Consolidation Gotcha
+
+`consolidate_opta.py` reads raw files from `opta/{table_type}/{league}/` and rebuilds consolidated files from scratch. Running it locally after scraping only one league will **destroy** other leagues' data in the consolidated files. Only run the full consolidation in GHA (which downloads all raw files first), or consolidate individual table types with a targeted script.
 
 Leagues: `ENG`, `ESP`, `GER`, `ITA`, `FRA` (Big 5), `UCL`, `UEL` (European), `FA_CUP`, `EFL_CUP`, `COPA_DEL_REY`, `COPPA_ITALIA`, `COUPE_DE_FRANCE`, `DFB_POKAL` (Cups), `WC`, `EURO`, `COPA_AMERICA`, `AFCON`, `ASIAN_CUP`, `GOLD_CUP`, `NATIONS_LEAGUE` (International)
 
