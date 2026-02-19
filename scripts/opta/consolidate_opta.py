@@ -124,6 +124,9 @@ def consolidate_opta(opta_dir="opta", output_dir="consolidated"):
             elif 'player_id' in combined.columns:
                 # Player tables: dedupe by match_id + player_id
                 combined = combined.drop_duplicates(subset=['match_id', 'player_id'])
+            else:
+                # Tables without player_id or event_id (e.g. fixtures): dedupe by match_id
+                combined = combined.drop_duplicates(subset=['match_id'])
             if len(combined) < before_count:
                 print(f"  Removed {before_count - len(combined):,} duplicate rows")
 

@@ -17,6 +17,8 @@ Usage:
     python scrape_opta.py --seasons 2024-2025 2023-2024  # Specific seasons
     python scrape_opta.py --leagues EPL --seasons 2024-2025 2023-2024
     python scrape_opta.py --recent 1                # Most recent season per league
+    python scrape_opta.py --types fixtures           # Only scrape fixture lists
+    python scrape_opta.py --types fixtures --recent 1  # Fixtures for current season only
 """
 
 import json
@@ -187,7 +189,8 @@ def get_season_date_range(season_name: str) -> tuple:
 
 def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
                   season_id: str, complete_matches: set, unavailable_matches: set,
-                  force_rescrape: bool = False, retry_unavailable: bool = False):
+                  force_rescrape: bool = False, retry_unavailable: bool = False,
+                  scrape_types: list = None):
     """Scrape a full season of data for a competition with all data types.
 
     Args:
@@ -217,10 +220,15 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
     opta_dir = pannadata_dir / "opta"
 
     # Create all output directories
-    data_types = ["player_stats", "shots", "shot_events", "match_events", "events", "lineups"]
+    data_types = ["player_stats", "shots", "shot_events", "match_events", "events", "lineups", "fixtures"]
     output_dirs = {dt: opta_dir / dt / competition for dt in data_types}
     for d in output_dirs.values():
         d.mkdir(parents=True, exist_ok=True)
+
+    # Determine which data types to scrape
+    if scrape_types is None or "all" in scrape_types:
+        scrape_types = ["player_stats", "shots", "shot_events", "match_events", "events", "lineups", "fixtures"]
+    fixtures_only = scrape_types == ["fixtures"]
 
     # Use manifest to check for existing matches
     existing_match_ids = set()
@@ -257,6 +265,8 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
     new_matches_scraped = 0
     new_manifest_records = []  # Track new matches for manifest update
 
+    all_fixture_records = []
+
     for start_date, end_date in date_ranges:
         print(f"\nFetching {start_date} to {end_date}...")
 
@@ -266,8 +276,50 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
             if m.get("liveData", {}).get("matchDetails", {}).get("matchStatus") == "Played"
         ]
 
+        # Extract fixture data from ALL matches (played, fixture, postponed)
+        for m in matches:
+            match_info = m.get("matchInfo", {})
+            match_details = m.get("liveData", {}).get("matchDetails", {})
+            match_status = match_details.get("matchStatus", "Unknown")
+
+            # Extract team info from contestants
+            contestants = match_info.get("contestant", [])
+            home_team = away_team = home_team_id = away_team_id = None
+            for c in contestants:
+                if c.get("position") == "home":
+                    home_team = c.get("officialName", c.get("name", ""))
+                    home_team_id = c.get("id", "")
+                elif c.get("position") == "away":
+                    away_team = c.get("officialName", c.get("name", ""))
+                    away_team_id = c.get("id", "")
+
+            # Extract scores (available for played matches)
+            scores = match_details.get("scores", {})
+            ft_score = scores.get("ft", {})
+            ht_score = scores.get("ht", {})
+
+            fixture_record = {
+                "match_id": match_info.get("id", ""),
+                "match_date": match_info.get("date", ""),
+                "match_status": match_status,
+                "home_team": home_team,
+                "away_team": away_team,
+                "home_team_id": home_team_id,
+                "away_team_id": away_team_id,
+                "home_score": ft_score.get("home") if ft_score else None,
+                "away_score": ft_score.get("away") if ft_score else None,
+                "home_score_ht": ht_score.get("home") if ht_score else None,
+                "away_score_ht": ht_score.get("away") if ht_score else None,
+                "competition": competition,
+                "season": season_name,
+            }
+            all_fixture_records.append(fixture_record)
+
         new_matches = [m for m in played if m["matchInfo"]["id"] not in existing_match_ids]
         print(f"  Found {len(matches)} total, {len(played)} played, {len(new_matches)} new")
+
+        if fixtures_only:
+            continue
 
         for i, match in enumerate(new_matches):
             match_id = match["matchInfo"]["id"]
@@ -365,36 +417,48 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
 
     # Combine and save all data types
     results = {}
-    results["player_stats"] = combine_and_save(
-        all_player_stats,
-        output_dirs["player_stats"] / f"{season_name}.parquet",
-        ["match_id", "player_id"]
-    )
-    results["shots"] = combine_and_save(
-        all_shots,
-        output_dirs["shots"] / f"{season_name}.parquet",
-        ["match_id", "player_id"]
-    )
-    results["shot_events"] = combine_and_save(
-        all_shot_events,
-        output_dirs["shot_events"] / f"{season_name}.parquet",
-        ["match_id", "event_id"]
-    )
-    results["match_events"] = combine_and_save(
-        all_match_events,
-        output_dirs["match_events"] / f"{season_name}.parquet",
-        ["match_id", "event_id"]
-    )
-    results["events"] = combine_and_save(
-        all_events,
-        output_dirs["events"] / f"{season_name}.parquet",
-        ["match_id", "event_type", "minute", "player_id"]
-    )
-    results["lineups"] = combine_and_save(
-        all_lineups,
-        output_dirs["lineups"] / f"{season_name}.parquet",
-        ["match_id", "player_id"]
-    )
+    if not fixtures_only:
+        results["player_stats"] = combine_and_save(
+            all_player_stats,
+            output_dirs["player_stats"] / f"{season_name}.parquet",
+            ["match_id", "player_id"]
+        )
+        results["shots"] = combine_and_save(
+            all_shots,
+            output_dirs["shots"] / f"{season_name}.parquet",
+            ["match_id", "player_id"]
+        )
+        results["shot_events"] = combine_and_save(
+            all_shot_events,
+            output_dirs["shot_events"] / f"{season_name}.parquet",
+            ["match_id", "event_id"]
+        )
+        results["match_events"] = combine_and_save(
+            all_match_events,
+            output_dirs["match_events"] / f"{season_name}.parquet",
+            ["match_id", "event_id"]
+        )
+        results["events"] = combine_and_save(
+            all_events,
+            output_dirs["events"] / f"{season_name}.parquet",
+            ["match_id", "event_type", "minute", "player_id"]
+        )
+        results["lineups"] = combine_and_save(
+            all_lineups,
+            output_dirs["lineups"] / f"{season_name}.parquet",
+            ["match_id", "player_id"]
+        )
+
+    # Save fixture data (always overwritten with latest from API)
+    if all_fixture_records:
+        fixture_df = pd.DataFrame(all_fixture_records)
+        fixture_df = fixture_df.drop_duplicates(subset=["match_id"])
+        fixture_path = output_dirs["fixtures"] / f"{season_name}.parquet"
+        fixture_df.to_parquet(fixture_path, index=False)
+        results["fixtures"] = fixture_df
+        print(f"\n  Fixtures: {len(fixture_df)} matches ({fixture_df['match_status'].value_counts().to_dict()})")
+    else:
+        results["fixtures"] = pd.DataFrame()
 
     # Summary
     print(f"\n{competition} {season_name} Complete:")
@@ -409,12 +473,12 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
         "season": season_name,
         "new_matches": new_matches_scraped,
         "total_matches": len(existing_match_ids),
-        "player_records": len(results["player_stats"]),
-        "shot_records": len(results["shots"]),
-        "shot_event_records": len(results["shot_events"]),
-        "match_event_records": len(results["match_events"]),
-        "event_records": len(results["events"]),
-        "lineup_records": len(results["lineups"]),
+        "player_records": len(results.get("player_stats", pd.DataFrame())),
+        "shot_records": len(results.get("shots", pd.DataFrame())),
+        "shot_event_records": len(results.get("shot_events", pd.DataFrame())),
+        "match_event_records": len(results.get("match_events", pd.DataFrame())),
+        "event_records": len(results.get("events", pd.DataFrame())),
+        "lineup_records": len(results.get("lineups", pd.DataFrame())),
         "manifest_records": new_manifest_records,
     }
 
@@ -439,6 +503,11 @@ def main():
                        help="Retry matches that previously had 404 for event data")
     parser.add_argument("--recent", type=int, default=0,
                        help="Scrape only the N most recent seasons per league")
+    parser.add_argument("--types", nargs="+",
+                       choices=["all", "fixtures", "player_stats", "shots", "shot_events",
+                                "match_events", "events", "lineups"],
+                       default=["all"],
+                       help="Data types to scrape (default: all)")
     args = parser.parse_args()
 
     # Determine what to scrape
@@ -481,8 +550,15 @@ def main():
 
     # Load manifest (tracks which matches have been scraped)
     pannadata_dir = get_pannadata_dir()
+    # Determine scrape types
+    scrape_types = args.types
+    fixtures_only = scrape_types == ["fixtures"]
+
     manifest_path = pannadata_dir / "opta-manifest.parquet"
-    if args.force:
+    if fixtures_only:
+        # No need to load manifest when only scraping fixtures
+        complete_matches, unavailable_matches = set(), set()
+    elif args.force:
         complete_matches, unavailable_matches = set(), set()
     else:
         complete_matches, unavailable_matches = load_manifest(manifest_path)
@@ -491,6 +567,7 @@ def main():
     print("OPTA LEAGUES SCRAPER")
     print("=" * 60)
     print(f"Leagues: {leagues_to_scrape}")
+    print(f"Data types: {scrape_types}")
     print(f"Scrape plan: {len(scrape_plan)} league-seasons")
     for league, season, _ in scrape_plan:
         print(f"  - {league} {season}")
@@ -504,7 +581,8 @@ def main():
                                    complete_matches=complete_matches,
                                    unavailable_matches=unavailable_matches,
                                    force_rescrape=args.force,
-                                   retry_unavailable=args.retry_unavailable)
+                                   retry_unavailable=args.retry_unavailable,
+                                   scrape_types=scrape_types)
             results.append(result)
             # Collect manifest records from this season
             all_new_manifest_records.extend(result.get("manifest_records", []))
