@@ -3,8 +3,8 @@
 Consolidate Opta parquet files into single files per table type.
 
 Reads from: opta/{table_type}/{league}/{season}.parquet
-Writes to:  consolidated/opta_{table_type}.parquet
-           consolidated/match_events/events_{league}.parquet (per-league events)
+Writes to:  opta/opta_{table_type}.parquet
+           opta/events_consolidated/events_{league}.parquet (per-league events)
 """
 
 import sys
@@ -12,7 +12,7 @@ import pandas as pd
 from pathlib import Path
 
 
-def consolidate_events_by_league(opta_dir="opta", output_dir="consolidated"):
+def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
     """Consolidate match_events by league (too large for single file).
 
     Merges existing consolidated per-league files with newly scraped
@@ -20,7 +20,7 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="consolidated"):
     """
     opta_path = Path(opta_dir)
     events_dir = opta_path / "match_events"
-    output_path = Path(output_dir) / "match_events"
+    output_path = Path(output_dir) / "events_consolidated"
     output_path.mkdir(parents=True, exist_ok=True)
 
     # Find all leagues (from both new data and existing consolidated files)
@@ -93,7 +93,7 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="consolidated"):
     return errors
 
 
-def consolidate_opta(opta_dir="opta", output_dir="consolidated"):
+def consolidate_opta(opta_dir="opta", output_dir="opta"):
     """Consolidate all Opta parquet files by table type.
 
     Merges existing consolidated files with newly scraped hierarchical files,
@@ -113,8 +113,9 @@ def consolidate_opta(opta_dir="opta", output_dir="consolidated"):
         return 0
 
     # Find all table types (subdirectories of opta/)
-    # Exclude match_events - consolidated separately by league (too large for single file)
-    table_types = [d.name for d in opta_path.iterdir() if d.is_dir() and d.name != 'match_events']
+    # Exclude match_events (consolidated separately by league), events_consolidated (output dir), and models
+    exclude = {'match_events', 'events_consolidated', 'models'}
+    table_types = [d.name for d in opta_path.iterdir() if d.is_dir() and d.name not in exclude]
     print(f"Found table types: {table_types}")
 
     errors = 0
@@ -174,7 +175,10 @@ def consolidate_opta(opta_dir="opta", output_dir="consolidated"):
             if 'event_id' in combined.columns and table_type in ['shot_events', 'match_events']:
                 combined = combined.drop_duplicates(subset=['match_id', 'event_id'], keep='last')
             elif table_type == 'events' and all(c in combined.columns for c in ['match_id', 'event_type', 'minute', 'player_id']):
-                combined = combined.drop_duplicates(subset=['match_id', 'event_type', 'minute', 'player_id'], keep='last')
+                dedup_cols = ['match_id', 'event_type', 'minute', 'player_id']
+                if 'second' in combined.columns:
+                    dedup_cols.append('second')
+                combined = combined.drop_duplicates(subset=dedup_cols, keep='last')
             elif 'player_id' in combined.columns:
                 combined = combined.drop_duplicates(subset=['match_id', 'player_id'], keep='last')
             else:
