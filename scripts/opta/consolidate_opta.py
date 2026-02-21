@@ -7,9 +7,13 @@ Writes to:  opta/opta_{table_type}.parquet
            opta/events_consolidated/events_{league}.parquet (per-league events)
 """
 
+import logging
+import shutil
 import sys
 import pandas as pd
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
@@ -46,7 +50,7 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
                 existing_count = len(existing_df)
                 dfs.append(existing_df)
                 print(f"  {league}: Loaded {existing_count:,} existing rows")
-            except Exception as e:
+            except (pd.errors.ParserError, FileNotFoundError, OSError, ValueError) as e:
                 print(f"  ERROR: Failed to read existing {existing_file}: {e}")
                 print(f"  Skipping {league} to prevent data loss")
                 errors += 1
@@ -61,7 +65,7 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
                 df['competition'] = league
                 df['season'] = f.stem
                 dfs.append(df)
-            except Exception as e:
+            except (pd.errors.ParserError, FileNotFoundError, OSError, ValueError) as e:
                 print(f"  Warning: Error reading {f}: {e}")
 
         if not dfs:
@@ -76,14 +80,19 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
             if len(combined) < before:
                 print(f"  {league}: Removed {before - len(combined):,} duplicates")
 
-        # Sanity check: don't write dramatically fewer rows than existed
-        if existing_count > 0 and len(combined) < existing_count * 0.5:
+        # Sanity check: don't write if row count drops more than 10%
+        if existing_count > 0 and len(combined) < existing_count * 0.9:
+            pct_loss = 100 * (1 - len(combined) / existing_count)
             print(f"  ERROR: {league} row count dropped from {existing_count:,} to "
-                  f"{len(combined):,}. Skipping write to prevent data loss.")
+                  f"{len(combined):,} ({pct_loss:.1f}% loss). Skipping write to prevent data loss.")
             errors += 1
             continue
 
         output_file = output_path / f"events_{league}.parquet"
+        # Backup existing file before overwriting
+        if output_file.exists():
+            backup_file = output_file.with_suffix('.parquet.backup')
+            shutil.copy2(output_file, backup_file)
         combined.to_parquet(output_file, index=False, compression='gzip')
 
         size_mb = output_file.stat().st_size / (1024 * 1024)
@@ -144,7 +153,7 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
                     dfs.append(existing_df)
                     print(f"  Loaded {existing_count:,} existing rows from {existing_path}")
                     break  # Successfully loaded - don't try other sources
-                except Exception as e:
+                except (pd.errors.ParserError, FileNotFoundError, OSError, ValueError) as e:
                     print(f"  Warning: Error reading existing {existing_path}: {e}")
                     # Fall through to try the next path
 
@@ -159,7 +168,7 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
                 df['competition'] = competition
                 df['season'] = season
                 dfs.append(df)
-            except Exception as e:
+            except (pd.errors.ParserError, FileNotFoundError, OSError, ValueError) as e:
                 print(f"  Warning: Error reading {f}: {e}")
 
         if not dfs:
@@ -186,15 +195,19 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
             if len(combined) < before_count:
                 print(f"  Removed {before_count - len(combined):,} duplicate rows")
 
-        # Sanity check: don't write dramatically fewer rows than existed
-        if existing_count > 0 and len(combined) < existing_count * 0.5:
+        # Sanity check: don't write if row count drops more than 10%
+        if existing_count > 0 and len(combined) < existing_count * 0.9:
+            pct_loss = 100 * (1 - len(combined) / existing_count)
             print(f"  ERROR: {table_type} row count dropped from {existing_count:,} to "
-                  f"{len(combined):,}. Skipping write to prevent data loss.")
+                  f"{len(combined):,} ({pct_loss:.1f}% loss). Skipping write to prevent data loss.")
             errors += 1
             continue
 
-        # Write consolidated parquet
+        # Write consolidated parquet (backup existing first)
         output_file = output_path / f"opta_{table_type}.parquet"
+        if output_file.exists():
+            backup_file = output_file.with_suffix('.parquet.backup')
+            shutil.copy2(output_file, backup_file)
         combined.to_parquet(output_file, index=False)
 
         size_mb = output_file.stat().st_size / (1024 * 1024)
@@ -206,8 +219,13 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s [%(levelname)s] %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
     errors = consolidate_opta()
     errors += consolidate_events_by_league()
     if errors:
-        print(f"\n{errors} error(s) occurred during consolidation")
+        logger.error("%d error(s) occurred during consolidation", errors)
         sys.exit(1)

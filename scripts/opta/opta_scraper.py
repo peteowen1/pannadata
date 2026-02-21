@@ -505,23 +505,57 @@ class OptaScraper:
         if self._request_count % 10 == 0:
             self._set_random_headers()
 
-    def _fetch(self, endpoint: str, params: Dict[str, str]) -> Optional[Dict]:
-        """Fetch from API with JSON format"""
-        self._rate_limit()
+    def _fetch(self, endpoint: str, params: Dict[str, str],
+               max_retries: int = 3) -> Optional[Dict]:
+        """Fetch from API with JSON format and exponential backoff retry.
+
+        Retries on transient failures (429, 500-504, connection errors).
+        Returns None on permanent failures (400, 404, etc.).
+        """
         url = f"{self.BASE_URL}/{endpoint}"
         default_params = {"_rt": "c", "_fmt": "json"}
         all_params = {**default_params, **params}
 
-        try:
-            resp = self.session.get(url, params=all_params, timeout=30)
-            resp.raise_for_status()
-            return resp.json()
-        except requests.RequestException as e:
-            print(f"Request failed for {endpoint}: {e}")
-            return None
-        except json.JSONDecodeError as e:
-            print(f"JSON parse failed: {e}")
-            return None
+        for attempt in range(1, max_retries + 1):
+            self._rate_limit()
+            try:
+                resp = self.session.get(url, params=all_params, timeout=30)
+
+                # Permanent client errors - don't retry
+                if resp.status_code in (400, 403, 404):
+                    if resp.status_code != 404:
+                        print(f"Request failed for {endpoint}: HTTP {resp.status_code}")
+                    return None
+
+                # Rate limited or server error - retry with backoff
+                if resp.status_code == 429 or resp.status_code >= 500:
+                    wait = 2 ** attempt + random.uniform(0, 1)
+                    print(f"HTTP {resp.status_code} for {endpoint} "
+                          f"(attempt {attempt}/{max_retries}), retrying in {wait:.1f}s...")
+                    time.sleep(wait)
+                    continue
+
+                resp.raise_for_status()
+                return resp.json()
+
+            except (requests.ConnectionError, requests.Timeout) as e:
+                if attempt < max_retries:
+                    wait = 2 ** attempt + random.uniform(0, 1)
+                    print(f"Connection error for {endpoint} "
+                          f"(attempt {attempt}/{max_retries}): {e}, retrying in {wait:.1f}s...")
+                    time.sleep(wait)
+                else:
+                    print(f"Request failed for {endpoint} after {max_retries} attempts: {e}")
+                    return None
+            except requests.RequestException as e:
+                print(f"Request failed for {endpoint}: {e}")
+                return None
+            except json.JSONDecodeError as e:
+                print(f"JSON parse failed for {endpoint}: {e}")
+                return None
+
+        print(f"Request failed for {endpoint} after {max_retries} attempts")
+        return None
 
     def discover_seasons(self, competition: str) -> Dict[str, str]:
         """

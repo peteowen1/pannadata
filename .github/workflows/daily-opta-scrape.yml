@@ -102,8 +102,14 @@ jobs:
         PARQUET_COUNT=$(find opta -name "*.parquet" 2>/dev/null | wc -l)
         echo "Total parquet files: $PARQUET_COUNT"
         if [ "$PARQUET_COUNT" -eq 0 ]; then
-          echo "No parquet files to consolidate"
-          exit 0
+          # Distinguish "no new data" from "scraper crashed"
+          if [ -f "../scripts/opta/data/scrape_summary.json" ]; then
+            echo "No new parquet files, but scraper ran successfully (no new matches)"
+            exit 0
+          else
+            echo "ERROR: No parquet files AND no scrape summary - scraper may have crashed"
+            exit 1
+          fi
         fi
         python ../scripts/opta/consolidate_opta.py
 

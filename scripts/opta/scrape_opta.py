@@ -23,12 +23,16 @@ Usage:
 
 import json
 import argparse
+import logging
 import sys
 from pathlib import Path
 from datetime import datetime
 from opta_scraper import OptaScraper, MatchEvent, ShotEvent, PlayerLineup, AllMatchEvent
 from dataclasses import asdict
 import pandas as pd
+import requests
+
+logger = logging.getLogger(__name__)
 
 
 def load_manifest(manifest_path: Path, include_unavailable: bool = True) -> tuple:
@@ -60,7 +64,7 @@ def load_manifest(manifest_path: Path, include_unavailable: bool = True) -> tupl
 
         print(f"Loaded manifest: {len(complete_set):,} complete, {len(unavailable_set):,} unavailable")
         return complete_set, unavailable_set
-    except Exception as e:
+    except (pd.errors.ParserError, FileNotFoundError, OSError, ValueError) as e:
         print(f"Warning: Error loading manifest: {e}")
         return set(), set()
 
@@ -485,6 +489,11 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
 
 def main():
     """Scrape Big 5 leagues"""
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s [%(levelname)s] %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
     sys.stdout.reconfigure(encoding='utf-8')
 
     # Load seasons config
@@ -586,8 +595,8 @@ def main():
             results.append(result)
             # Collect manifest records from this season
             all_new_manifest_records.extend(result.get("manifest_records", []))
-        except Exception as e:
-            print(f"ERROR scraping {league} {season_name}: {e}")
+        except (requests.RequestException, ValueError, KeyError, OSError) as e:
+            logger.error("Failed scraping %s %s: %s", league, season_name, e, exc_info=True)
             results.append({
                 "competition": league,
                 "season": season_name,
