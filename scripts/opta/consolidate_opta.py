@@ -175,7 +175,10 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
             if 'event_id' in combined.columns and table_type in ['shot_events', 'match_events']:
                 combined = combined.drop_duplicates(subset=['match_id', 'event_id'], keep='last')
             elif table_type == 'events' and all(c in combined.columns for c in ['match_id', 'event_type', 'minute', 'player_id']):
-                combined = combined.drop_duplicates(subset=['match_id', 'event_type', 'minute', 'player_id'], keep='last')
+                dedup_cols = ['match_id', 'event_type', 'minute', 'player_id']
+                if 'second' in combined.columns:
+                    dedup_cols.append('second')
+                combined = combined.drop_duplicates(subset=dedup_cols, keep='last')
             elif 'player_id' in combined.columns:
                 combined = combined.drop_duplicates(subset=['match_id', 'player_id'], keep='last')
             else:
