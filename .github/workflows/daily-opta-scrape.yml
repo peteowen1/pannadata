@@ -64,17 +64,17 @@ jobs:
         mkdir -p data/opta/player_stats data/opta/shots data/opta/match_events data/opta/lineups data/opta/events data/opta/shot_events data/opta/fixtures
         echo "Downloading existing consolidated files..."
 
-        # Download consolidated files (player_stats, shots, etc.)
+        # Download consolidated files (player_stats, shots, etc.) into data/opta/
         for file in opta_player_stats.parquet opta_shots.parquet opta_shot_events.parquet opta_events.parquet opta_lineups.parquet opta_fixtures.parquet; do
-          if gh release download opta-latest --pattern "$file" --dir data/ 2>/dev/null; then
+          if gh release download opta-latest --pattern "$file" --dir data/opta/ 2>/dev/null; then
             echo "Downloaded $file"
           fi
         done
 
         # Download per-league events files
-        mkdir -p data/consolidated/match_events
+        mkdir -p data/opta/events_consolidated
         for file in $(gh release view opta-latest --json assets -q '.assets[].name' 2>/dev/null | grep "^events_" || true); do
-          if gh release download opta-latest --pattern "$file" --dir data/consolidated/match_events/ 2>/dev/null; then
+          if gh release download opta-latest --pattern "$file" --dir data/opta/events_consolidated/ 2>/dev/null; then
             echo "Downloaded $file"
           fi
         done
@@ -105,7 +105,6 @@ jobs:
           echo "No parquet files to consolidate"
           exit 0
         fi
-        mkdir -p consolidated
         python ../scripts/opta/consolidate_opta.py
 
     - name: Upload to GitHub Releases
@@ -124,16 +123,16 @@ jobs:
         fi
 
         # Upload consolidated parquets (by table type)
-        for f in consolidated/opta_*.parquet; do
+        for f in opta/opta_*.parquet; do
           [ -f "$f" ] && gh release upload opta-latest "$f" --clobber && echo "Uploaded $(basename $f)"
         done
 
         # Upload per-league events files
-        if [ -d "consolidated/match_events" ]; then
-          for f in consolidated/match_events/events_*.parquet; do
+        if [ -d "opta/events_consolidated" ]; then
+          for f in opta/events_consolidated/events_*.parquet; do
             [ -f "$f" ] && gh release upload opta-latest "$f" --clobber && echo "Uploaded $(basename $f)"
           done
-          echo "Uploaded $(ls consolidated/match_events/events_*.parquet 2>/dev/null | wc -l) events files"
+          echo "Uploaded $(ls opta/events_consolidated/events_*.parquet 2>/dev/null | wc -l) events files"
         fi
 
         echo "Upload complete"
@@ -146,5 +145,5 @@ jobs:
         echo "Manifest: $(ls -lh data/opta-manifest.parquet 2>/dev/null | awk '{print $5}' || echo 'Not found')"
         echo "Raw parquet files: $(find data/opta -name '*.parquet' 2>/dev/null | wc -l)"
         echo "Consolidated by table:"
-        ls -lh data/consolidated/opta_*.parquet 2>/dev/null || echo "  None"
-        echo "Events by league: $(ls data/consolidated/match_events/events_*.parquet 2>/dev/null | wc -l) files"
+        ls -lh data/opta/opta_*.parquet 2>/dev/null || echo "  None"
+        echo "Events by league: $(ls data/opta/events_consolidated/events_*.parquet 2>/dev/null | wc -l) files"

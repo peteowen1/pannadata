@@ -212,7 +212,7 @@ jobs:
 
           message("Building consolidated Understat parquet files...")
           stats <- build_consolidated_understat_parquet(
-            output_dir = file.path(getwd(), "data", "consolidated"),
+            output_dir = file.path(getwd(), "data", "understat"),
             verbose = TRUE
           )
 
@@ -249,7 +249,7 @@ jobs:
       run: |
         # Upload consolidated parquet files (understat_*.parquet)
         echo "Uploading consolidated Understat parquet files..."
-        for f in data/consolidated/understat_*.parquet; do
+        for f in data/understat/understat_*.parquet; do
           if [ -f "$f" ]; then
             fname=$(basename "$f")
             echo "  Uploading $fname..."
@@ -309,7 +309,7 @@ jobs:
         ls -lh data/understat-manifest.parquet 2>/dev/null || echo "  (none)"
         echo ""
         echo "Consolidated parquet files:"
-        ls -lh data/consolidated/understat_*.parquet 2>/dev/null || echo "  (none)"
+        ls -lh data/understat/understat_*.parquet 2>/dev/null || echo "  (none)"
         echo ""
         echo "Total Understat parquet files: $(find data/understat -name '*.parquet' 2>/dev/null | wc -l)"
       shell: bash
