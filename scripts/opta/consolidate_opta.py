@@ -7,6 +7,7 @@ Writes to:  consolidated/opta_{table_type}.parquet
            consolidated/match_events/events_{league}.parquet (per-league events)
 """
 
+import sys
 import pandas as pd
 from pathlib import Path
 
@@ -30,20 +31,26 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="consolidated"):
     leagues = sorted(new_leagues | existing_leagues)
     print(f"Consolidating match_events for {len(leagues)} leagues...")
 
+    errors = 0
     for league in leagues:
         league_dir = events_dir / league
         parquet_files = list(league_dir.glob("*.parquet")) if league_dir.exists() else []
 
         # Read existing consolidated file first (contains historical data)
         dfs = []
+        existing_count = 0
         existing_file = output_path / f"events_{league}.parquet"
         if existing_file.exists():
             try:
                 existing_df = pd.read_parquet(existing_file)
+                existing_count = len(existing_df)
                 dfs.append(existing_df)
-                print(f"  {league}: Loaded {len(existing_df):,} existing rows")
+                print(f"  {league}: Loaded {existing_count:,} existing rows")
             except Exception as e:
-                print(f"  Warning: Error reading existing {existing_file}: {e}")
+                print(f"  ERROR: Failed to read existing {existing_file}: {e}")
+                print(f"  Skipping {league} to prevent data loss")
+                errors += 1
+                continue
 
         if not parquet_files and not dfs:
             continue
@@ -62,12 +69,19 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="consolidated"):
 
         combined = pd.concat(dfs, ignore_index=True)
 
-        # Dedupe by match_id + event_id
+        # Dedupe by match_id + event_id, keeping latest data
         if 'match_id' in combined.columns and 'event_id' in combined.columns:
             before = len(combined)
-            combined = combined.drop_duplicates(subset=['match_id', 'event_id'])
+            combined = combined.drop_duplicates(subset=['match_id', 'event_id'], keep='last')
             if len(combined) < before:
                 print(f"  {league}: Removed {before - len(combined):,} duplicates")
+
+        # Sanity check: don't write dramatically fewer rows than existed
+        if existing_count > 0 and len(combined) < existing_count * 0.5:
+            print(f"  ERROR: {league} row count dropped from {existing_count:,} to "
+                  f"{len(combined):,}. Skipping write to prevent data loss.")
+            errors += 1
+            continue
 
         output_file = output_path / f"events_{league}.parquet"
         combined.to_parquet(output_file, index=False, compression='gzip')
@@ -76,6 +90,7 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="consolidated"):
         print(f"  {league}: {len(parquet_files)} seasons, {len(combined):,} rows, {size_mb:.1f}MB")
 
     print(f"Events consolidation complete: {len(leagues)} leagues")
+    return errors
 
 
 def consolidate_opta(opta_dir="opta", output_dir="consolidated"):
@@ -95,13 +110,14 @@ def consolidate_opta(opta_dir="opta", output_dir="consolidated"):
 
     if not opta_path.exists():
         print(f"Opta directory not found: {opta_dir}")
-        return
+        return 0
 
     # Find all table types (subdirectories of opta/)
     # Exclude match_events - consolidated separately by league (too large for single file)
     table_types = [d.name for d in opta_path.iterdir() if d.is_dir() and d.name != 'match_events']
     print(f"Found table types: {table_types}")
 
+    errors = 0
     for table_type in table_types:
         tt_dir = opta_path / table_type
         parquet_files = list(tt_dir.glob("**/*.parquet"))
@@ -115,6 +131,7 @@ def consolidate_opta(opta_dir="opta", output_dir="consolidated"):
         # Read existing consolidated file first (contains historical data)
         # Check both parent dir (where GHA downloads) and output dir (from previous run)
         dfs = []
+        existing_count = 0
         for existing_path in [
             parent_dir / f"opta_{table_type}.parquet",
             output_path / f"opta_{table_type}.parquet",
@@ -122,11 +139,13 @@ def consolidate_opta(opta_dir="opta", output_dir="consolidated"):
             if existing_path.exists():
                 try:
                     existing_df = pd.read_parquet(existing_path)
+                    existing_count = len(existing_df)
                     dfs.append(existing_df)
-                    print(f"  Loaded {len(existing_df):,} existing rows from {existing_path}")
+                    print(f"  Loaded {existing_count:,} existing rows from {existing_path}")
+                    break  # Successfully loaded - don't try other sources
                 except Exception as e:
                     print(f"  Warning: Error reading existing {existing_path}: {e}")
-                break  # Only load from one source to avoid double-counting
+                    # Fall through to try the next path
 
         # Read new hierarchical data, adding competition and season columns
         for f in parquet_files:
@@ -149,33 +168,42 @@ def consolidate_opta(opta_dir="opta", output_dir="consolidated"):
         # Concatenate with pandas (handles type differences across seasons)
         combined = pd.concat(dfs, ignore_index=True)
 
-        # Deduplicate based on table type
-        # - Most tables use match_id + player_id
-        # - Event tables (shot_events, match_events) use match_id + event_id
+        # Deduplicate based on table type (keep='last' so new data wins over stale)
         before_count = len(combined)
         if 'match_id' in combined.columns:
             if 'event_id' in combined.columns and table_type in ['shot_events', 'match_events']:
-                # Event tables: dedupe by match_id + event_id
-                combined = combined.drop_duplicates(subset=['match_id', 'event_id'])
+                combined = combined.drop_duplicates(subset=['match_id', 'event_id'], keep='last')
+            elif table_type == 'events' and all(c in combined.columns for c in ['match_id', 'event_type', 'minute', 'player_id']):
+                combined = combined.drop_duplicates(subset=['match_id', 'event_type', 'minute', 'player_id'], keep='last')
             elif 'player_id' in combined.columns:
-                # Player tables: dedupe by match_id + player_id
-                combined = combined.drop_duplicates(subset=['match_id', 'player_id'])
+                combined = combined.drop_duplicates(subset=['match_id', 'player_id'], keep='last')
             else:
-                # Tables without player_id or event_id (e.g. fixtures): dedupe by match_id
-                combined = combined.drop_duplicates(subset=['match_id'])
+                combined = combined.drop_duplicates(subset=['match_id'], keep='last')
             if len(combined) < before_count:
                 print(f"  Removed {before_count - len(combined):,} duplicate rows")
+
+        # Sanity check: don't write dramatically fewer rows than existed
+        if existing_count > 0 and len(combined) < existing_count * 0.5:
+            print(f"  ERROR: {table_type} row count dropped from {existing_count:,} to "
+                  f"{len(combined):,}. Skipping write to prevent data loss.")
+            errors += 1
+            continue
 
         # Write consolidated parquet
         output_file = output_path / f"opta_{table_type}.parquet"
         combined.to_parquet(output_file, index=False)
 
         size_mb = output_file.stat().st_size / (1024 * 1024)
-        print(f"  Wrote {output_file}: {len(combined):,} rows, {size_mb:.1f} MB")
+        print(f"  Wrote {output_file}: {len(combined):,} rows, {size_mb:.1f} MB "
+              f"(existing={existing_count:,} + new={before_count - existing_count:,} - dupes={before_count - len(combined):,})")
 
     print("Consolidation complete!")
+    return errors
 
 
 if __name__ == "__main__":
-    consolidate_opta()
-    consolidate_events_by_league()
+    errors = consolidate_opta()
+    errors += consolidate_events_by_league()
+    if errors:
+        print(f"\n{errors} error(s) occurred during consolidation")
+        sys.exit(1)
