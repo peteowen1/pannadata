@@ -45,17 +45,23 @@ Located in `scripts/`, organized by data source:
 ```
 scripts/
 ├── fbref/
-│   └── scrape_fbref.R        # FBref scraping (runs on VM, not GHA)
+│   └── scrape_fbref.R              # FBref scraping (runs on VM, not GHA)
 ├── opta/
-│   ├── scrape_opta.py         # Main Opta scraper (called by GHA workflow)
-│   ├── opta_scraper.py        # Opta scraping library
-│   ├── consolidate_opta.py    # Rebuild consolidated parquets from raw files
-│   ├── discover_seasons.py    # Find available seasons for each league
-│   └── build_manifest.py      # Build file manifest for validation
+│   ├── scrape_opta.py              # Main Opta scraper (called by GHA workflow)
+│   ├── opta_scraper.py             # Opta scraping library
+│   ├── consolidate_opta.py         # Rebuild consolidated parquets from raw files
+│   ├── discover_seasons.py         # Find available seasons for each league
+│   ├── build_manifest.py           # Build file manifest for validation
+│   ├── all_competitions.json       # Full Opta competition catalogue
+│   ├── all_competitions_config.json # Per-competition scraping config
+│   ├── competition_ids.json        # Opta competition ID mappings
+│   ├── seasons.json                # Available seasons per competition
+│   ├── LEAGUES.md                  # League documentation
+│   └── requirements.txt            # Python dependencies
 └── understat/
-    ├── scrape_understat.R     # Main Understat scraper (called by GHA workflow)
-    ├── backfill_understat.R   # Historical data backfill
-    └── init_backfill.R        # Backfill initialization
+    ├── scrape_understat.R          # Main Understat scraper (called by GHA workflow)
+    ├── backfill_understat.R        # Historical data backfill
+    └── init_backfill.R             # Backfill initialization
 ```
 
 ## Data Storage
@@ -89,7 +95,14 @@ Opta table types: `events`, `lineups`, `match_events`, `player_stats`, `shot_eve
 
 `consolidate_opta.py` reads raw files from `opta/{table_type}/{league}/` and rebuilds consolidated files from scratch. Running it locally after scraping only one league will **destroy** other leagues' data in the consolidated files. Only run the full consolidation in GHA (which downloads all raw files first), or consolidate individual table types with a targeted script.
 
-Leagues: `ENG`, `ESP`, `GER`, `ITA`, `FRA` (Big 5), `UCL`, `UEL` (European), `FA_CUP`, `EFL_CUP`, `COPA_DEL_REY`, `COPPA_ITALIA`, `COUPE_DE_FRANCE`, `DFB_POKAL` (Cups), `WC`, `EURO`, `COPA_AMERICA`, `AFCON`, `ASIAN_CUP`, `GOLD_CUP`, `NATIONS_LEAGUE` (International)
+Leagues: The Opta scraper covers **106 competitions** including:
+- **Big 5**: EPL, La_Liga, Bundesliga, Serie_A, Ligue_1
+- **Other European leagues**: Championship, Eredivisie, Primeira_Liga, Super_Lig, Scottish_Premiership, Allsvenskan, Danish_Superliga, Ekstraklasa, Swiss_Super_League, NB_I, etc.
+- **Domestic cups**: FA_Cup, Copa_del_Rey, Coppa_Italia, Coupe_de_France, DFB_Pokal, League_Cup, KNVB_Beker, etc.
+- **European club**: UCL, UEL, Conference_League, UEFA_Super_Cup
+- **International**: World_Cup, UEFA_Euros, Copa_America, AFCON, UEFA_Nations_League, UEFA_Euro_Qualifiers, UEFA_WC_Qualifiers, etc.
+
+See `scripts/opta/LEAGUES.md` for the full list. The **panna rating pipeline** uses a subset of ~15 leagues.
 
 ## Common Commands
 
