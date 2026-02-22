@@ -7,11 +7,16 @@ Writes to:  opta/opta_{table_type}.parquet
            opta/events_consolidated/events_{league}.parquet (per-league events)
 """
 
+import json
 import logging
 import shutil
 import sys
+from datetime import datetime, timezone
+
 import pandas as pd
 from pathlib import Path
+
+from competition_metadata import get_competition_metadata, PANNA_ALIASES
 
 logger = logging.getLogger(__name__)
 
@@ -218,6 +223,100 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
     return errors
 
 
+def generate_catalog(opta_dir="opta", manifest_path="opta-manifest.parquet",
+                     output_path="opta/opta-catalog.json"):
+    """Generate a JSON catalog of all available Opta competitions and data.
+
+    Combines manifest (per-match has_* flags) with filesystem scan of
+    consolidated parquets to build a comprehensive data catalog.
+    """
+    opta_path = Path(opta_dir)
+    manifest_file = Path(manifest_path)
+
+    # Data types we track
+    data_types = ["player_stats", "shots", "shot_events", "match_events", "lineups",
+                  "events", "fixtures"]
+
+    # 1. Build competition/season info from manifest
+    comp_data = {}
+    if manifest_file.exists():
+        try:
+            mf = pd.read_parquet(manifest_file)
+            for (comp, season), group in mf.groupby(["competition", "season"]):
+                if comp not in comp_data:
+                    comp_data[comp] = {"seasons": set(), "n_matches": 0, "data_types": set()}
+                comp_data[comp]["seasons"].add(season)
+                comp_data[comp]["n_matches"] += len(group)
+                # Check has_* flags
+                for dt in ["player_stats", "shots", "match_events", "lineups"]:
+                    col = f"has_{dt}"
+                    if col in group.columns and group[col].any():
+                        comp_data[comp]["data_types"].add(dt)
+            print(f"Catalog: loaded {len(mf):,} manifest entries across {len(comp_data)} competitions")
+        except Exception as e:
+            print(f"Catalog: warning reading manifest: {e}")
+
+    # 2. Also scan consolidated parquets for competition/season columns
+    for dt in data_types:
+        consolidated_file = opta_path / f"opta_{dt}.parquet"
+        if not consolidated_file.exists():
+            continue
+        try:
+            df = pd.read_parquet(consolidated_file, columns=["competition", "season"])
+            for comp in df["competition"].unique():
+                if comp not in comp_data:
+                    comp_data[comp] = {"seasons": set(), "n_matches": 0, "data_types": set()}
+                comp_data[comp]["data_types"].add(dt)
+                comp_data[comp]["seasons"].update(
+                    df.loc[df["competition"] == comp, "season"].unique()
+                )
+        except Exception as e:
+            print(f"Catalog: warning scanning {consolidated_file}: {e}")
+
+    # Also scan events_consolidated/ for per-league event files
+    events_dir = opta_path / "events_consolidated"
+    if events_dir.exists():
+        for f in events_dir.glob("events_*.parquet"):
+            comp = f.stem.replace("events_", "")
+            if comp not in comp_data:
+                comp_data[comp] = {"seasons": set(), "n_matches": 0, "data_types": set()}
+            comp_data[comp]["data_types"].add("match_events")
+            try:
+                df = pd.read_parquet(f, columns=["season"])
+                comp_data[comp]["seasons"].update(df["season"].unique())
+            except Exception:
+                pass
+
+    # 3. Build catalog JSON
+    competitions = {}
+    for code in sorted(comp_data.keys()):
+        meta = get_competition_metadata(code)
+        info = comp_data[code]
+        competitions[code] = {
+            "name": meta["name"],
+            "country": meta["country"],
+            "type": meta["type"],
+            "tier": meta["tier"],
+            "seasons": sorted(info["seasons"], reverse=True),
+            "n_matches": info["n_matches"],
+            "data_types": sorted(info["data_types"]),
+        }
+
+    catalog = {
+        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "competitions": competitions,
+        "panna_aliases": PANNA_ALIASES,
+    }
+
+    output = Path(output_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with open(output, "w") as f:
+        json.dump(catalog, f, indent=2)
+
+    size_kb = output.stat().st_size / 1024
+    print(f"Catalog: wrote {output} ({len(competitions)} competitions, {size_kb:.1f} KB)")
+
+
 if __name__ == "__main__":
     logging.basicConfig(
         level=logging.INFO,
@@ -226,6 +325,10 @@ if __name__ == "__main__":
     )
     errors = consolidate_opta()
     errors += consolidate_events_by_league()
+
+    # Generate data catalog
+    generate_catalog()
+
     if errors:
         logger.error("%d error(s) occurred during consolidation", errors)
         sys.exit(1)

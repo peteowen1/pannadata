@@ -133,6 +133,12 @@ jobs:
           [ -f "$f" ] && gh release upload opta-latest "$f" --clobber && echo "Uploaded $(basename $f)"
         done
 
+        # Upload data catalog
+        if [ -f "opta/opta-catalog.json" ]; then
+          gh release upload opta-latest opta/opta-catalog.json --clobber
+          echo "Uploaded opta-catalog.json"
+        fi
+
         # Upload per-league events files
         if [ -d "opta/events_consolidated" ]; then
           for f in opta/events_consolidated/events_*.parquet; do
