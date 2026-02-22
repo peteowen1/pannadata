@@ -1,10 +1,43 @@
 # pannadata
 
-Data repository for the pannaverse ecosystem. Contains cached football match data from FBref, Opta, and Understat.
+Data repository for the pannaverse ecosystem. Contains cached football match data from Opta, Understat, and FBref.
 
 ## Data Coverage
 
-### FBref (Primary Source)
+### Opta (Primary Source)
+
+15 leagues with 263 columns per player match, plus event-level data with x/y coordinates.
+
+| League | Code | Seasons | Data Types |
+|--------|------|---------|------------|
+| Premier League | EPL | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| La Liga | La_Liga | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Bundesliga | Bundesliga | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Serie A | Serie_A | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Ligue 1 | Ligue_1 | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Eredivisie | NED | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Primeira Liga | POR | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Super Lig | TUR | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Championship | ENG2 | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Scottish Premiership | SCO | 2019-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Champions League | UCL | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Europa League | UEL | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Conference League | UECL | 2021-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| World Cup | WC | 2014, 2018 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Euros | EURO | 2016, 2024 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+
+### Understat
+
+| League | Seasons | Features |
+|--------|---------|----------|
+| EPL | 2014-2024 | xGChain, xGBuildup |
+| La_Liga | 2014-2024 | xGChain, xGBuildup |
+| Bundesliga | 2014-2024 | xGChain, xGBuildup |
+| Serie_A | 2014-2024 | xGChain, xGBuildup |
+| Ligue_1 | 2014-2024 | xGChain, xGBuildup |
+| RFPL | 2014-2024 | xGChain, xGBuildup |
+
+### FBref
 
 | League | Seasons | xG Model |
 |--------|---------|----------|
@@ -18,42 +51,52 @@ Data repository for the pannaverse ecosystem. Contains cached football match dat
 | Domestic Cups | Various | StatsBomb |
 | International | Various | StatsBomb |
 
-### Opta
-
-| League | Seasons | Columns |
-|--------|---------|---------|
-| EPL | 2010-2025 | 271 |
-| La_Liga | 2010-2025 | 271 |
-| Bundesliga | 2010-2025 | 271 |
-| Serie_A | 2010-2025 | 271 |
-| Ligue_1 | 2010-2025 | 271 |
-
-### Understat
-
-| League | Seasons | Features |
-|--------|---------|----------|
-| EPL | 2014-2024 | xGChain, xGBuildup |
-| La_Liga | 2014-2024 | xGChain, xGBuildup |
-| Bundesliga | 2014-2024 | xGChain, xGBuildup |
-| Serie_A | 2014-2024 | xGChain, xGBuildup |
-| Ligue_1 | 2014-2024 | xGChain, xGBuildup |
-| RFPL | 2014-2024 | xGChain, xGBuildup |
-
 ## Data Structure
 
 ```
 data/
+├── opta/
+│   ├── {data_type}/
+│   │   └── {league}/
+│   │       └── {season}/
+│   │           └── {match_id}.rds          # Individual match files
+│   ├── fixtures/
+│   │   └── {league}/
+│   │       └── {season}.parquet            # Fixture parquets (all match statuses)
+│   ├── xmetrics/
+│   │   └── {league}/
+│   │       └── {season}.parquet            # Pre-computed xG/xA/xPass per player
+│   ├── models/
+│   │   ├── xg_model.rds                    # Pre-trained xG model
+│   │   ├── xpass_model.rds                 # Pre-trained xPass model
+│   │   └── epv_model.rds                   # Pre-trained EPV model
+│   ├── opta_player_stats.parquet           # Consolidated player stats (all leagues)
+│   ├── opta_shots.parquet                  # Consolidated shots (all leagues)
+│   └── opta_fixtures.parquet               # Consolidated fixtures (all leagues)
+├── understat/
+│   └── {tabletype}/{league}/{season}.parquet
 ├── fbref/
 │   ├── {tabletype}/
 │   │   └── {league}/
 │   │       └── {season}/
-│   │           └── {match_id}.rds
+│   │           └── {match_id}.rds          # Individual match files
 │   └── {tabletype}/{league}/{season}.parquet
-├── opta/
-│   └── {league}/{season}/{match_id}.rds
-└── understat/
-    └── {tabletype}/{league}/{season}.parquet
+└── metadata/
+    └── {league}/
+        └── {season}/                       # Match metadata
 ```
+
+### Opta Data Types
+
+| Type | Description | Key Columns |
+|------|-------------|-------------|
+| `player_stats` | Per-match player statistics | 263 columns: goals, assists, passes, tackles, etc. |
+| `shots` | Shot data per match | shot location, body part, outcome |
+| `shot_events` | Individual shots with coordinates | x, y, xG, player, minute |
+| `events` | Goals, cards, substitutions | event type, minute, player |
+| `match_events` | All events with x/y coordinates | SPADL-ready, used for EPV |
+| `lineups` | Starting XI and substitutions | player, position, minutes |
+| `fixtures` | Match fixtures and results | date, teams, score, status |
 
 ### FBref Table Types
 
@@ -76,36 +119,50 @@ This data is accessed via the `panna` package:
 library(panna)
 
 # Download data (first time)
-pb_download_source("fbref")
 pb_download_source("opta")
 pb_download_source("understat")
+pb_download_source("fbref")
+
+# Load Opta data (primary)
+opta_stats <- load_opta_stats("EPL", "2024-2025")
+opta_shots <- load_opta_shots("EPL", "2024-2025")
+match_events <- load_opta_match_events("EPL", "2024-2025")
+lineups <- load_opta_lineups("EPL", "2024-2025")
+fixtures <- load_opta_fixtures("EPL")
+xmetrics <- load_opta_xmetrics("EPL", "2024-2025")
+
+# Load Understat data
+roster <- load_understat_roster("EPL", "2024")
 
 # Load FBref data
 summary <- load_summary("ENG", "2024-2025")
 passing <- load_passing("ENG", "2024-2025")
 shots <- load_shots()
-
-# Load Opta data
-opta_stats <- load_opta_stats("EPL", "2024-2025")
-
-# Load Understat data
-roster <- load_understat_roster("EPL", "2024")
 ```
 
 ## Data Storage
 
 - **Local**: `data/` folder (gitignored, too large for git)
-- **Remote**: GitHub Releases at tag `latest`
-- **Format**: RDS for individual matches, Parquet for bulk storage
+- **Remote**: GitHub Releases (tag-based archives)
+- **Format**: RDS for individual matches, Parquet for bulk storage and consolidated files
+
+### GitHub Release Tags
+
+| Release Tag | Contents |
+|-------------|----------|
+| opta-latest | Consolidated Opta files (player_stats, shots, fixtures) |
+| fbref-latest | FBref parquet archives |
+| understat-latest | Understat parquet archives |
+| epv-models | Pre-trained xG, xPass, EPV models |
 
 ## Syncing Data
 
 ```r
 # Download from GitHub Releases
-panna::pb_download_source("fbref")
-panna::pb_download_source("opta")
-panna::pb_download_source("understat")
-panna::pb_download_source("all")  # Download everything
+panna::pb_download_source("opta")      # Download Opta data
+panna::pb_download_source("understat") # Download Understat data
+panna::pb_download_source("fbref")     # Download FBref data
+panna::pb_download_source("all")       # Download everything
 
 # Upload local data to GitHub Releases
 panna::pb_upload_parquet(repo = "peteowen1/pannadata", tag = "latest")
