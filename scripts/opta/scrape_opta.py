@@ -8,8 +8,11 @@ gigabytes of data to check for existing matches.
 Data is saved to pannadata/data/opta/ with structure:
 - pannadata/data/opta/player_stats/{league}/{season}.parquet
 - pannadata/data/opta/shots/{league}/{season}.parquet
+- pannadata/data/opta/shot_events/{league}/{season}.parquet
 - pannadata/data/opta/match_events/{league}/{season}.parquet
+- pannadata/data/opta/events/{league}/{season}.parquet
 - pannadata/data/opta/lineups/{league}/{season}.parquet
+- pannadata/data/opta/fixtures/{league}/{season}.parquet
 
 Usage:
     python scrape_opta.py                           # Scrape all leagues, current season
@@ -23,12 +26,18 @@ Usage:
 
 import json
 import argparse
+import logging
+import shutil
 import sys
 from pathlib import Path
 from datetime import datetime
 from opta_scraper import OptaScraper, MatchEvent, ShotEvent, PlayerLineup, AllMatchEvent
 from dataclasses import asdict
 import pandas as pd
+import pyarrow.lib
+import requests
+
+logger = logging.getLogger(__name__)
 
 
 def load_manifest(manifest_path: Path, include_unavailable: bool = True) -> tuple:
@@ -60,7 +69,8 @@ def load_manifest(manifest_path: Path, include_unavailable: bool = True) -> tupl
 
         print(f"Loaded manifest: {len(complete_set):,} complete, {len(unavailable_set):,} unavailable")
         return complete_set, unavailable_set
-    except Exception as e:
+    except (pd.errors.ParserError, FileNotFoundError, OSError, ValueError,
+            pyarrow.lib.ArrowInvalid) as e:
         print(f"Warning: Error loading manifest: {e}")
         return set(), set()
 
@@ -76,13 +86,35 @@ def update_manifest(manifest_path: Path, new_matches: list):
     new_df = pd.DataFrame(new_matches)
 
     if manifest_path.exists():
-        existing_df = pd.read_parquet(manifest_path)
-        # Combine and deduplicate (keep new records for same match_id/competition/season)
-        combined = pd.concat([existing_df, new_df], ignore_index=True)
-        combined = combined.drop_duplicates(
-            subset=['match_id', 'competition', 'season'],
-            keep='last'
-        )
+        # Backup before modifying
+        backup_path = manifest_path.with_suffix('.parquet.backup')
+        try:
+            shutil.copy2(manifest_path, backup_path)
+        except OSError as e:
+            logger.error("Could not backup manifest: %s. Skipping manifest update.", e)
+            return
+
+        try:
+            existing_df = pd.read_parquet(manifest_path)
+            # Combine and deduplicate (keep new records for same match_id/competition/season)
+            combined = pd.concat([existing_df, new_df], ignore_index=True)
+            combined = combined.drop_duplicates(
+                subset=['match_id', 'competition', 'season'],
+                keep='last'
+            )
+        except (pd.errors.ParserError, OSError, ValueError, pyarrow.lib.ArrowInvalid) as e:
+            logger.error("Failed to read existing manifest: %s. Trying backup.", e)
+            try:
+                existing_df = pd.read_parquet(backup_path)
+                logger.info("Recovered manifest from backup")
+                combined = pd.concat([existing_df, new_df], ignore_index=True)
+                combined = combined.drop_duplicates(
+                    subset=['match_id', 'competition', 'season'],
+                    keep='last'
+                )
+            except Exception:
+                logger.error("Backup also unreadable. Writing new records only.")
+                combined = new_df
     else:
         combined = new_df
 
@@ -202,6 +234,8 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
         unavailable_matches: Set of (match_id, competition, season) tuples with 404 events
         force_rescrape: If True, ignore manifest and rescrape all matches
         retry_unavailable: If True, retry matches that previously had 404 for events
+        scrape_types: List of data types to scrape (e.g., ["fixtures"]).
+                      None or ["all"] scrapes all types.
 
     Returns:
         dict with scraping results and list of new match records for manifest
@@ -396,7 +430,11 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
     def combine_and_save(new_data, output_path, dedup_cols):
         if not new_data:
             if output_path.exists():
-                return pd.read_parquet(output_path)
+                try:
+                    return pd.read_parquet(output_path)
+                except (pd.errors.ParserError, OSError, ValueError, pyarrow.lib.ArrowInvalid) as e:
+                    logger.error("Failed to read existing %s: %s", output_path, e)
+                    return pd.DataFrame()
             return pd.DataFrame()
 
         if isinstance(new_data[0], pd.DataFrame):
@@ -405,9 +443,13 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
             new_df = pd.DataFrame(new_data)
 
         if output_path.exists():
-            existing_df = pd.read_parquet(output_path)
-            combined = pd.concat([existing_df, new_df], ignore_index=True)
-            combined = combined.drop_duplicates(subset=dedup_cols)
+            try:
+                existing_df = pd.read_parquet(output_path)
+                combined = pd.concat([existing_df, new_df], ignore_index=True)
+                combined = combined.drop_duplicates(subset=dedup_cols, keep='last')
+            except (pd.errors.ParserError, OSError, ValueError, pyarrow.lib.ArrowInvalid) as e:
+                logger.error("Failed to read existing %s: %s. Skipping write to prevent data loss.", output_path, e)
+                return new_df
         else:
             combined = new_df
 
@@ -484,14 +526,19 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
 
 
 def main():
-    """Scrape Big 5 leagues"""
+    """Main entry point for Opta data scraping."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s [%(levelname)s] %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
     sys.stdout.reconfigure(encoding='utf-8')
 
     # Load seasons config
     seasons_config = load_seasons_config()
 
     # Parse command line args
-    parser = argparse.ArgumentParser(description="Scrape Big 5 European leagues from Opta")
+    parser = argparse.ArgumentParser(description="Scrape Opta league data")
     parser.add_argument("--leagues", nargs="+",
                        choices=list(seasons_config.keys()),
                        help="Specific leagues to scrape (default: all)")
@@ -586,8 +633,15 @@ def main():
             results.append(result)
             # Collect manifest records from this season
             all_new_manifest_records.extend(result.get("manifest_records", []))
+        except (requests.RequestException, ValueError, OSError) as e:
+            logger.error("Failed scraping %s %s: %s", league, season_name, e, exc_info=True)
+            results.append({
+                "competition": league,
+                "season": season_name,
+                "error": str(e)
+            })
         except Exception as e:
-            print(f"ERROR scraping {league} {season_name}: {e}")
+            logger.error("Unexpected error scraping %s %s: %s", league, season_name, e, exc_info=True)
             results.append({
                 "competition": league,
                 "season": season_name,
@@ -613,21 +667,34 @@ def main():
     print(f"Total player records: {total_players}")
     print(f"Total shot records: {total_shots}")
 
-    # Save results summary
-    summary_path = script_dir / "data" / "scrape_summary.json"
-    with open(summary_path, "w") as f:
-        json.dump({
-            "timestamp": datetime.now().isoformat(),
-            "results": results,
-            "totals": {
-                "new_matches": total_new,
-                "total_matches": total_matches,
-                "player_records": total_players,
-                "shot_records": total_shots,
-            }
-        }, f, indent=2)
+    # Check for failures
+    error_count = sum(1 for r in results if "error" in r)
+    if error_count > 0:
+        logger.error("%d of %d league-seasons had errors", error_count, len(scrape_plan))
 
-    print(f"\nSummary saved to {summary_path}")
+    # Save results summary (used by GHA to distinguish "no data" from "crash")
+    summary_path = script_dir / "data" / "scrape_summary.json"
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with open(summary_path, "w") as f:
+            json.dump({
+                "timestamp": datetime.now().isoformat(),
+                "results": results,
+                "totals": {
+                    "new_matches": total_new,
+                    "total_matches": total_matches,
+                    "player_records": total_players,
+                    "shot_records": total_shots,
+                }
+            }, f, indent=2)
+        print(f"\nSummary saved to {summary_path}")
+    except OSError as e:
+        logger.error("Failed to write scrape summary: %s", e)
+        print(f"\nWARNING: Failed to save summary to {summary_path}")
+
+    # Exit non-zero if all league-seasons failed
+    if error_count > 0 and error_count == len(scrape_plan) and len(scrape_plan) > 0:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

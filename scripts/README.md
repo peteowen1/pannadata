@@ -7,9 +7,9 @@ the panna rating system.
 
 | Source | Language | Runs On | Schedule | Coverage |
 |--------|----------|---------|----------|----------|
-| [FBref](fbref/) | R | Oracle VM | 6 AM UTC | Big 5 + cups + international |
-| [Opta](opta/) | Python | GitHub Actions | 5 AM UTC | Big 5 leagues (2010+) |
+| [Opta](opta/) | Python | GitHub Actions | 5 AM UTC | 15 leagues (2013+) |
 | [Understat](understat/) | R | GitHub Actions | 7 AM UTC | Big 5 + Russia |
+| [FBref](fbref/) | R | Oracle VM | 6 AM UTC | Big 5 + cups + international |
 
 ## Why Different Environments?
 
@@ -28,7 +28,7 @@ Rscript scrape_fbref.R
 ```bash
 cd pannadata/scripts/opta
 pip install -r requirements.txt
-python scrape_big5.py
+python scrape_opta.py
 ```
 
 ### Understat
@@ -48,19 +48,19 @@ data/
 │   ├── passing/
 │   ├── defense/
 │   └── ...
-├── opta/            # Opta data (parquet only)
+├── opta/            # Opta data (RDS + parquet)
 │   ├── player_stats/
 │   ├── events/
 │   ├── lineups/
-│   └── ...
+│   ├── opta_player_stats.parquet   # Consolidated
+│   ├── opta_shots.parquet          # Consolidated
+│   └── opta_fixtures.parquet       # Consolidated
 ├── understat/       # Understat data (parquet only)
 │   ├── roster/
 │   ├── shots/
-│   └── metadata/
-└── consolidated/    # Combined files for fast queries
-    ├── summary.parquet
-    ├── opta_player_stats.parquet
-    └── understat_roster.parquet
+│   ├── metadata/
+│   ├── understat_roster.parquet    # Consolidated
+│   └── understat_shots.parquet     # Consolidated
 ```
 
 ## GitHub Actions Workflows
@@ -102,5 +102,5 @@ pb_download_source("understat")
 - [FBref README](fbref/README.md) - FBref scraper details
 - [Opta README](opta/README.md) - Opta scraper details
 - [Understat README](understat/README.md) - Understat scraper details
-- [pannadata CLAUDE.md](../CLAUDE.md) - Repository overview
+- [pannadata README](../README.md) - Repository overview
 - [panna package](../../panna/) - R package for data loading and analysis

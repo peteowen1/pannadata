@@ -84,13 +84,17 @@ jobs:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Run Opta scraper
+      env:
+        INPUT_LEAGUES: ${{ github.event.inputs.leagues }}
+        INPUT_RECENT: ${{ github.event.inputs.recent || 1 }}
+        INPUT_FORCE: ${{ github.event.inputs.force_rescrape }}
       run: |
         cd scripts/opta
-        ARGS="--recent ${{ github.event.inputs.recent || 1 }}"
-        if [ -n "${{ github.event.inputs.leagues }}" ]; then
-          ARGS="$ARGS --leagues ${{ github.event.inputs.leagues }}"
+        ARGS="--recent $INPUT_RECENT"
+        if [ -n "$INPUT_LEAGUES" ]; then
+          ARGS="$ARGS --leagues $INPUT_LEAGUES"
         fi
-        if [ "${{ github.event.inputs.force_rescrape }}" = "true" ]; then
+        if [ "$INPUT_FORCE" = "true" ]; then
           ARGS="$ARGS --force"
         fi
         echo "Running: python scrape_opta.py $ARGS"
@@ -102,8 +106,14 @@ jobs:
         PARQUET_COUNT=$(find opta -name "*.parquet" 2>/dev/null | wc -l)
         echo "Total parquet files: $PARQUET_COUNT"
         if [ "$PARQUET_COUNT" -eq 0 ]; then
-          echo "No parquet files to consolidate"
-          exit 0
+          # Distinguish "no new data" from "scraper crashed"
+          if [ -f "../scripts/opta/data/scrape_summary.json" ]; then
+            echo "No new parquet files, but scraper ran successfully (no new matches)"
+            exit 0
+          else
+            echo "ERROR: No parquet files AND no scrape summary - scraper may have crashed"
+            exit 1
+          fi
         fi
         python ../scripts/opta/consolidate_opta.py
 
@@ -126,6 +136,12 @@ jobs:
         for f in opta/opta_*.parquet; do
           [ -f "$f" ] && gh release upload opta-latest "$f" --clobber && echo "Uploaded $(basename $f)"
         done
+
+        # Upload data catalog
+        if [ -f "opta/opta-catalog.json" ]; then
+          gh release upload opta-latest opta/opta-catalog.json --clobber
+          echo "Uploaded opta-catalog.json"
+        fi
 
         # Upload per-league events files
         if [ -d "opta/events_consolidated" ]; then

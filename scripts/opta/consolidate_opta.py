@@ -7,9 +7,19 @@ Writes to:  opta/opta_{table_type}.parquet
            opta/events_consolidated/events_{league}.parquet (per-league events)
 """
 
+import json
+import logging
+import shutil
 import sys
+from datetime import datetime, timezone
+
 import pandas as pd
+import pyarrow.lib
 from pathlib import Path
+
+from competition_metadata import get_competition_metadata, PANNA_ALIASES
+
+logger = logging.getLogger(__name__)
 
 
 def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
@@ -46,7 +56,8 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
                 existing_count = len(existing_df)
                 dfs.append(existing_df)
                 print(f"  {league}: Loaded {existing_count:,} existing rows")
-            except Exception as e:
+            except (pd.errors.ParserError, FileNotFoundError, OSError, ValueError,
+                    pyarrow.lib.ArrowInvalid) as e:
                 print(f"  ERROR: Failed to read existing {existing_file}: {e}")
                 print(f"  Skipping {league} to prevent data loss")
                 errors += 1
@@ -61,8 +72,10 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
                 df['competition'] = league
                 df['season'] = f.stem
                 dfs.append(df)
-            except Exception as e:
-                print(f"  Warning: Error reading {f}: {e}")
+            except (pd.errors.ParserError, FileNotFoundError, OSError, ValueError,
+                    pyarrow.lib.ArrowInvalid) as e:
+                print(f"  ERROR: Failed to read {f}: {e}")
+                errors += 1
 
         if not dfs:
             continue
@@ -76,14 +89,25 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
             if len(combined) < before:
                 print(f"  {league}: Removed {before - len(combined):,} duplicates")
 
-        # Sanity check: don't write dramatically fewer rows than existed
-        if existing_count > 0 and len(combined) < existing_count * 0.5:
+        # Sanity check: don't write if row count drops more than 10%
+        if existing_count > 0 and len(combined) < existing_count * 0.9:
+            pct_loss = 100 * (1 - len(combined) / existing_count)
             print(f"  ERROR: {league} row count dropped from {existing_count:,} to "
-                  f"{len(combined):,}. Skipping write to prevent data loss.")
+                  f"{len(combined):,} ({pct_loss:.1f}% loss). Skipping write to prevent data loss.")
             errors += 1
             continue
 
         output_file = output_path / f"events_{league}.parquet"
+        # Backup existing file before overwriting
+        if output_file.exists():
+            backup_file = output_file.with_suffix('.parquet.backup')
+            try:
+                shutil.copy2(output_file, backup_file)
+            except OSError as e:
+                print(f"  ERROR: Failed to create backup for {output_file}: {e}")
+                print(f"  Skipping {league} to prevent data loss (cannot backup)")
+                errors += 1
+                continue
         combined.to_parquet(output_file, index=False, compression='gzip')
 
         size_mb = output_file.stat().st_size / (1024 * 1024)
@@ -98,15 +122,12 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
 
     Merges existing consolidated files with newly scraped hierarchical files,
     deduplicating by appropriate keys. In GHA, existing consolidated files are
-    downloaded to the parent directory (e.g., data/opta_player_stats.parquet)
+    downloaded to the opta directory (e.g., opta/opta_player_stats.parquet)
     before consolidation runs.
     """
     opta_path = Path(opta_dir)
     output_path = Path(output_dir)
     output_path.mkdir(exist_ok=True)
-
-    # Parent directory where GHA downloads existing consolidated files
-    parent_dir = opta_path.parent
 
     if not opta_path.exists():
         print(f"Opta directory not found: {opta_dir}")
@@ -114,7 +135,7 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
 
     # Find all table types (subdirectories of opta/)
     # Exclude match_events (consolidated separately by league), events_consolidated (output dir), and models
-    exclude = {'match_events', 'events_consolidated', 'models'}
+    exclude = {'match_events', 'events_consolidated', 'models', 'xmetrics'}
     table_types = [d.name for d in opta_path.iterdir() if d.is_dir() and d.name not in exclude]
     print(f"Found table types: {table_types}")
 
@@ -130,23 +151,21 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
         print(f"Consolidating opta_{table_type}... Found {len(parquet_files)} files")
 
         # Read existing consolidated file first (contains historical data)
-        # Check both parent dir (where GHA downloads) and output dir (from previous run)
         dfs = []
         existing_count = 0
-        for existing_path in [
-            parent_dir / f"opta_{table_type}.parquet",
-            output_path / f"opta_{table_type}.parquet",
-        ]:
-            if existing_path.exists():
-                try:
-                    existing_df = pd.read_parquet(existing_path)
-                    existing_count = len(existing_df)
-                    dfs.append(existing_df)
-                    print(f"  Loaded {existing_count:,} existing rows from {existing_path}")
-                    break  # Successfully loaded - don't try other sources
-                except Exception as e:
-                    print(f"  Warning: Error reading existing {existing_path}: {e}")
-                    # Fall through to try the next path
+        existing_path = output_path / f"opta_{table_type}.parquet"
+        if existing_path.exists():
+            try:
+                existing_df = pd.read_parquet(existing_path)
+                existing_count = len(existing_df)
+                dfs.append(existing_df)
+                print(f"  Loaded {existing_count:,} existing rows from {existing_path}")
+            except (pd.errors.ParserError, FileNotFoundError, OSError, ValueError,
+                    pyarrow.lib.ArrowInvalid) as e:
+                print(f"  ERROR: Failed to read existing {existing_path}: {e}")
+                print(f"  Skipping {table_type} to prevent data loss")
+                errors += 1
+                continue
 
         # Read new hierarchical data, adding competition and season columns
         for f in parquet_files:
@@ -159,8 +178,10 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
                 df['competition'] = competition
                 df['season'] = season
                 dfs.append(df)
-            except Exception as e:
-                print(f"  Warning: Error reading {f}: {e}")
+            except (pd.errors.ParserError, FileNotFoundError, OSError, ValueError,
+                    pyarrow.lib.ArrowInvalid) as e:
+                print(f"  ERROR: Failed to read {f}: {e}")
+                errors += 1
 
         if not dfs:
             print(f"  Skipping {table_type} - no valid data")
@@ -186,15 +207,25 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
             if len(combined) < before_count:
                 print(f"  Removed {before_count - len(combined):,} duplicate rows")
 
-        # Sanity check: don't write dramatically fewer rows than existed
-        if existing_count > 0 and len(combined) < existing_count * 0.5:
+        # Sanity check: don't write if row count drops more than 10%
+        if existing_count > 0 and len(combined) < existing_count * 0.9:
+            pct_loss = 100 * (1 - len(combined) / existing_count)
             print(f"  ERROR: {table_type} row count dropped from {existing_count:,} to "
-                  f"{len(combined):,}. Skipping write to prevent data loss.")
+                  f"{len(combined):,} ({pct_loss:.1f}% loss). Skipping write to prevent data loss.")
             errors += 1
             continue
 
-        # Write consolidated parquet
+        # Write consolidated parquet (backup existing first)
         output_file = output_path / f"opta_{table_type}.parquet"
+        if output_file.exists():
+            backup_file = output_file.with_suffix('.parquet.backup')
+            try:
+                shutil.copy2(output_file, backup_file)
+            except OSError as e:
+                print(f"  ERROR: Failed to create backup for {output_file}: {e}")
+                print(f"  Skipping {table_type} to prevent data loss (cannot backup)")
+                errors += 1
+                continue
         combined.to_parquet(output_file, index=False)
 
         size_mb = output_file.stat().st_size / (1024 * 1024)
@@ -205,9 +236,131 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
     return errors
 
 
+def generate_catalog(opta_dir="opta", manifest_path="opta-manifest.parquet",
+                     output_path="opta/opta-catalog.json"):
+    """Generate a JSON catalog of all available Opta competitions and data.
+
+    Combines three data sources to build a comprehensive catalog:
+    1. Manifest (per-match has_* flags for match counts)
+    2. Consolidated parquets (competition/season columns per data type)
+    3. Per-league event files in events_consolidated/
+    """
+    opta_path = Path(opta_dir)
+    manifest_file = Path(manifest_path)
+
+    # Data types we track
+    data_types = ["player_stats", "shots", "shot_events", "match_events", "lineups",
+                  "events", "fixtures"]
+
+    # 1. Build competition/season info from manifest
+    comp_data = {}
+    if manifest_file.exists():
+        try:
+            mf = pd.read_parquet(manifest_file)
+            for (comp, season), group in mf.groupby(["competition", "season"]):
+                if comp not in comp_data:
+                    comp_data[comp] = {"seasons": set(), "n_matches": 0, "data_types": set()}
+                comp_data[comp]["seasons"].add(season)
+                comp_data[comp]["n_matches"] += len(group)
+                # Check has_* flags
+                for dt in ["player_stats", "shots", "match_events", "lineups"]:
+                    col = f"has_{dt}"
+                    if col in group.columns and group[col].any():
+                        comp_data[comp]["data_types"].add(dt)
+            print(f"Catalog: loaded {len(mf):,} manifest entries across {len(comp_data)} competitions")
+        except (pd.errors.ParserError, FileNotFoundError, OSError, ValueError,
+                pyarrow.lib.ArrowInvalid, KeyError) as e:
+            print(f"Catalog: warning reading manifest: {e}")
+
+    # 2. Also scan consolidated parquets for competition/season columns
+    for dt in data_types:
+        consolidated_file = opta_path / f"opta_{dt}.parquet"
+        if not consolidated_file.exists():
+            continue
+        try:
+            df = pd.read_parquet(consolidated_file, columns=["competition", "season"])
+            for comp in df["competition"].unique():
+                if comp not in comp_data:
+                    comp_data[comp] = {"seasons": set(), "n_matches": 0, "data_types": set()}
+                comp_data[comp]["data_types"].add(dt)
+                comp_data[comp]["seasons"].update(
+                    df.loc[df["competition"] == comp, "season"].unique()
+                )
+        except (pd.errors.ParserError, FileNotFoundError, OSError, ValueError,
+                pyarrow.lib.ArrowInvalid, KeyError) as e:
+            print(f"Catalog: warning scanning {consolidated_file}: {e}")
+
+    # Also scan events_consolidated/ for per-league event files
+    events_dir = opta_path / "events_consolidated"
+    if events_dir.exists():
+        for f in events_dir.glob("events_*.parquet"):
+            comp = f.stem.replace("events_", "")
+            if comp not in comp_data:
+                comp_data[comp] = {"seasons": set(), "n_matches": 0, "data_types": set()}
+            comp_data[comp]["data_types"].add("match_events")
+            try:
+                df = pd.read_parquet(f, columns=["season"])
+                comp_data[comp]["seasons"].update(df["season"].unique())
+            except (pd.errors.ParserError, FileNotFoundError, OSError, ValueError,
+                    pyarrow.lib.ArrowInvalid, KeyError) as e:
+                print(f"Catalog: warning scanning {f}: {e}")
+
+    # 3. Build catalog JSON
+    competitions = {}
+    for code in sorted(comp_data.keys()):
+        meta = get_competition_metadata(code)
+        info = comp_data[code]
+        competitions[code] = {
+            "name": meta["name"],
+            "country": meta["country"],
+            "type": meta["type"],
+            "tier": meta["tier"],
+            "seasons": sorted(info["seasons"], reverse=True),
+            "n_matches": info["n_matches"],
+            "data_types": sorted(info["data_types"]),
+        }
+
+    if not competitions:
+        print("Catalog: ERROR - no competitions found, skipping catalog write")
+        return 1
+
+    catalog = {
+        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "competitions": competitions,
+        "panna_aliases": PANNA_ALIASES,
+    }
+
+    output = Path(output_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with open(output, "w") as f:
+            json.dump(catalog, f, indent=2)
+        size_kb = output.stat().st_size / 1024
+        print(f"Catalog: wrote {output} ({len(competitions)} competitions, {size_kb:.1f} KB)")
+    except OSError as e:
+        print(f"Catalog: ERROR writing {output}: {e}")
+        return 1
+
+    return 0
+
+
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s [%(levelname)s] %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
     errors = consolidate_opta()
     errors += consolidate_events_by_league()
+
+    # Generate data catalog (non-fatal)
+    try:
+        catalog_errors = generate_catalog()
+        if catalog_errors:
+            logger.warning("Catalog generation had errors")
+    except Exception as e:
+        logger.warning("Catalog generation failed: %s", e)
+
     if errors:
-        print(f"\n{errors} error(s) occurred during consolidation")
+        logger.error("%d error(s) occurred during consolidation", errors)
         sys.exit(1)
