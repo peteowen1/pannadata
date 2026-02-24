@@ -63,7 +63,7 @@ def build_manifest(opta_dir: str = "../../data/opta", output_path: str = None):
                     for mid in match_ids:
                         table_match_ids[table_type].add((mid, competition, season))
 
-                except Exception as e:
+                except (pd.errors.ParserError, FileNotFoundError, OSError, ValueError) as e:
                     print(f"  Warning: Error reading {parquet_file}: {e}")
 
     print(f"Found matches by table type:")

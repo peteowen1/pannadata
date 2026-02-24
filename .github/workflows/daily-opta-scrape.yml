@@ -84,13 +84,17 @@ jobs:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Run Opta scraper
+      env:
+        INPUT_LEAGUES: ${{ github.event.inputs.leagues }}
+        INPUT_RECENT: ${{ github.event.inputs.recent || 1 }}
+        INPUT_FORCE: ${{ github.event.inputs.force_rescrape }}
       run: |
         cd scripts/opta
-        ARGS="--recent ${{ github.event.inputs.recent || 1 }}"
-        if [ -n "${{ github.event.inputs.leagues }}" ]; then
-          ARGS="$ARGS --leagues ${{ github.event.inputs.leagues }}"
+        ARGS="--recent $INPUT_RECENT"
+        if [ -n "$INPUT_LEAGUES" ]; then
+          ARGS="$ARGS --leagues $INPUT_LEAGUES"
         fi
-        if [ "${{ github.event.inputs.force_rescrape }}" = "true" ]; then
+        if [ "$INPUT_FORCE" = "true" ]; then
           ARGS="$ARGS --force"
         fi
         echo "Running: python scrape_opta.py $ARGS"

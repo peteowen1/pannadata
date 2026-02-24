@@ -93,7 +93,7 @@ data/
 |------|-------------|-------------|
 | `player_stats` | Per-match player statistics | 263 columns: goals, assists, passes, tackles, etc. |
 | `shots` | Shot data per match | shot location, body part, outcome |
-| `shot_events` | Individual shots with coordinates | x, y, xG, player, minute |
+| `shot_events` | Individual shots with coordinates | x, y, type_id, body_part, minute |
 | `events` | Goals, cards, substitutions | event type, minute, player |
 | `match_events` | All events with x/y coordinates | SPADL-ready, used for EPV |
 | `lineups` | Starting XI and substitutions | player, position, minutes |

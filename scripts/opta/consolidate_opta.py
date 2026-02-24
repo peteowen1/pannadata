@@ -135,7 +135,7 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
 
     # Find all table types (subdirectories of opta/)
     # Exclude match_events (consolidated separately by league), events_consolidated (output dir), and models
-    exclude = {'match_events', 'events_consolidated', 'models'}
+    exclude = {'match_events', 'events_consolidated', 'models', 'xmetrics'}
     table_types = [d.name for d in opta_path.iterdir() if d.is_dir() and d.name not in exclude]
     print(f"Found table types: {table_types}")
 
@@ -162,7 +162,10 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
                 print(f"  Loaded {existing_count:,} existing rows from {existing_path}")
             except (pd.errors.ParserError, FileNotFoundError, OSError, ValueError,
                     pyarrow.lib.ArrowInvalid) as e:
-                print(f"  Warning: Error reading existing {existing_path}: {e}")
+                print(f"  ERROR: Failed to read existing {existing_path}: {e}")
+                print(f"  Skipping {table_type} to prevent data loss")
+                errors += 1
+                continue
 
         # Read new hierarchical data, adding competition and season columns
         for f in parquet_files:
@@ -317,6 +320,10 @@ def generate_catalog(opta_dir="opta", manifest_path="opta-manifest.parquet",
             "data_types": sorted(info["data_types"]),
         }
 
+    if not competitions:
+        print("Catalog: ERROR - no competitions found, skipping catalog write")
+        return 1
+
     catalog = {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "competitions": competitions,
@@ -325,11 +332,16 @@ def generate_catalog(opta_dir="opta", manifest_path="opta-manifest.parquet",
 
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
-    with open(output, "w") as f:
-        json.dump(catalog, f, indent=2)
+    try:
+        with open(output, "w") as f:
+            json.dump(catalog, f, indent=2)
+        size_kb = output.stat().st_size / 1024
+        print(f"Catalog: wrote {output} ({len(competitions)} competitions, {size_kb:.1f} KB)")
+    except OSError as e:
+        print(f"Catalog: ERROR writing {output}: {e}")
+        return 1
 
-    size_kb = output.stat().st_size / 1024
-    print(f"Catalog: wrote {output} ({len(competitions)} competitions, {size_kb:.1f} KB)")
+    return 0
 
 
 if __name__ == "__main__":
@@ -341,8 +353,13 @@ if __name__ == "__main__":
     errors = consolidate_opta()
     errors += consolidate_events_by_league()
 
-    # Generate data catalog
-    generate_catalog()
+    # Generate data catalog (non-fatal)
+    try:
+        catalog_errors = generate_catalog()
+        if catalog_errors:
+            logger.warning("Catalog generation had errors")
+    except Exception as e:
+        logger.warning("Catalog generation failed: %s", e)
 
     if errors:
         logger.error("%d error(s) occurred during consolidation", errors)

@@ -15,8 +15,11 @@ API Endpoints:
 Data extracted:
 - player_stats: 263+ columns per player-match
 - events: Goal/card/sub timing for splint boundaries
-- shots: Individual shots with x/y coords for xG modeling
+- shots: Aggregated shot counts per player-match (by type, location, body part)
+- shot_events: Individual shots with x/y coords for xG modeling
+- match_events: All events with x/y coords (passes, tackles, aerials, etc.)
 - lineups: Starting XI with positions and minutes played
+- fixtures: Match fixtures with scores and statuses
 """
 
 import requests
@@ -83,7 +86,7 @@ class ShotEvent:
     y: float
     outcome: int  # 1=on target, 0=off target
     is_goal: bool
-    type_id: int  # 13=attempt saved, 14=post, 15=miss, 16=goal
+    type_id: int  # 13=miss, 14=post, 15=attempt saved, 16=goal
     # Qualifiers (extracted from qualifier list)
     body_part: str = ""  # Head, RightFoot, LeftFoot
     situation: str = ""  # OpenPlay, SetPiece, Corner, Penalty, etc.
@@ -509,8 +512,8 @@ class OptaScraper:
                max_retries: int = 3) -> Optional[Dict]:
         """Fetch from API with JSON format and exponential backoff retry.
 
-        Retries on transient failures (429, 500-504, connection errors).
-        Returns None on permanent failures (400, 404, etc.).
+        Retries on transient failures (429, 5xx, connection/JSON errors).
+        Returns None on permanent failures (400, 403, 404).
         """
         url = f"{self.BASE_URL}/{endpoint}"
         default_params = {"_rt": "c", "_fmt": "json"}
@@ -556,8 +559,14 @@ class OptaScraper:
                 print(f"Request failed for {endpoint}: {e}")
                 return None
             except json.JSONDecodeError as e:
-                print(f"JSON parse failed for {endpoint}: {e}")
-                return None
+                if attempt < max_retries:
+                    wait = 2 ** attempt + random.uniform(0, 1)
+                    print(f"JSON parse error for {endpoint} "
+                          f"(attempt {attempt}/{max_retries}): {e}, retrying in {wait:.1f}s...")
+                    time.sleep(wait)
+                else:
+                    print(f"JSON parse failed for {endpoint} after {max_retries} attempts: {e}")
+                    return None
 
         print(f"Request failed for {endpoint} after {max_retries} attempts")
         return None
@@ -852,7 +861,7 @@ class OptaScraper:
         shots = []
         match_id = event_data.get("matchInfo", {}).get("id", "")
 
-        # Shot type IDs in Opta: 13=attempt saved, 14=post, 15=miss, 16=goal
+        # Shot type IDs in Opta: 13=miss, 14=post, 15=attempt saved, 16=goal
         shot_type_ids = {13, 14, 15, 16}
 
         for event in event_data.get("liveData", {}).get("event", []):
@@ -864,7 +873,7 @@ class OptaScraper:
             qualifiers = {q.get("qualifierId"): q.get("value")
                          for q in event.get("qualifier", [])}
 
-            # Body part from qualifiers (15=Head, 72=LeftFoot, 72=RightFoot)
+            # Body part from qualifiers (15=Head, 72=LeftFoot; absent both -> RightFoot)
             body_part = ""
             if 15 in qualifiers:
                 body_part = "Head"
