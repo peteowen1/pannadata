@@ -24,12 +24,14 @@ Usage:
 import json
 import argparse
 import logging
+import shutil
 import sys
 from pathlib import Path
 from datetime import datetime
 from opta_scraper import OptaScraper, MatchEvent, ShotEvent, PlayerLineup, AllMatchEvent
 from dataclasses import asdict
 import pandas as pd
+import pyarrow.lib
 import requests
 
 logger = logging.getLogger(__name__)
@@ -64,7 +66,8 @@ def load_manifest(manifest_path: Path, include_unavailable: bool = True) -> tupl
 
         print(f"Loaded manifest: {len(complete_set):,} complete, {len(unavailable_set):,} unavailable")
         return complete_set, unavailable_set
-    except (pd.errors.ParserError, FileNotFoundError, OSError, ValueError) as e:
+    except (pd.errors.ParserError, FileNotFoundError, OSError, ValueError,
+            pyarrow.lib.ArrowInvalid) as e:
         print(f"Warning: Error loading manifest: {e}")
         return set(), set()
 
@@ -80,13 +83,24 @@ def update_manifest(manifest_path: Path, new_matches: list):
     new_df = pd.DataFrame(new_matches)
 
     if manifest_path.exists():
-        existing_df = pd.read_parquet(manifest_path)
-        # Combine and deduplicate (keep new records for same match_id/competition/season)
-        combined = pd.concat([existing_df, new_df], ignore_index=True)
-        combined = combined.drop_duplicates(
-            subset=['match_id', 'competition', 'season'],
-            keep='last'
-        )
+        # Backup before modifying
+        backup_path = manifest_path.with_suffix('.parquet.backup')
+        try:
+            shutil.copy2(manifest_path, backup_path)
+        except OSError as e:
+            logger.warning("Could not backup manifest: %s", e)
+
+        try:
+            existing_df = pd.read_parquet(manifest_path)
+            # Combine and deduplicate (keep new records for same match_id/competition/season)
+            combined = pd.concat([existing_df, new_df], ignore_index=True)
+            combined = combined.drop_duplicates(
+                subset=['match_id', 'competition', 'season'],
+                keep='last'
+            )
+        except (pd.errors.ParserError, OSError, ValueError, pyarrow.lib.ArrowInvalid) as e:
+            logger.error("Failed to read existing manifest: %s. Writing new records only.", e)
+            combined = new_df
     else:
         combined = new_df
 
@@ -400,7 +414,11 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
     def combine_and_save(new_data, output_path, dedup_cols):
         if not new_data:
             if output_path.exists():
-                return pd.read_parquet(output_path)
+                try:
+                    return pd.read_parquet(output_path)
+                except (pd.errors.ParserError, OSError, ValueError, pyarrow.lib.ArrowInvalid) as e:
+                    logger.error("Failed to read existing %s: %s", output_path, e)
+                    return pd.DataFrame()
             return pd.DataFrame()
 
         if isinstance(new_data[0], pd.DataFrame):
@@ -409,9 +427,13 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
             new_df = pd.DataFrame(new_data)
 
         if output_path.exists():
-            existing_df = pd.read_parquet(output_path)
-            combined = pd.concat([existing_df, new_df], ignore_index=True)
-            combined = combined.drop_duplicates(subset=dedup_cols)
+            try:
+                existing_df = pd.read_parquet(output_path)
+                combined = pd.concat([existing_df, new_df], ignore_index=True)
+                combined = combined.drop_duplicates(subset=dedup_cols)
+            except (pd.errors.ParserError, OSError, ValueError, pyarrow.lib.ArrowInvalid) as e:
+                logger.error("Failed to read existing %s: %s. Writing new data only.", output_path, e)
+                combined = new_df
         else:
             combined = new_df
 
@@ -595,8 +617,15 @@ def main():
             results.append(result)
             # Collect manifest records from this season
             all_new_manifest_records.extend(result.get("manifest_records", []))
-        except (requests.RequestException, ValueError, KeyError, OSError) as e:
+        except (requests.RequestException, ValueError, OSError) as e:
             logger.error("Failed scraping %s %s: %s", league, season_name, e, exc_info=True)
+            results.append({
+                "competition": league,
+                "season": season_name,
+                "error": str(e)
+            })
+        except Exception as e:
+            logger.error("Unexpected error scraping %s %s: %s", league, season_name, e, exc_info=True)
             results.append({
                 "competition": league,
                 "season": season_name,
@@ -622,19 +651,23 @@ def main():
     print(f"Total player records: {total_players}")
     print(f"Total shot records: {total_shots}")
 
-    # Save results summary
+    # Save results summary (used by GHA to distinguish "no data" from "crash")
     summary_path = script_dir / "data" / "scrape_summary.json"
-    with open(summary_path, "w") as f:
-        json.dump({
-            "timestamp": datetime.now().isoformat(),
-            "results": results,
-            "totals": {
-                "new_matches": total_new,
-                "total_matches": total_matches,
-                "player_records": total_players,
-                "shot_records": total_shots,
-            }
-        }, f, indent=2)
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with open(summary_path, "w") as f:
+            json.dump({
+                "timestamp": datetime.now().isoformat(),
+                "results": results,
+                "totals": {
+                    "new_matches": total_new,
+                    "total_matches": total_matches,
+                    "player_records": total_players,
+                    "shot_records": total_shots,
+                }
+            }, f, indent=2)
+    except OSError as e:
+        logger.error("Failed to write scrape summary: %s", e)
 
     print(f"\nSummary saved to {summary_path}")
 

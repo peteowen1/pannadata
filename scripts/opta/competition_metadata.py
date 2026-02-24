@@ -152,6 +152,9 @@ PANNA_ALIASES = {
     "TUR": "Super_Lig",
     "ENG2": "Championship",
     "SCO": "Scottish_Premiership",
+    "UECL": "Conference_League",
+    "WC": "World_Cup",
+    "EURO": "UEFA_Euros",
 }
 
 

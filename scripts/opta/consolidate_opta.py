@@ -14,6 +14,7 @@ import sys
 from datetime import datetime, timezone
 
 import pandas as pd
+import pyarrow.lib
 from pathlib import Path
 
 from competition_metadata import get_competition_metadata, PANNA_ALIASES
@@ -55,7 +56,8 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
                 existing_count = len(existing_df)
                 dfs.append(existing_df)
                 print(f"  {league}: Loaded {existing_count:,} existing rows")
-            except (pd.errors.ParserError, FileNotFoundError, OSError, ValueError) as e:
+            except (pd.errors.ParserError, FileNotFoundError, OSError, ValueError,
+                    pyarrow.lib.ArrowInvalid) as e:
                 print(f"  ERROR: Failed to read existing {existing_file}: {e}")
                 print(f"  Skipping {league} to prevent data loss")
                 errors += 1
@@ -70,8 +72,10 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
                 df['competition'] = league
                 df['season'] = f.stem
                 dfs.append(df)
-            except (pd.errors.ParserError, FileNotFoundError, OSError, ValueError) as e:
-                print(f"  Warning: Error reading {f}: {e}")
+            except (pd.errors.ParserError, FileNotFoundError, OSError, ValueError,
+                    pyarrow.lib.ArrowInvalid) as e:
+                print(f"  ERROR: Failed to read {f}: {e}")
+                errors += 1
 
         if not dfs:
             continue
@@ -97,7 +101,13 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
         # Backup existing file before overwriting
         if output_file.exists():
             backup_file = output_file.with_suffix('.parquet.backup')
-            shutil.copy2(output_file, backup_file)
+            try:
+                shutil.copy2(output_file, backup_file)
+            except OSError as e:
+                print(f"  ERROR: Failed to create backup for {output_file}: {e}")
+                print(f"  Skipping {league} to prevent data loss (cannot backup)")
+                errors += 1
+                continue
         combined.to_parquet(output_file, index=False, compression='gzip')
 
         size_mb = output_file.stat().st_size / (1024 * 1024)
@@ -112,15 +122,12 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
 
     Merges existing consolidated files with newly scraped hierarchical files,
     deduplicating by appropriate keys. In GHA, existing consolidated files are
-    downloaded to the parent directory (e.g., data/opta_player_stats.parquet)
+    downloaded to the opta directory (e.g., opta/opta_player_stats.parquet)
     before consolidation runs.
     """
     opta_path = Path(opta_dir)
     output_path = Path(output_dir)
     output_path.mkdir(exist_ok=True)
-
-    # Parent directory where GHA downloads existing consolidated files
-    parent_dir = opta_path.parent
 
     if not opta_path.exists():
         print(f"Opta directory not found: {opta_dir}")
@@ -144,23 +151,18 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
         print(f"Consolidating opta_{table_type}... Found {len(parquet_files)} files")
 
         # Read existing consolidated file first (contains historical data)
-        # Check both parent dir (where GHA downloads) and output dir (from previous run)
         dfs = []
         existing_count = 0
-        for existing_path in [
-            parent_dir / f"opta_{table_type}.parquet",
-            output_path / f"opta_{table_type}.parquet",
-        ]:
-            if existing_path.exists():
-                try:
-                    existing_df = pd.read_parquet(existing_path)
-                    existing_count = len(existing_df)
-                    dfs.append(existing_df)
-                    print(f"  Loaded {existing_count:,} existing rows from {existing_path}")
-                    break  # Successfully loaded - don't try other sources
-                except (pd.errors.ParserError, FileNotFoundError, OSError, ValueError) as e:
-                    print(f"  Warning: Error reading existing {existing_path}: {e}")
-                    # Fall through to try the next path
+        existing_path = output_path / f"opta_{table_type}.parquet"
+        if existing_path.exists():
+            try:
+                existing_df = pd.read_parquet(existing_path)
+                existing_count = len(existing_df)
+                dfs.append(existing_df)
+                print(f"  Loaded {existing_count:,} existing rows from {existing_path}")
+            except (pd.errors.ParserError, FileNotFoundError, OSError, ValueError,
+                    pyarrow.lib.ArrowInvalid) as e:
+                print(f"  Warning: Error reading existing {existing_path}: {e}")
 
         # Read new hierarchical data, adding competition and season columns
         for f in parquet_files:
@@ -173,8 +175,10 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
                 df['competition'] = competition
                 df['season'] = season
                 dfs.append(df)
-            except (pd.errors.ParserError, FileNotFoundError, OSError, ValueError) as e:
-                print(f"  Warning: Error reading {f}: {e}")
+            except (pd.errors.ParserError, FileNotFoundError, OSError, ValueError,
+                    pyarrow.lib.ArrowInvalid) as e:
+                print(f"  ERROR: Failed to read {f}: {e}")
+                errors += 1
 
         if not dfs:
             print(f"  Skipping {table_type} - no valid data")
@@ -212,7 +216,13 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
         output_file = output_path / f"opta_{table_type}.parquet"
         if output_file.exists():
             backup_file = output_file.with_suffix('.parquet.backup')
-            shutil.copy2(output_file, backup_file)
+            try:
+                shutil.copy2(output_file, backup_file)
+            except OSError as e:
+                print(f"  ERROR: Failed to create backup for {output_file}: {e}")
+                print(f"  Skipping {table_type} to prevent data loss (cannot backup)")
+                errors += 1
+                continue
         combined.to_parquet(output_file, index=False)
 
         size_mb = output_file.stat().st_size / (1024 * 1024)
@@ -227,8 +237,10 @@ def generate_catalog(opta_dir="opta", manifest_path="opta-manifest.parquet",
                      output_path="opta/opta-catalog.json"):
     """Generate a JSON catalog of all available Opta competitions and data.
 
-    Combines manifest (per-match has_* flags) with filesystem scan of
-    consolidated parquets to build a comprehensive data catalog.
+    Combines three data sources to build a comprehensive catalog:
+    1. Manifest (per-match has_* flags for match counts)
+    2. Consolidated parquets (competition/season columns per data type)
+    3. Per-league event files in events_consolidated/
     """
     opta_path = Path(opta_dir)
     manifest_file = Path(manifest_path)
@@ -253,7 +265,8 @@ def generate_catalog(opta_dir="opta", manifest_path="opta-manifest.parquet",
                     if col in group.columns and group[col].any():
                         comp_data[comp]["data_types"].add(dt)
             print(f"Catalog: loaded {len(mf):,} manifest entries across {len(comp_data)} competitions")
-        except Exception as e:
+        except (pd.errors.ParserError, FileNotFoundError, OSError, ValueError,
+                pyarrow.lib.ArrowInvalid, KeyError) as e:
             print(f"Catalog: warning reading manifest: {e}")
 
     # 2. Also scan consolidated parquets for competition/season columns
@@ -270,7 +283,8 @@ def generate_catalog(opta_dir="opta", manifest_path="opta-manifest.parquet",
                 comp_data[comp]["seasons"].update(
                     df.loc[df["competition"] == comp, "season"].unique()
                 )
-        except Exception as e:
+        except (pd.errors.ParserError, FileNotFoundError, OSError, ValueError,
+                pyarrow.lib.ArrowInvalid, KeyError) as e:
             print(f"Catalog: warning scanning {consolidated_file}: {e}")
 
     # Also scan events_consolidated/ for per-league event files
@@ -284,8 +298,9 @@ def generate_catalog(opta_dir="opta", manifest_path="opta-manifest.parquet",
             try:
                 df = pd.read_parquet(f, columns=["season"])
                 comp_data[comp]["seasons"].update(df["season"].unique())
-            except Exception:
-                pass
+            except (pd.errors.ParserError, FileNotFoundError, OSError, ValueError,
+                    pyarrow.lib.ArrowInvalid, KeyError) as e:
+                print(f"Catalog: warning scanning {f}: {e}")
 
     # 3. Build catalog JSON
     competitions = {}

@@ -28,7 +28,7 @@ Rscript scrape_fbref.R
 ```bash
 cd pannadata/scripts/opta
 pip install -r requirements.txt
-python scrape_big5.py
+python scrape_opta.py
 ```
 
 ### Understat
@@ -102,5 +102,5 @@ pb_download_source("understat")
 - [FBref README](fbref/README.md) - FBref scraper details
 - [Opta README](opta/README.md) - Opta scraper details
 - [Understat README](understat/README.md) - Understat scraper details
-- [pannadata CLAUDE.md](../CLAUDE.md) - Repository overview
+- [pannadata README](../README.md) - Repository overview
 - [panna package](../../panna/) - R package for data loading and analysis

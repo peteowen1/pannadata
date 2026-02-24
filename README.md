@@ -8,23 +8,25 @@ Data repository for the pannaverse ecosystem. Contains cached football match dat
 
 15 leagues with 263 columns per player match, plus event-level data with x/y coordinates.
 
-| League | Code | Seasons | Data Types |
-|--------|------|---------|------------|
-| Premier League | EPL | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| La Liga | La_Liga | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| Bundesliga | Bundesliga | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| Serie A | Serie_A | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| Ligue 1 | Ligue_1 | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| Eredivisie | NED | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| Primeira Liga | POR | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| Super Lig | TUR | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| Championship | ENG2 | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| Scottish Premiership | SCO | 2019-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| Champions League | UCL | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| Europa League | UEL | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| Conference League | UECL | 2021-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| World Cup | WC | 2014, 2018 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| Euros | EURO | 2016, 2024 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| League | Opta Code | R Alias | Seasons | Data Types |
+|--------|-----------|---------|---------|------------|
+| Premier League | EPL | ENG | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| La Liga | La_Liga | ESP | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Bundesliga | Bundesliga | GER | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Serie A | Serie_A | ITA | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Ligue 1 | Ligue_1 | FRA | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Eredivisie | Eredivisie | NED | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Primeira Liga | Primeira_Liga | POR | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Super Lig | Super_Lig | TUR | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Championship | Championship | ENG2 | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Scottish Premiership | Scottish_Premiership | SCO | 2019-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Champions League | UCL | UCL | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Europa League | UEL | UEL | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Conference League | Conference_League | UECL | 2021-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| World Cup | World_Cup | WC | 2014, 2018 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Euros | UEFA_Euros | EURO | 2016, 2024 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+
+> **Note:** The "Opta Code" is used in filesystem paths and raw data. The "R Alias" is the shorthand accepted by `panna` R package functions like `load_opta_stats()`. Both work interchangeably in the R API.
 
 ### Understat
 
@@ -58,8 +60,7 @@ data/
 ├── opta/
 │   ├── {data_type}/
 │   │   └── {league}/
-│   │       └── {season}/
-│   │           └── {match_id}.rds          # Individual match files
+│   │       └── {season}.parquet            # Per-season parquet files
 │   ├── fixtures/
 │   │   └── {league}/
 │   │       └── {season}.parquet            # Fixture parquets (all match statuses)
@@ -132,7 +133,7 @@ fixtures <- load_opta_fixtures("EPL")
 xmetrics <- load_opta_xmetrics("EPL", "2024-2025")
 
 # Load Understat data
-roster <- load_understat_roster("EPL", "2024")
+roster <- load_understat_roster("ENG", "2024")
 
 # Load FBref data
 summary <- load_summary("ENG", "2024-2025")

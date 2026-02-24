@@ -529,11 +529,16 @@ class OptaScraper:
 
                 # Rate limited or server error - retry with backoff
                 if resp.status_code == 429 or resp.status_code >= 500:
-                    wait = 2 ** attempt + random.uniform(0, 1)
-                    print(f"HTTP {resp.status_code} for {endpoint} "
-                          f"(attempt {attempt}/{max_retries}), retrying in {wait:.1f}s...")
-                    time.sleep(wait)
-                    continue
+                    if attempt < max_retries:
+                        wait = 2 ** attempt + random.uniform(0, 1)
+                        print(f"HTTP {resp.status_code} for {endpoint} "
+                              f"(attempt {attempt}/{max_retries}), retrying in {wait:.1f}s...")
+                        time.sleep(wait)
+                        continue
+                    else:
+                        print(f"Request failed for {endpoint}: HTTP {resp.status_code} "
+                              f"after {max_retries} attempts")
+                        return None
 
                 resp.raise_for_status()
                 return resp.json()
