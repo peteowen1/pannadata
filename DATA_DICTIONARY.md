@@ -8,7 +8,7 @@ This document describes the data stored in pannadata across all three sources.
 
 | Source | Coverage | xG Model | Storage | Key Strength |
 |--------|----------|----------|---------|--------------|
-| **Opta** | 15 leagues, 2013+ | SPADL + XGBoost | RDS per match, Parquet consolidated | 263 columns, event coordinates, progressive carries |
+| **Opta** | 15 leagues, 2013+ | SPADL + XGBoost | Parquet per season, Parquet consolidated | 263 columns, event coordinates, progressive carries |
 | **Understat** | Big 5 + Russia | Understat model | Parquet per season | xGChain, xGBuildup |
 | **FBref** | Big 5 + cups | StatsBomb | RDS per match, Parquet per season | Detailed passing distance breakdowns |
 
@@ -17,20 +17,25 @@ This document describes the data stored in pannadata across all three sources.
 ```
 data/
 ├── opta/                              # Primary source
-│   ├── player_stats/{league}/{season}/{match_id}.rds
-│   ├── shots/{league}/{season}/{match_id}.rds
-│   ├── shot_events/{league}/{season}/{match_id}.rds
-│   ├── events/{league}/{season}/{match_id}.rds
-│   ├── match_events/{league}/{season}/{match_id}.rds
-│   ├── lineups/{league}/{season}/{match_id}.rds
+│   ├── player_stats/{league}/{season}.parquet
+│   ├── shots/{league}/{season}.parquet
+│   ├── shot_events/{league}/{season}.parquet
+│   ├── events/{league}/{season}.parquet
+│   ├── match_events/{league}/{season}.parquet
+│   ├── lineups/{league}/{season}.parquet
 │   ├── fixtures/{league}/{season}.parquet
 │   ├── xmetrics/{league}/{season}.parquet
+│   ├── events_consolidated/           # Per-league consolidated events
+│   │   └── events_{league}.parquet
 │   ├── models/                        # Pre-trained ML models
 │   │   ├── xg_model.rds
 │   │   ├── xpass_model.rds
 │   │   └── epv_model.rds
 │   ├── opta_player_stats.parquet      # Consolidated (all leagues)
 │   ├── opta_shots.parquet             # Consolidated
+│   ├── opta_shot_events.parquet       # Consolidated
+│   ├── opta_events.parquet            # Consolidated
+│   ├── opta_lineups.parquet           # Consolidated
 │   └── opta_fixtures.parquet          # Consolidated
 ├── understat/
 │   ├── roster/{league}/{season}.parquet
@@ -47,23 +52,25 @@ data/
 
 ### Opta (15 leagues)
 
-| League | Code | Seasons |
-|--------|------|---------|
-| Premier League | EPL | 2013+ |
-| La Liga | La_Liga | 2013+ |
-| Bundesliga | Bundesliga | 2013+ |
-| Serie A | Serie_A | 2013+ |
-| Ligue 1 | Ligue_1 | 2013+ |
-| Eredivisie | NED | 2013+ |
-| Primeira Liga | POR | 2013+ |
-| Super Lig | TUR | 2013+ |
-| Championship | ENG2 | 2013+ |
-| Scottish Premiership | SCO | 2019+ |
-| Champions League | UCL | 2013+ |
-| Europa League | UEL | 2013+ |
-| Conference League | UECL | 2021+ |
-| World Cup | WC | 2014, 2018 |
-| Euros | EURO | 2016, 2024 |
+| League | Filesystem Code | R Alias | Seasons |
+|--------|-----------------|---------|---------|
+| Premier League | EPL | ENG | 2013+ |
+| La Liga | La_Liga | ESP | 2013+ |
+| Bundesliga | Bundesliga | GER | 2013+ |
+| Serie A | Serie_A | ITA | 2013+ |
+| Ligue 1 | Ligue_1 | FRA | 2013+ |
+| Eredivisie | Eredivisie | NED | 2013+ |
+| Primeira Liga | Primeira_Liga | POR | 2013+ |
+| Super Lig | Super_Lig | TUR | 2013+ |
+| Championship | Championship | ENG2 | 2013+ |
+| Scottish Premiership | Scottish_Premiership | SCO | 2019+ |
+| Champions League | UCL | UCL | 2013+ |
+| Europa League | UEL | UEL | 2013+ |
+| Conference League | Conference_League | UECL | 2021+ |
+| World Cup | World_Cup | WC | 2014, 2018 |
+| Euros | UEFA_Euros | EURO | 2016, 2024 |
+
+> **Note:** "Filesystem Code" is used in data directory paths and `seasons.json`. "R Alias" is accepted by `panna` R package functions like `load_opta_stats("EPL", ...)`. Both work interchangeably in the R API.
 
 ### Understat
 
@@ -289,7 +296,7 @@ All in-match events with x/y coordinates (~2000 events per match). Used for SPAD
 |--------|------|-------------|
 | `match_id` | int | Opta match ID |
 | `event_id` | int | Event ID |
-| `type_id` | int | Opta event type (1=pass, 3=dribble, 7=tackle, 13-16=shots, 44=aerial, etc.) |
+| `type_id` | int | Opta event type (1=pass, 3=dribble, 7=tackle, 13=miss, 14=post, 15=saved, 16=goal, 44=aerial, etc.) |
 | `player_id` | int | Player ID |
 | `player_name` | chr | Player name |
 | `team_id` | int | Team ID |
@@ -313,7 +320,7 @@ High-level match events: goals, cards, substitutions.
 |--------|------|-------------|
 | `match_id` | int | Opta match ID |
 | `match_date` | date | Match date |
-| `event_type` | chr | goal, yellow_card, red_card, second_yellow, substitution |
+| `event_type` | chr | goal, yellow_card, red_card, substitution |
 | `minute` | int | Minute |
 | `second` | int | Second |
 | `team_id` | int | Team ID |
@@ -322,7 +329,9 @@ High-level match events: goals, cards, substitutions.
 | `assist_player_id` | int | Assist provider ID (goals only) |
 | `assist_player_name` | chr | Assist provider name (goals only) |
 | `player_on_id` | int | Substitute coming on (subs only) |
+| `player_on_name` | chr | Substitute coming on name (subs only) |
 | `player_off_id` | int | Player coming off (subs only) |
+| `player_off_name` | chr | Player coming off name (subs only) |
 
 ---
 
@@ -341,7 +350,7 @@ Starting XI, substitutions, positions, and minutes played.
 | `team_position` | chr | home / away |
 | `position` | chr | Goalkeeper, Defender, Midfielder, Forward |
 | `position_side` | chr | Left, Right, Centre |
-| `formation_place` | int | 1-11 for starters, NULL for subs |
+| `formation_place` | chr | 1-11 for starters, NA for subs |
 | `shirt_number` | int | Shirt number |
 | `is_starter` | lgl | Whether player started |
 | `minutes_played` | int | Minutes played |
@@ -364,6 +373,10 @@ Match schedule and results. Contains ALL statuses (Played, Fixture, Postponed).
 | `away_team` | chr | Away team name |
 | `home_team_id` | int | Home team ID |
 | `away_team_id` | int | Away team ID |
+| `home_score` | int | Full-time home goals (NA for non-played matches) |
+| `away_score` | int | Full-time away goals (NA for non-played matches) |
+| `home_score_ht` | int | Half-time home goals (NA for non-played matches) |
+| `away_score_ht` | int | Half-time away goals (NA for non-played matches) |
 | `match_status` | chr | Fixture, Played, Postponed |
 | `competition` | chr | Opta league code |
 | `season` | chr | Season string |
@@ -397,13 +410,40 @@ Pre-computed xG, xA, and xPass metrics per player per match. Generated by the SP
 | `sum_xpass` | num | Sum of pass completion probabilities |
 | `xpass_overperformance` | num | Actual completions minus expected |
 
-**Note:** Penalty xG is overridden to 0.76 (model trained without penalties).
+**Note:** Penalty xG is overridden to 0.76 in the `xg` column (model was not trained on penalties). Penalty shots are excluded from `npxg`.
 
 ---
 
 ## opta/shots
 
 Aggregated shot data per player per match (summary-level, not event-level). For individual shots with coordinates, use `shot_events`.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `match_id` | int | Opta match ID |
+| `player_id` | int | Player ID |
+| `player_name` | chr | Player name |
+| `team_id` | int | Team ID |
+| `team_name` | chr | Team name |
+| `position` | chr | Position |
+| `minutes_played` | int | Minutes played |
+| `total_shots` | int | Total shots |
+| `shots_on_target` | int | Shots on target |
+| `shots_off_target` | int | Shots off target |
+| `shots_blocked` | int | Shots blocked |
+| `shots_inside_box` | int | Shots inside box |
+| `shots_outside_box` | int | Shots outside box |
+| `shots_right_foot` | int | Right-foot shots |
+| `shots_left_foot` | int | Left-foot shots |
+| `shots_header` | int | Headed shots |
+| `goals` | int | Goals scored |
+| `goals_inside_box` | int | Goals from inside box |
+| `shots_open_play` | int | Open-play shots |
+| `shots_corner` | int | Shots from corners |
+| `shots_penalty` | int | Penalty shots |
+| `big_chance_created` | int | Big chances created |
+| `big_chance_missed` | int | Big chances missed |
+| `big_chance_scored` | int | Big chances scored |
 
 ---
 

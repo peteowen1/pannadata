@@ -71,7 +71,22 @@ def load_manifest(manifest_path: Path, include_unavailable: bool = True) -> tupl
         return complete_set, unavailable_set
     except (pd.errors.ParserError, FileNotFoundError, OSError, ValueError,
             pyarrow.lib.ArrowInvalid) as e:
-        print(f"Warning: Error loading manifest: {e}")
+        print(f"Warning: Error loading manifest: {e}. Trying backup...")
+        backup_path = manifest_path.with_suffix('.parquet.backup')
+        if backup_path.exists():
+            try:
+                df = pd.read_parquet(backup_path)
+                print(f"Recovered manifest from backup ({len(df):,} records)")
+                complete = df[df['has_match_events'] == True]
+                complete_set = set(zip(complete['match_id'], complete['competition'], complete['season']))
+                unavailable_set = set()
+                if 'event_unavailable' in df.columns:
+                    unavailable = df[df['event_unavailable'] == True]
+                    unavailable_set = set(zip(unavailable['match_id'], unavailable['competition'], unavailable['season']))
+                return complete_set, unavailable_set
+            except Exception as backup_err:
+                print(f"Backup also unreadable: {backup_err}")
+        print("Proceeding with empty manifest (will re-scrape all)")
         return set(), set()
 
 
@@ -112,9 +127,9 @@ def update_manifest(manifest_path: Path, new_matches: list):
                     subset=['match_id', 'competition', 'season'],
                     keep='last'
                 )
-            except Exception:
-                logger.error("Backup also unreadable. Writing new records only.")
-                combined = new_df
+            except (pd.errors.ParserError, OSError, ValueError, pyarrow.lib.ArrowInvalid) as e:
+                logger.error("Backup also unreadable: %s. Aborting manifest update to prevent history loss.", e)
+                return
     else:
         combined = new_df
 
@@ -140,8 +155,12 @@ def load_seasons_config():
         from discover_seasons import main as discover_main
         discover_main()
 
-    with open(config_path) as f:
-        return json.load(f)
+    try:
+        with open(config_path) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        logger.error("Failed to load seasons config from %s: %s", config_path, e)
+        sys.exit(1)
 
 
 def is_future_season(season_name: str) -> bool:
@@ -418,11 +437,14 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
 
             # Save raw JSON files
             raw_dir.mkdir(parents=True, exist_ok=True)
-            with open(raw_dir / f"{match_id}_stats.json", "w") as f:
-                json.dump(stats, f)
-            if event_data:
-                with open(raw_dir / f"{match_id}_events.json", "w") as f:
-                    json.dump(event_data, f)
+            try:
+                with open(raw_dir / f"{match_id}_stats.json", "w") as f:
+                    json.dump(stats, f)
+                if event_data:
+                    with open(raw_dir / f"{match_id}_events.json", "w") as f:
+                        json.dump(event_data, f)
+            except OSError as e:
+                logger.warning("Failed to write raw JSON for match %s: %s. Continuing.", match_id, e)
 
             print("OK")
 
@@ -448,8 +470,14 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
                 combined = pd.concat([existing_df, new_df], ignore_index=True)
                 combined = combined.drop_duplicates(subset=dedup_cols, keep='last')
             except (pd.errors.ParserError, OSError, ValueError, pyarrow.lib.ArrowInvalid) as e:
-                logger.error("Failed to read existing %s: %s. Skipping write to prevent data loss.", output_path, e)
-                return new_df
+                logger.error("Failed to read existing %s: %s. Writing new records only.", output_path, e)
+                try:
+                    corrupt_path = output_path.with_suffix('.parquet.corrupt')
+                    output_path.rename(corrupt_path)
+                    logger.error("Moved corrupt file to %s", corrupt_path)
+                except OSError:
+                    pass
+                combined = new_df
         else:
             combined = new_df
 
@@ -692,8 +720,8 @@ def main():
         logger.error("Failed to write scrape summary: %s", e)
         print(f"\nWARNING: Failed to save summary to {summary_path}")
 
-    # Exit non-zero if all league-seasons failed
-    if error_count > 0 and error_count == len(scrape_plan) and len(scrape_plan) > 0:
+    # Exit non-zero if any league-season failed
+    if error_count > 0:
         sys.exit(1)
 
 

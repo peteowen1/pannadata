@@ -10,19 +10,19 @@ Data repository for the pannaverse ecosystem. Contains cached football match dat
 
 | League | Opta Code | R Alias | Seasons | Data Types |
 |--------|-----------|---------|---------|------------|
-| Premier League | EPL | ENG | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| La Liga | La_Liga | ESP | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| Bundesliga | Bundesliga | GER | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| Serie A | Serie_A | ITA | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| Ligue 1 | Ligue_1 | FRA | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| Eredivisie | Eredivisie | NED | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| Primeira Liga | Primeira_Liga | POR | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| Super Lig | Super_Lig | TUR | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| Championship | Championship | ENG2 | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| Scottish Premiership | Scottish_Premiership | SCO | 2019-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| Champions League | UCL | UCL | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| Europa League | UEL | UEL | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| Conference League | Conference_League | UECL | 2021-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Premier League | EPL | ENG | 2013+ | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| La Liga | La_Liga | ESP | 2013+ | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Bundesliga | Bundesliga | GER | 2013+ | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Serie A | Serie_A | ITA | 2013+ | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Ligue 1 | Ligue_1 | FRA | 2013+ | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Eredivisie | Eredivisie | NED | 2013+ | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Primeira Liga | Primeira_Liga | POR | 2013+ | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Super Lig | Super_Lig | TUR | 2013+ | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Championship | Championship | ENG2 | 2013+ | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Scottish Premiership | Scottish_Premiership | SCO | 2019+ | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Champions League | UCL | UCL | 2013+ | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Europa League | UEL | UEL | 2013+ | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Conference League | Conference_League | UECL | 2021+ | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
 | World Cup | World_Cup | WC | 2014, 2018 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
 | Euros | UEFA_Euros | EURO | 2016, 2024 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
 
@@ -71,8 +71,13 @@ data/
 │   │   ├── xg_model.rds                    # Pre-trained xG model
 │   │   ├── xpass_model.rds                 # Pre-trained xPass model
 │   │   └── epv_model.rds                   # Pre-trained EPV model
+│   ├── events_consolidated/
+│   │   └── events_{league}.parquet         # Per-league consolidated events
 │   ├── opta_player_stats.parquet           # Consolidated player stats (all leagues)
 │   ├── opta_shots.parquet                  # Consolidated shots (all leagues)
+│   ├── opta_shot_events.parquet            # Consolidated shot events (all leagues)
+│   ├── opta_events.parquet                 # Consolidated events (all leagues)
+│   ├── opta_lineups.parquet                # Consolidated lineups (all leagues)
 │   └── opta_fixtures.parquet               # Consolidated fixtures (all leagues)
 ├── understat/
 │   └── {tabletype}/{league}/{season}.parquet
