@@ -156,7 +156,7 @@ shots <- load_shots()
 
 | Release Tag | Contents |
 |-------------|----------|
-| opta-latest | Consolidated Opta files (player_stats, shots, shot_events, events, lineups, fixtures, manifest, catalog) + per-league events |
+| opta-latest | Consolidated Opta parquets (player_stats, shots, shot_events, events, lineups, fixtures, match_stats, skills, xmetrics, manifest) + per-league events |
 | fbref-latest | FBref parquet archives |
 | understat-latest | Understat parquet archives |
 | epv-models | Pre-trained xG, xPass, EPV models |

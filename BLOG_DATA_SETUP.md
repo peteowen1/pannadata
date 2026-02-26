@@ -17,7 +17,7 @@ Produced by either path. The GHA workflow uploads to Cloudflare R2; the panna pi
 |---|---|---|
 | `panna_rank` | integer | Overall rank (1 = best) |
 | `player_name` | string | Player name |
-| `panna` | double | Overall rating (offense - defense) |
+| `panna` | double | Overall xRAPM rating (positive = better) |
 | `offense` | double | Contribution to creating xG |
 | `defense` | double | Contribution to preventing xG (negative = good) |
 | `spm_overall` | double | SPM overall rating |
