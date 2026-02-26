@@ -1,0 +1,44 @@
+name: Build blog data
+
+on:
+  workflow_dispatch:
+  # Uncomment to trigger after the panna model pipeline uploads ratings:
+  # release:
+  #   types: [published, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: arrow, dplyr
+
+      - name: Download source data
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p source
+          gh release download ratings-data -p "seasonal_xrapm.parquet" -D source
+          gh release download ratings-data -p "seasonal_spm.parquet" -D source
+
+      - name: Aggregate
+        run: Rscript scripts/build_blog_data.R
+
+      - name: Upload to R2
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          for f in blog/*.parquet; do
+            npx wrangler r2 object put "inthegame-data/$(basename $f)" --file "$f"
+          done
