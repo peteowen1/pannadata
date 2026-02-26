@@ -493,6 +493,7 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
                 combined.to_parquet(output_path, index=False)
             except (OSError, pyarrow.lib.ArrowInvalid) as e:
                 logger.error("Failed to write %s: %s", output_path, e)
+                return pd.DataFrame()
         return combined
 
     # Combine and save all data types
@@ -536,9 +537,10 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
         fixture_path = output_dirs["fixtures"] / f"{season_name}.parquet"
         try:
             fixture_df.to_parquet(fixture_path, index=False)
+            results["fixtures"] = fixture_df
         except (OSError, pyarrow.lib.ArrowInvalid) as e:
             logger.error("Failed to write fixtures %s: %s", fixture_path, e)
-        results["fixtures"] = fixture_df
+            results["fixtures"] = pd.DataFrame()
         print(f"\n  Fixtures: {len(fixture_df)} matches ({fixture_df['match_status'].value_counts().to_dict()})")
     else:
         results["fixtures"] = pd.DataFrame()

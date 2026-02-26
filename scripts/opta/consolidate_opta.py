@@ -411,7 +411,7 @@ if __name__ == "__main__":
         catalog_errors = generate_catalog()
         if catalog_errors:
             logger.warning("Catalog generation had errors")
-    except Exception as e:
+    except (OSError, ValueError, KeyError, pd.errors.ParserError, pyarrow.lib.ArrowInvalid) as e:
         logger.warning("Catalog generation failed: %s", e, exc_info=True)
 
     if errors:

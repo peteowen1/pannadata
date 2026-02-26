@@ -48,7 +48,7 @@ data/
 │   ├── passing/
 │   ├── defense/
 │   └── ...
-├── opta/            # Opta data (RDS + parquet)
+├── opta/            # Opta data (parquet per season + consolidated)
 │   ├── player_stats/
 │   ├── events/
 │   ├── lineups/

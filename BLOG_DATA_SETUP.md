@@ -57,7 +57,7 @@ Produced by `panna/data-raw/match-predictions-opta/10_export_blog_data.R` only (
 source("data-raw/match-predictions-opta/10_export_blog_data.R")
 ```
 
-Requires: `cache-opta/07_seasonal_ratings.rds` (from Opta RAPM pipeline), `gh` CLI authenticated.
+Requires: `cache-skills/06_seasonal_ratings.rds` (preferred, from Skills pipeline) or `cache-opta/07_seasonal_ratings.rds` (fallback, from Opta RAPM pipeline), `gh` CLI authenticated.
 
 ### Match Predictions
 

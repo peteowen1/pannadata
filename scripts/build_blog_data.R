@@ -2,6 +2,9 @@ library(arrow)
 library(dplyr)
 
 # Player ratings - latest season xRAPM + SPM
+for (f in c("source/seasonal_xrapm.parquet", "source/seasonal_spm.parquet")) {
+  if (!file.exists(f)) stop("Required file not found: ", f, ". Check the 'Download source data' step.")
+}
 seasonal_xrapm <- read_parquet("source/seasonal_xrapm.parquet")
 seasonal_spm <- read_parquet("source/seasonal_spm.parquet")
 
@@ -25,6 +28,7 @@ spm <- seasonal_spm |>
   ungroup() |>
   select(player_name, spm_overall = spm)
 
+n_before <- nrow(xrapm)
 panna_ratings <- xrapm |>
   left_join(spm, by = "player_name") |>
   mutate(
@@ -42,7 +46,11 @@ panna_ratings <- xrapm |>
 na_spm <- sum(is.na(panna_ratings$spm_overall))
 cat("SPM join:", nrow(panna_ratings) - na_spm, "/", nrow(panna_ratings),
     "matched (", round(100 * na_spm / nrow(panna_ratings), 1), "% missing)\n")
-stopifnot(nrow(panna_ratings) > 0, na_spm / nrow(panna_ratings) < 0.2)
+stopifnot(
+  nrow(panna_ratings) == n_before,
+  nrow(panna_ratings) > 0,
+  na_spm / nrow(panna_ratings) < 0.2
+)
 
 dir.create("blog", showWarnings = FALSE)
 write_parquet(panna_ratings, "blog/panna_ratings.parquet")
