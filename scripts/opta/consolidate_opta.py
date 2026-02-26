@@ -66,6 +66,11 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
         if not parquet_files and not dfs:
             continue
 
+        # Skip leagues with no new data — existing consolidated file is already correct
+        if not parquet_files:
+            print(f"  {league}: No new data, skipping")
+            continue
+
         for f in parquet_files:
             try:
                 df = pd.read_parquet(f)
@@ -77,6 +82,7 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
                 print(f"  ERROR: Failed to read {f}: {e}")
                 errors += 1
 
+        dfs = [df for df in dfs if not df.empty]
         if not dfs:
             continue
 
@@ -111,7 +117,7 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
                 errors += 1
                 continue
         try:
-            combined.to_parquet(output_file, index=False, compression='gzip')
+            combined.to_parquet(output_file, index=False, compression='zstd')
         except (OSError, pyarrow.lib.ArrowInvalid) as e:
             print(f"  ERROR: Failed to write {output_file}: {e}")
             if backup_created and backup_file.exists():
@@ -197,6 +203,7 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
                 print(f"  ERROR: Failed to read {f}: {e}")
                 errors += 1
 
+        dfs = [df for df in dfs if not df.empty]
         if not dfs:
             print(f"  Skipping {table_type} - no valid data")
             continue
