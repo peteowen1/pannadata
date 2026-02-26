@@ -84,7 +84,8 @@ def load_manifest(manifest_path: Path, include_unavailable: bool = True) -> tupl
                     unavailable = df[df['event_unavailable'] == True]
                     unavailable_set = set(zip(unavailable['match_id'], unavailable['competition'], unavailable['season']))
                 return complete_set, unavailable_set
-            except Exception as backup_err:
+            except (pd.errors.ParserError, FileNotFoundError, OSError, ValueError,
+                    pyarrow.lib.ArrowInvalid, KeyError) as backup_err:
                 print(f"Backup also unreadable: {backup_err}")
         print("Proceeding with empty manifest (will re-scrape all)")
         return set(), set()
@@ -475,8 +476,8 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
                     corrupt_path = output_path.with_suffix('.parquet.corrupt')
                     output_path.rename(corrupt_path)
                     logger.error("Moved corrupt file to %s", corrupt_path)
-                except OSError:
-                    pass
+                except OSError as rename_err:
+                    logger.warning("Could not move corrupt file %s aside: %s", output_path, rename_err)
                 combined = new_df
         else:
             combined = new_df

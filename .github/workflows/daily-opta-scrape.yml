@@ -128,13 +128,17 @@ jobs:
         fi
 
         # Upload manifest (critical for incremental scraping)
+        upload_errors=0
         if [ -f "opta-manifest.parquet" ]; then
-          gh release upload opta-latest opta-manifest.parquet --clobber
-          echo "Uploaded opta-manifest.parquet ($(ls -lh opta-manifest.parquet | awk '{print $5}'))"
+          if gh release upload opta-latest opta-manifest.parquet --clobber; then
+            echo "Uploaded opta-manifest.parquet ($(ls -lh opta-manifest.parquet | awk '{print $5}'))"
+          else
+            echo "CRITICAL: Failed to upload manifest. Next run will re-scrape all matches."
+            upload_errors=$((upload_errors + 1))
+          fi
         fi
 
         # Upload consolidated parquets (by table type)
-        upload_errors=0
         for f in opta/opta_*.parquet; do
           [ -f "$f" ] || continue
           if gh release upload opta-latest "$f" --clobber; then
