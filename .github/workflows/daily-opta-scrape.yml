@@ -103,8 +103,9 @@ jobs:
     - name: Build consolidated parquet files
       run: |
         cd data
-        PARQUET_COUNT=$(find opta -name "*.parquet" 2>/dev/null | wc -l)
-        echo "Total parquet files: $PARQUET_COUNT"
+        # Count only raw per-league season files (not consolidated opta_*.parquet at the root)
+        PARQUET_COUNT=$(find opta/player_stats opta/shots opta/lineups opta/events opta/shot_events opta/match_events opta/fixtures -name "*.parquet" 2>/dev/null | wc -l)
+        echo "Raw per-league parquet files: $PARQUET_COUNT"
         if [ "$PARQUET_COUNT" -eq 0 ]; then
           # Distinguish "no new data" from "scraper crashed"
           if [ -f "../scripts/opta/data/scrape_summary.json" ]; then
@@ -127,30 +128,55 @@ jobs:
         fi
 
         # Upload manifest (critical for incremental scraping)
+        upload_errors=0
         if [ -f "opta-manifest.parquet" ]; then
-          gh release upload opta-latest opta-manifest.parquet --clobber
-          echo "Uploaded opta-manifest.parquet ($(ls -lh opta-manifest.parquet | awk '{print $5}'))"
+          if gh release upload opta-latest opta-manifest.parquet --clobber; then
+            echo "Uploaded opta-manifest.parquet ($(ls -lh opta-manifest.parquet | awk '{print $5}'))"
+          else
+            echo "CRITICAL: Failed to upload manifest. Next run will re-scrape all matches."
+            upload_errors=$((upload_errors + 1))
+          fi
         fi
 
         # Upload consolidated parquets (by table type)
         for f in opta/opta_*.parquet; do
-          [ -f "$f" ] && gh release upload opta-latest "$f" --clobber && echo "Uploaded $(basename $f)"
+          [ -f "$f" ] || continue
+          if gh release upload opta-latest "$f" --clobber; then
+            echo "Uploaded $(basename $f)"
+          else
+            echo "ERROR: Failed to upload $(basename $f)"
+            upload_errors=$((upload_errors + 1))
+          fi
         done
 
         # Upload data catalog
         if [ -f "opta/opta-catalog.json" ]; then
-          gh release upload opta-latest opta/opta-catalog.json --clobber
-          echo "Uploaded opta-catalog.json"
+          if gh release upload opta-latest opta/opta-catalog.json --clobber; then
+            echo "Uploaded opta-catalog.json"
+          else
+            echo "ERROR: Failed to upload opta-catalog.json"
+            upload_errors=$((upload_errors + 1))
+          fi
         fi
 
         # Upload per-league events files
         if [ -d "opta/events_consolidated" ]; then
           for f in opta/events_consolidated/events_*.parquet; do
-            [ -f "$f" ] && gh release upload opta-latest "$f" --clobber && echo "Uploaded $(basename $f)"
+            [ -f "$f" ] || continue
+            if gh release upload opta-latest "$f" --clobber; then
+              echo "Uploaded $(basename $f)"
+            else
+              echo "ERROR: Failed to upload $(basename $f)"
+              upload_errors=$((upload_errors + 1))
+            fi
           done
           echo "Uploaded $(ls opta/events_consolidated/events_*.parquet 2>/dev/null | wc -l) events files"
         fi
 
+        if [ "$upload_errors" -gt 0 ]; then
+          echo "ERROR: $upload_errors upload(s) failed"
+          exit 1
+        fi
         echo "Upload complete"
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -6,23 +6,23 @@ Data repository for the pannaverse ecosystem. Contains cached football match dat
 
 ### Opta (Primary Source)
 
-15 leagues with 263 columns per player match, plus event-level data with x/y coordinates.
+15 leagues with ~280 columns per player match, plus event-level data with x/y coordinates.
 
 | League | Opta Code | R Alias | Seasons | Data Types |
 |--------|-----------|---------|---------|------------|
-| Premier League | EPL | ENG | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| La Liga | La_Liga | ESP | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| Bundesliga | Bundesliga | GER | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| Serie A | Serie_A | ITA | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| Ligue 1 | Ligue_1 | FRA | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| Eredivisie | Eredivisie | NED | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| Primeira Liga | Primeira_Liga | POR | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| Super Lig | Super_Lig | TUR | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| Championship | Championship | ENG2 | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| Scottish Premiership | Scottish_Premiership | SCO | 2019-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| Champions League | UCL | UCL | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| Europa League | UEL | UEL | 2013-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
-| Conference League | Conference_League | UECL | 2021-2025 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Premier League | EPL | ENG | 2013+ | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| La Liga | La_Liga | ESP | 2013+ | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Bundesliga | Bundesliga | GER | 2013+ | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Serie A | Serie_A | ITA | 2013+ | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Ligue 1 | Ligue_1 | FRA | 2013+ | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Eredivisie | Eredivisie | NED | 2013+ | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Primeira Liga | Primeira_Liga | POR | 2013+ | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Super Lig | Super_Lig | TUR | 2013+ | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Championship | Championship | ENG2 | 2013+ | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Scottish Premiership | Scottish_Premiership | SCO | 2019+ | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Champions League | UCL | UCL | 2013+ | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Europa League | UEL | UEL | 2013+ | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
+| Conference League | Conference_League | UECL | 2021+ | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
 | World Cup | World_Cup | WC | 2014, 2018 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
 | Euros | UEFA_Euros | EURO | 2016, 2024 | player_stats, shots, shot_events, events, match_events, lineups, fixtures |
 
@@ -71,27 +71,32 @@ data/
 │   │   ├── xg_model.rds                    # Pre-trained xG model
 │   │   ├── xpass_model.rds                 # Pre-trained xPass model
 │   │   └── epv_model.rds                   # Pre-trained EPV model
+│   ├── events_consolidated/
+│   │   └── events_{league}.parquet         # Per-league consolidated events
 │   ├── opta_player_stats.parquet           # Consolidated player stats (all leagues)
 │   ├── opta_shots.parquet                  # Consolidated shots (all leagues)
-│   └── opta_fixtures.parquet               # Consolidated fixtures (all leagues)
+│   ├── opta_shot_events.parquet            # Consolidated shot events (all leagues)
+│   ├── opta_events.parquet                 # Consolidated events (all leagues)
+│   ├── opta_lineups.parquet                # Consolidated lineups (all leagues)
+│   ├── opta_fixtures.parquet               # Consolidated fixtures (all leagues)
+│   ├── opta_match_stats.parquet            # Consolidated match stats (from panna pipeline)
+│   ├── opta_skills.parquet                 # Consolidated skills (from panna pipeline)
+│   └── opta_xmetrics.parquet              # Consolidated xmetrics (from panna pipeline)
 ├── understat/
 │   └── {tabletype}/{league}/{season}.parquet
-├── fbref/
-│   ├── {tabletype}/
-│   │   └── {league}/
-│   │       └── {season}/
-│   │           └── {match_id}.rds          # Individual match files
-│   └── {tabletype}/{league}/{season}.parquet
-└── metadata/
-    └── {league}/
-        └── {season}/                       # Match metadata
+└── fbref/
+    ├── {tabletype}/
+    │   └── {league}/
+    │       └── {season}/
+    │           └── {match_id}.rds          # Individual match files
+    └── {tabletype}/{league}/{season}.parquet
 ```
 
 ### Opta Data Types
 
 | Type | Description | Key Columns |
 |------|-------------|-------------|
-| `player_stats` | Per-match player statistics | 263 columns: goals, assists, passes, tackles, etc. |
+| `player_stats` | Per-match player statistics | ~280 columns: goals, assists, passes, tackles, etc. |
 | `shots` | Shot data per match | shot location, body part, outcome |
 | `shot_events` | Individual shots with coordinates | x, y, type_id, body_part, minute |
 | `events` | Goals, cards, substitutions | event type, minute, player |

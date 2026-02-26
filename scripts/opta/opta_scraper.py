@@ -556,8 +556,14 @@ class OptaScraper:
                     print(f"Request failed for {endpoint} after {max_retries} attempts: {e}")
                     return None
             except requests.RequestException as e:
-                print(f"Request failed for {endpoint}: {e}")
-                return None
+                if attempt < max_retries:
+                    wait = 2 ** attempt + random.uniform(0, 1)
+                    print(f"Request error for {endpoint} "
+                          f"(attempt {attempt}/{max_retries}): {e}, retrying in {wait:.1f}s...")
+                    time.sleep(wait)
+                else:
+                    print(f"Request failed for {endpoint} after {max_retries} attempts: {e}")
+                    return None
             except json.JSONDecodeError as e:
                 if attempt < max_retries:
                     wait = 2 ** attempt + random.uniform(0, 1)
@@ -568,8 +574,7 @@ class OptaScraper:
                     print(f"JSON parse failed for {endpoint} after {max_retries} attempts: {e}")
                     return None
 
-        print(f"Request failed for {endpoint} after {max_retries} attempts")
-        return None
+        return None  # Safety fallback (all paths return inside the loop)
 
     def discover_seasons(self, competition: str) -> Dict[str, str]:
         """
@@ -680,8 +685,14 @@ class OptaScraper:
 
                 # Convert stats list to dict for easier access
                 stats = {}
+                missing_type = 0
                 for s in player.get("stat", []):
+                    if "type" not in s:
+                        missing_type += 1
+                        continue
                     stats[s["type"]] = int(s.get("value", 0))
+                if missing_type > 0:
+                    print(f"  Warning: {missing_type} stat entries missing 'type' for player {player_name} in match {match_id}")
 
                 # Only include players who took shots
                 total_shots = stats.get("totalScoringAtt", 0)
@@ -771,13 +782,19 @@ class OptaScraper:
                 }
 
                 # Add all stats
+                missing_type = 0
                 for s in player.get("stat", []):
-                    stat_name = s["type"]
+                    stat_name = s.get("type")
+                    if stat_name is None:
+                        missing_type += 1
+                        continue
                     stat_value = s.get("value", 0)
                     try:
                         row[stat_name] = int(stat_value)
                     except ValueError:
                         row[stat_name] = stat_value
+                if missing_type > 0:
+                    print(f"  Warning: {missing_type} stat entries missing 'type' for player {row.get('player_name', '?')} in match {match_id}")
 
                 rows.append(row)
 
@@ -879,8 +896,8 @@ class OptaScraper:
                 body_part = "Head"
             elif 72 in qualifiers:
                 body_part = "LeftFoot"
-            elif qualifiers.get(72) is None and 15 not in qualifiers:
-                body_part = "RightFoot"  # Default for non-header shots
+            else:
+                body_part = "RightFoot"  # Default: not headed, not left-footed
 
             # Situation from qualifiers
             situation = "OpenPlay"
@@ -1002,7 +1019,7 @@ class OptaScraper:
                 player_id = player.get("playerId", "")
 
                 # Get minutes played from stats
-                stats = {s["type"]: s.get("value", 0) for s in player.get("stat", [])}
+                stats = {s["type"]: s.get("value", 0) for s in player.get("stat", []) if "type" in s}
                 mins_played = int(stats.get("minsPlayed", 0))
 
                 # Determine if starter (formation_place 1-11 or gameStarted stat)

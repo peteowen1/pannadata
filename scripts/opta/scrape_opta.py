@@ -71,17 +71,34 @@ def load_manifest(manifest_path: Path, include_unavailable: bool = True) -> tupl
         return complete_set, unavailable_set
     except (pd.errors.ParserError, FileNotFoundError, OSError, ValueError,
             pyarrow.lib.ArrowInvalid) as e:
-        print(f"Warning: Error loading manifest: {e}")
+        print(f"Warning: Error loading manifest: {e}. Trying backup...")
+        backup_path = manifest_path.with_suffix('.parquet.backup')
+        if backup_path.exists():
+            try:
+                df = pd.read_parquet(backup_path)
+                print(f"Recovered manifest from backup ({len(df):,} records)")
+                complete = df[df['has_match_events'] == True]
+                complete_set = set(zip(complete['match_id'], complete['competition'], complete['season']))
+                unavailable_set = set()
+                if 'event_unavailable' in df.columns:
+                    unavailable = df[df['event_unavailable'] == True]
+                    unavailable_set = set(zip(unavailable['match_id'], unavailable['competition'], unavailable['season']))
+                return complete_set, unavailable_set
+            except (pd.errors.ParserError, FileNotFoundError, OSError, ValueError,
+                    pyarrow.lib.ArrowInvalid, KeyError) as backup_err:
+                print(f"Backup also unreadable: {backup_err}")
+        print("Proceeding with empty manifest (will re-scrape all)")
         return set(), set()
 
 
-def update_manifest(manifest_path: Path, new_matches: list):
+def update_manifest(manifest_path: Path, new_matches: list) -> bool:
     """Update manifest with newly scraped matches.
 
     new_matches: list of dicts with match_id, competition, season, and has_* flags
+    Returns True on success, False if manifest could not be updated.
     """
     if not new_matches:
-        return
+        return True
 
     new_df = pd.DataFrame(new_matches)
 
@@ -92,7 +109,7 @@ def update_manifest(manifest_path: Path, new_matches: list):
             shutil.copy2(manifest_path, backup_path)
         except OSError as e:
             logger.error("Could not backup manifest: %s. Skipping manifest update.", e)
-            return
+            return False
 
         try:
             existing_df = pd.read_parquet(manifest_path)
@@ -112,14 +129,19 @@ def update_manifest(manifest_path: Path, new_matches: list):
                     subset=['match_id', 'competition', 'season'],
                     keep='last'
                 )
-            except Exception:
-                logger.error("Backup also unreadable. Writing new records only.")
-                combined = new_df
+            except (pd.errors.ParserError, OSError, ValueError, pyarrow.lib.ArrowInvalid) as e:
+                logger.error("Backup also unreadable: %s. Aborting manifest update to prevent history loss.", e)
+                return False
     else:
         combined = new_df
 
-    combined.to_parquet(manifest_path, index=False, compression='gzip')
+    try:
+        combined.to_parquet(manifest_path, index=False, compression='gzip')
+    except (OSError, pyarrow.lib.ArrowInvalid) as e:
+        logger.error("Failed to write manifest: %s", e)
+        return False
     print(f"Updated manifest: {len(combined):,} total matches")
+    return True
 
 
 def get_pannadata_dir():
@@ -140,8 +162,12 @@ def load_seasons_config():
         from discover_seasons import main as discover_main
         discover_main()
 
-    with open(config_path) as f:
-        return json.load(f)
+    try:
+        with open(config_path) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        logger.error("Failed to load seasons config from %s: %s", config_path, e)
+        sys.exit(1)
 
 
 def is_future_season(season_name: str) -> bool:
@@ -418,11 +444,14 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
 
             # Save raw JSON files
             raw_dir.mkdir(parents=True, exist_ok=True)
-            with open(raw_dir / f"{match_id}_stats.json", "w") as f:
-                json.dump(stats, f)
-            if event_data:
-                with open(raw_dir / f"{match_id}_events.json", "w") as f:
-                    json.dump(event_data, f)
+            try:
+                with open(raw_dir / f"{match_id}_stats.json", "w") as f:
+                    json.dump(stats, f)
+                if event_data:
+                    with open(raw_dir / f"{match_id}_events.json", "w") as f:
+                        json.dump(event_data, f)
+            except OSError as e:
+                logger.warning("Failed to write raw JSON for match %s: %s. Continuing.", match_id, e)
 
             print("OK")
 
@@ -448,13 +477,22 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
                 combined = pd.concat([existing_df, new_df], ignore_index=True)
                 combined = combined.drop_duplicates(subset=dedup_cols, keep='last')
             except (pd.errors.ParserError, OSError, ValueError, pyarrow.lib.ArrowInvalid) as e:
-                logger.error("Failed to read existing %s: %s. Skipping write to prevent data loss.", output_path, e)
-                return new_df
+                logger.error("Failed to read existing %s: %s. Writing new records only.", output_path, e)
+                try:
+                    corrupt_path = output_path.with_suffix('.parquet.corrupt')
+                    output_path.rename(corrupt_path)
+                    logger.error("Moved corrupt file to %s", corrupt_path)
+                except OSError as rename_err:
+                    logger.warning("Could not move corrupt file %s aside: %s", output_path, rename_err)
+                combined = new_df
         else:
             combined = new_df
 
         if not combined.empty:
-            combined.to_parquet(output_path, index=False)
+            try:
+                combined.to_parquet(output_path, index=False)
+            except (OSError, pyarrow.lib.ArrowInvalid) as e:
+                logger.error("Failed to write %s: %s", output_path, e)
         return combined
 
     # Combine and save all data types
@@ -496,7 +534,10 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
         fixture_df = pd.DataFrame(all_fixture_records)
         fixture_df = fixture_df.drop_duplicates(subset=["match_id"])
         fixture_path = output_dirs["fixtures"] / f"{season_name}.parquet"
-        fixture_df.to_parquet(fixture_path, index=False)
+        try:
+            fixture_df.to_parquet(fixture_path, index=False)
+        except (OSError, pyarrow.lib.ArrowInvalid) as e:
+            logger.error("Failed to write fixtures %s: %s", fixture_path, e)
         results["fixtures"] = fixture_df
         print(f"\n  Fixtures: {len(fixture_df)} matches ({fixture_df['match_status'].value_counts().to_dict()})")
     else:
@@ -650,7 +691,9 @@ def main():
 
     # Update manifest with new matches
     if all_new_manifest_records:
-        update_manifest(manifest_path, all_new_manifest_records)
+        if not update_manifest(manifest_path, all_new_manifest_records):
+            logger.error("MANIFEST UPDATE FAILED - next run will re-scrape %d matches",
+                         len(all_new_manifest_records))
 
     # Final summary
     print("\n" + "=" * 60)
@@ -692,9 +735,14 @@ def main():
         logger.error("Failed to write scrape summary: %s", e)
         print(f"\nWARNING: Failed to save summary to {summary_path}")
 
-    # Exit non-zero if all league-seasons failed
-    if error_count > 0 and error_count == len(scrape_plan) and len(scrape_plan) > 0:
-        sys.exit(1)
+    # Exit non-zero if majority of league-seasons failed (partial failure is expected with flaky APIs)
+    if error_count > 0 and len(scrape_plan) > 0:
+        if error_count == len(scrape_plan):
+            logger.error("ALL %d league-seasons failed", len(scrape_plan))
+            sys.exit(1)
+        elif error_count > len(scrape_plan) * 0.5:
+            logger.error("%d of %d league-seasons failed (>50%%)", error_count, len(scrape_plan))
+            sys.exit(1)
 
 
 if __name__ == "__main__":
