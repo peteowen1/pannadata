@@ -1,0 +1,39 @@
+library(arrow)
+library(dplyr)
+
+lu <- read_parquet("data/opta/opta_lineups.parquet")
+
+# Use the main league season format (e.g. "2024-2025"), not tournament seasons
+league_seasons <- grep("^\\d{4}-\\d{4}$", unique(lu$season), value = TRUE)
+latest_season <- max(league_seasons)
+cat("Latest season:", latest_season, "\n")
+
+current <- lu |>
+  filter(season == latest_season, minutes_played > 0)
+
+# Most common team & league per player (by appearances, not most recent)
+main_team_league <- current |>
+  count(player_id, team_name, competition, sort = TRUE) |>
+  group_by(player_id) |>
+  slice_max(n, n = 1, with_ties = FALSE) |>
+  ungroup() |>
+  select(player_id, team = team_name, league = competition)
+
+# Most common starting position per player (ignore "Substitute" and blanks)
+main_position <- current |>
+  filter(is_starter, position != "", position != "Substitute") |>
+  count(player_id, position, sort = TRUE) |>
+  group_by(player_id) |>
+  slice_max(n, n = 1, with_ties = FALSE) |>
+  ungroup() |>
+  select(player_id, position)
+
+player_meta <- main_team_league |>
+  left_join(main_position, by = "player_id")
+
+cat("Player metadata:", nrow(player_meta), "players\n")
+cat("Position coverage:", round(100 * mean(!is.na(player_meta$position)), 1), "%\n")
+
+dir.create("blog", showWarnings = FALSE)
+write_parquet(player_meta, "blog/player_metadata.parquet")
+cat("Saved blog/player_metadata.parquet\n")

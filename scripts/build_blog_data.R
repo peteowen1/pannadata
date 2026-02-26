@@ -2,11 +2,12 @@ library(arrow)
 library(dplyr)
 
 # Player ratings - latest season xRAPM + SPM
-for (f in c("source/seasonal_xrapm.parquet", "source/seasonal_spm.parquet")) {
+for (f in c("source/seasonal_xrapm.parquet", "source/seasonal_spm.parquet", "source/player_metadata.parquet")) {
   if (!file.exists(f)) stop("Required file not found: ", f, ". Check the 'Download source data' step.")
 }
 seasonal_xrapm <- read_parquet("source/seasonal_xrapm.parquet")
 seasonal_spm <- read_parquet("source/seasonal_spm.parquet")
+player_meta <- read_parquet("source/player_metadata.parquet")
 
 stopifnot(
   all(c("season_end_year", "player_name", "total_minutes", "xrapm", "offense", "defense") %in% names(seasonal_xrapm)),
@@ -31,12 +32,13 @@ spm <- seasonal_spm |>
 n_before <- nrow(xrapm)
 panna_ratings <- xrapm |>
   left_join(spm, by = "player_name") |>
+  left_join(player_meta, by = "player_id") |>
   mutate(
     panna_rank = as.integer(rank(-xrapm, ties.method = "min")),
     panna_percentile = round(100 * rank(xrapm, ties.method = "min") / n(), 1)
   ) |>
   select(
-    panna_rank, player_name,
+    panna_rank, player_name, team, league, position,
     panna = xrapm, offense, defense, spm_overall,
     total_minutes, panna_percentile
   ) |>

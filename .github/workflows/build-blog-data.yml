@@ -30,6 +30,7 @@ jobs:
           mkdir -p source
           gh release download ratings-data -p "seasonal_xrapm.parquet" -D source
           gh release download ratings-data -p "seasonal_spm.parquet" -D source
+          gh release download ratings-data -p "player_metadata.parquet" -D source
 
       - name: Aggregate
         run: Rscript scripts/build_blog_data.R
