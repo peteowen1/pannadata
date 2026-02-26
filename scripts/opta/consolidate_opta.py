@@ -136,8 +136,8 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
         if backup_created and backup_file.exists():
             try:
                 backup_file.unlink()
-            except OSError:
-                pass  # Leftover backup is harmless; next run overwrites it
+            except OSError as e:
+                logger.debug("Could not remove backup %s: %s (harmless)", backup_file, e)
 
         size_mb = output_file.stat().st_size / (1024 * 1024)
         print(f"  {league}: {len(parquet_files)} seasons, {len(combined):,} rows, {size_mb:.1f}MB")
@@ -278,8 +278,8 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
         if backup_created and backup_file.exists():
             try:
                 backup_file.unlink()
-            except OSError:
-                pass  # Leftover backup is harmless; next run overwrites it
+            except OSError as e:
+                logger.debug("Could not remove backup %s: %s (harmless)", backup_file, e)
 
         size_mb = output_file.stat().st_size / (1024 * 1024)
         print(f"  Wrote {output_file}: {len(combined):,} rows, {size_mb:.1f} MB "
@@ -411,7 +411,7 @@ if __name__ == "__main__":
         catalog_errors = generate_catalog()
         if catalog_errors:
             logger.warning("Catalog generation had errors")
-    except Exception as e:
+    except (OSError, ValueError, KeyError, TypeError, pd.errors.ParserError, pyarrow.lib.ArrowInvalid) as e:
         logger.warning("Catalog generation failed: %s", e, exc_info=True)
 
     if errors:

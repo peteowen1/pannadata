@@ -17,7 +17,7 @@ Produced by either path. The GHA workflow uploads to Cloudflare R2; the panna pi
 |---|---|---|
 | `panna_rank` | integer | Overall rank (1 = best) |
 | `player_name` | string | Player name |
-| `panna` | double | Overall rating (offense - defense) |
+| `panna` | double | Overall xRAPM rating (positive = better) |
 | `offense` | double | Contribution to creating xG |
 | `defense` | double | Contribution to preventing xG (negative = good) |
 | `spm_overall` | double | SPM overall rating |
@@ -57,7 +57,7 @@ Produced by `panna/data-raw/match-predictions-opta/10_export_blog_data.R` only (
 source("data-raw/match-predictions-opta/10_export_blog_data.R")
 ```
 
-Requires: `cache-opta/07_seasonal_ratings.rds` (from Opta RAPM pipeline), `gh` CLI authenticated.
+Requires: `cache-skills/06_seasonal_ratings.rds` (preferred, from Skills pipeline) or `cache-opta/07_seasonal_ratings.rds` (fallback, from Opta RAPM pipeline), `gh` CLI authenticated.
 
 ### Match Predictions
 

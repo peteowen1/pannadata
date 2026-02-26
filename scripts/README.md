@@ -48,13 +48,15 @@ data/
 │   ├── passing/
 │   ├── defense/
 │   └── ...
-├── opta/            # Opta data (RDS + parquet)
+├── opta/            # Opta data (parquet per season + consolidated)
 │   ├── player_stats/
 │   ├── events/
 │   ├── lineups/
-│   ├── opta_player_stats.parquet   # Consolidated
-│   ├── opta_shots.parquet          # Consolidated
-│   └── opta_fixtures.parquet       # Consolidated
+│   ├── opta_player_stats.parquet   # Consolidated (9 types total:
+│   ├── opta_shots.parquet          #   player_stats, shots, shot_events,
+│   ├── opta_fixtures.parquet       #   events, lineups, fixtures,
+│   ├── opta_match_stats.parquet    #   match_stats, skills, xmetrics)
+│   └── opta_*.parquet              # All uploaded to opta-latest release
 ├── understat/       # Understat data (parquet only)
 │   ├── roster/
 │   ├── shots/

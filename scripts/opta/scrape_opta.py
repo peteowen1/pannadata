@@ -391,7 +391,7 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
             # Get matchstats data
             stats = scraper.get_match_stats(match_id)
             if not stats:
-                print("FAILED (stats)")
+                logger.warning("No stats data for match %s (%s). Skipping.", match_id, match_desc)
                 continue
 
             existing_match_ids.add(match_id)
@@ -484,6 +484,7 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
                     logger.error("Moved corrupt file to %s", corrupt_path)
                 except OSError as rename_err:
                     logger.warning("Could not move corrupt file %s aside: %s", output_path, rename_err)
+                logger.warning("Writing %d new records only — historical data from %s is lost", len(new_df), output_path)
                 combined = new_df
         else:
             combined = new_df
@@ -493,6 +494,7 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
                 combined.to_parquet(output_path, index=False)
             except (OSError, pyarrow.lib.ArrowInvalid) as e:
                 logger.error("Failed to write %s: %s", output_path, e)
+                return pd.DataFrame()
         return combined
 
     # Combine and save all data types
@@ -536,10 +538,11 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
         fixture_path = output_dirs["fixtures"] / f"{season_name}.parquet"
         try:
             fixture_df.to_parquet(fixture_path, index=False)
+            results["fixtures"] = fixture_df
+            print(f"\n  Fixtures: {len(fixture_df)} matches ({fixture_df['match_status'].value_counts().to_dict()})")
         except (OSError, pyarrow.lib.ArrowInvalid) as e:
             logger.error("Failed to write fixtures %s: %s", fixture_path, e)
-        results["fixtures"] = fixture_df
-        print(f"\n  Fixtures: {len(fixture_df)} matches ({fixture_df['match_status'].value_counts().to_dict()})")
+            results["fixtures"] = pd.DataFrame()
     else:
         results["fixtures"] = pd.DataFrame()
 
@@ -674,15 +677,9 @@ def main():
             results.append(result)
             # Collect manifest records from this season
             all_new_manifest_records.extend(result.get("manifest_records", []))
-        except (requests.RequestException, ValueError, OSError) as e:
+        except (requests.RequestException, ValueError, OSError, KeyError,
+                TypeError, AttributeError, IndexError) as e:
             logger.error("Failed scraping %s %s: %s", league, season_name, e, exc_info=True)
-            results.append({
-                "competition": league,
-                "season": season_name,
-                "error": str(e)
-            })
-        except Exception as e:
-            logger.error("Unexpected error scraping %s %s: %s", league, season_name, e, exc_info=True)
             results.append({
                 "competition": league,
                 "season": season_name,
