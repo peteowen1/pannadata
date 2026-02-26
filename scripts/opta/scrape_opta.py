@@ -91,13 +91,14 @@ def load_manifest(manifest_path: Path, include_unavailable: bool = True) -> tupl
         return set(), set()
 
 
-def update_manifest(manifest_path: Path, new_matches: list):
+def update_manifest(manifest_path: Path, new_matches: list) -> bool:
     """Update manifest with newly scraped matches.
 
     new_matches: list of dicts with match_id, competition, season, and has_* flags
+    Returns True on success, False if manifest could not be updated.
     """
     if not new_matches:
-        return
+        return True
 
     new_df = pd.DataFrame(new_matches)
 
@@ -108,7 +109,7 @@ def update_manifest(manifest_path: Path, new_matches: list):
             shutil.copy2(manifest_path, backup_path)
         except OSError as e:
             logger.error("Could not backup manifest: %s. Skipping manifest update.", e)
-            return
+            return False
 
         try:
             existing_df = pd.read_parquet(manifest_path)
@@ -130,12 +131,13 @@ def update_manifest(manifest_path: Path, new_matches: list):
                 )
             except (pd.errors.ParserError, OSError, ValueError, pyarrow.lib.ArrowInvalid) as e:
                 logger.error("Backup also unreadable: %s. Aborting manifest update to prevent history loss.", e)
-                return
+                return False
     else:
         combined = new_df
 
     combined.to_parquet(manifest_path, index=False, compression='gzip')
     print(f"Updated manifest: {len(combined):,} total matches")
+    return True
 
 
 def get_pannadata_dir():
@@ -679,7 +681,9 @@ def main():
 
     # Update manifest with new matches
     if all_new_manifest_records:
-        update_manifest(manifest_path, all_new_manifest_records)
+        if not update_manifest(manifest_path, all_new_manifest_records):
+            logger.error("MANIFEST UPDATE FAILED - next run will re-scrape %d matches",
+                         len(all_new_manifest_records))
 
     # Final summary
     print("\n" + "=" * 60)
@@ -721,9 +725,14 @@ def main():
         logger.error("Failed to write scrape summary: %s", e)
         print(f"\nWARNING: Failed to save summary to {summary_path}")
 
-    # Exit non-zero if all league-seasons failed (partial failure is expected with flaky APIs)
-    if error_count > 0 and error_count == len(scrape_plan) and len(scrape_plan) > 0:
-        sys.exit(1)
+    # Exit non-zero if majority of league-seasons failed (partial failure is expected with flaky APIs)
+    if error_count > 0 and len(scrape_plan) > 0:
+        if error_count == len(scrape_plan):
+            logger.error("ALL %d league-seasons failed", len(scrape_plan))
+            sys.exit(1)
+        elif error_count > len(scrape_plan) * 0.5:
+            logger.error("%d of %d league-seasons failed (>50%%)", error_count, len(scrape_plan))
+            sys.exit(1)
 
 
 if __name__ == "__main__":

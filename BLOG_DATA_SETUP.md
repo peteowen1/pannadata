@@ -1,17 +1,17 @@
 # Blog Data Setup
 
-The blog fetches data from GitHub Releases on this repo:
+Blog data is available from two locations depending on which pipeline produced it:
 
-```
-https://github.com/peteowen1/pannadata/releases/download/blog-latest/panna_ratings.parquet
-https://github.com/peteowen1/pannadata/releases/download/blog-latest/match_predictions.parquet
-```
+- **Cloudflare R2** (from GHA workflow `build-blog-data.yml`): `inthegame-data/panna_ratings.parquet`
+- **GitHub Releases** (from panna pipeline `10_export_blog_data.R`):
+  - `https://github.com/peteowen1/pannadata/releases/download/blog-latest/panna_ratings.parquet`
+  - `https://github.com/peteowen1/pannadata/releases/download/blog-latest/match_predictions.parquet`
 
 ## Player Ratings
 
 `panna_ratings.parquet` — latest season player ratings (xRAPM + SPM).
 
-Produced by `scripts/build_blog_data.R` (GHA workflow: `build-blog-data.yml` uploads to Cloudflare R2) or by `panna/data-raw/match-predictions-opta/10_export_blog_data.R` (uploads to GitHub Releases `blog-latest`).
+Produced by either path. The GHA workflow uploads to Cloudflare R2; the panna pipeline uploads to GitHub Releases `blog-latest`.
 
 | Column | Type | Description |
 |---|---|---|

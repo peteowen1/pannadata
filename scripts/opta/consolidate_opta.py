@@ -82,7 +82,10 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
                 print(f"  ERROR: Failed to read {f}: {e}")
                 errors += 1
 
-        dfs = [df for df in dfs if not df.empty]
+        non_empty = [df for df in dfs if not df.empty]
+        if len(non_empty) < len(dfs):
+            print(f"  WARNING: {league}: Filtered out {len(dfs) - len(non_empty)} empty DataFrame(s)")
+        dfs = non_empty
         if not dfs:
             continue
 
@@ -117,6 +120,7 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
                 errors += 1
                 continue
         try:
+            # zstd for events (much larger files); other tables use default snappy
             combined.to_parquet(output_file, index=False, compression='zstd')
         except (OSError, pyarrow.lib.ArrowInvalid) as e:
             print(f"  ERROR: Failed to write {output_file}: {e}")
@@ -128,6 +132,9 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
                     print(f"  CRITICAL: Could not restore backup: {restore_err}")
             errors += 1
             continue
+
+        if backup_created and backup_file.exists():
+            backup_file.unlink()
 
         size_mb = output_file.stat().st_size / (1024 * 1024)
         print(f"  {league}: {len(parquet_files)} seasons, {len(combined):,} rows, {size_mb:.1f}MB")
@@ -203,7 +210,10 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
                 print(f"  ERROR: Failed to read {f}: {e}")
                 errors += 1
 
-        dfs = [df for df in dfs if not df.empty]
+        non_empty = [df for df in dfs if not df.empty]
+        if len(non_empty) < len(dfs):
+            print(f"  WARNING: {table_type}: Filtered out {len(dfs) - len(non_empty)} empty DataFrame(s)")
+        dfs = non_empty
         if not dfs:
             print(f"  Skipping {table_type} - no valid data")
             continue
@@ -261,6 +271,9 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
                     print(f"  CRITICAL: Could not restore backup: {restore_err}")
             errors += 1
             continue
+
+        if backup_created and backup_file.exists():
+            backup_file.unlink()
 
         size_mb = output_file.stat().st_size / (1024 * 1024)
         print(f"  Wrote {output_file}: {len(combined):,} rows, {size_mb:.1f} MB "

@@ -18,15 +18,17 @@ xrapm <- seasonal_xrapm |>
   slice_max(total_minutes, n = 1, with_ties = FALSE) |>
   ungroup()
 
+join_key <- if ("player_id" %in% names(seasonal_spm)) c("player_name", "player_id") else "player_name"
+
 spm <- seasonal_spm |>
   filter(season_end_year == latest_season) |>
   group_by(player_name) |>
   slice_max(total_minutes, n = 1, with_ties = FALSE) |>
   ungroup() |>
-  select(player_name, spm_overall = spm)
+  select(any_of(c("player_name", "player_id")), spm_overall = spm)
 
 panna_ratings <- xrapm |>
-  left_join(spm, by = "player_name") |>
+  left_join(spm, by = join_key) |>
   mutate(
     panna_rank = as.integer(rank(-xrapm, ties.method = "min")),
     panna_percentile = round(100 * rank(xrapm, ties.method = "min") / n(), 1)

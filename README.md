@@ -6,7 +6,7 @@ Data repository for the pannaverse ecosystem. Contains cached football match dat
 
 ### Opta (Primary Source)
 
-15 leagues with 263 columns per player match, plus event-level data with x/y coordinates.
+15 leagues with ~280 columns per player match, plus event-level data with x/y coordinates.
 
 | League | Opta Code | R Alias | Seasons | Data Types |
 |--------|-----------|---------|---------|------------|
@@ -78,25 +78,25 @@ data/
 │   ├── opta_shot_events.parquet            # Consolidated shot events (all leagues)
 │   ├── opta_events.parquet                 # Consolidated events (all leagues)
 │   ├── opta_lineups.parquet                # Consolidated lineups (all leagues)
-│   └── opta_fixtures.parquet               # Consolidated fixtures (all leagues)
+│   ├── opta_fixtures.parquet               # Consolidated fixtures (all leagues)
+│   ├── opta_match_stats.parquet            # Consolidated match stats (from panna pipeline)
+│   ├── opta_skills.parquet                 # Consolidated skills (from panna pipeline)
+│   └── opta_xmetrics.parquet              # Consolidated xmetrics (from panna pipeline)
 ├── understat/
 │   └── {tabletype}/{league}/{season}.parquet
-├── fbref/
-│   ├── {tabletype}/
-│   │   └── {league}/
-│   │       └── {season}/
-│   │           └── {match_id}.rds          # Individual match files
-│   └── {tabletype}/{league}/{season}.parquet
-└── metadata/
-    └── {league}/
-        └── {season}/                       # Match metadata
+└── fbref/
+    ├── {tabletype}/
+    │   └── {league}/
+    │       └── {season}/
+    │           └── {match_id}.rds          # Individual match files
+    └── {tabletype}/{league}/{season}.parquet
 ```
 
 ### Opta Data Types
 
 | Type | Description | Key Columns |
 |------|-------------|-------------|
-| `player_stats` | Per-match player statistics | 263 columns: goals, assists, passes, tackles, etc. |
+| `player_stats` | Per-match player statistics | ~280 columns: goals, assists, passes, tackles, etc. |
 | `shots` | Shot data per match | shot location, body part, outcome |
 | `shot_events` | Individual shots with coordinates | x, y, type_id, body_part, minute |
 | `events` | Goals, cards, substitutions | event type, minute, player |

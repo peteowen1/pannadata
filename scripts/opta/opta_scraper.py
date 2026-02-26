@@ -574,8 +574,7 @@ class OptaScraper:
                     print(f"JSON parse failed for {endpoint} after {max_retries} attempts: {e}")
                     return None
 
-        print(f"Request failed for {endpoint} after {max_retries} attempts")
-        return None
+        return None  # Safety fallback (all paths return inside the loop)
 
     def discover_seasons(self, competition: str) -> Dict[str, str]:
         """
