@@ -46,7 +46,7 @@ jobs:
           fi
           upload_errors=0
           for f in blog/*.parquet; do
-            if wrangler r2 object put "inthegame-data/$(basename $f)" --file "$f"; then
+            if wrangler r2 object put "inthegame-data/$(basename $f)" --file "$f" --remote; then
               echo "Uploaded $(basename $f)"
             else
               echo "ERROR: Failed to upload $(basename $f)"
