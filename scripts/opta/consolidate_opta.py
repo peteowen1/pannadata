@@ -134,7 +134,10 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
             continue
 
         if backup_created and backup_file.exists():
-            backup_file.unlink()
+            try:
+                backup_file.unlink()
+            except OSError:
+                pass  # Leftover backup is harmless; next run overwrites it
 
         size_mb = output_file.stat().st_size / (1024 * 1024)
         print(f"  {league}: {len(parquet_files)} seasons, {len(combined):,} rows, {size_mb:.1f}MB")
@@ -273,7 +276,10 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
             continue
 
         if backup_created and backup_file.exists():
-            backup_file.unlink()
+            try:
+                backup_file.unlink()
+            except OSError:
+                pass  # Leftover backup is harmless; next run overwrites it
 
         size_mb = output_file.stat().st_size / (1024 * 1024)
         print(f"  Wrote {output_file}: {len(combined):,} rows, {size_mb:.1f} MB "

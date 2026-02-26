@@ -135,7 +135,11 @@ def update_manifest(manifest_path: Path, new_matches: list) -> bool:
     else:
         combined = new_df
 
-    combined.to_parquet(manifest_path, index=False, compression='gzip')
+    try:
+        combined.to_parquet(manifest_path, index=False, compression='gzip')
+    except (OSError, pyarrow.lib.ArrowInvalid) as e:
+        logger.error("Failed to write manifest: %s", e)
+        return False
     print(f"Updated manifest: {len(combined):,} total matches")
     return True
 
@@ -485,7 +489,10 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
             combined = new_df
 
         if not combined.empty:
-            combined.to_parquet(output_path, index=False)
+            try:
+                combined.to_parquet(output_path, index=False)
+            except (OSError, pyarrow.lib.ArrowInvalid) as e:
+                logger.error("Failed to write %s: %s", output_path, e)
         return combined
 
     # Combine and save all data types
@@ -527,7 +534,10 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
         fixture_df = pd.DataFrame(all_fixture_records)
         fixture_df = fixture_df.drop_duplicates(subset=["match_id"])
         fixture_path = output_dirs["fixtures"] / f"{season_name}.parquet"
-        fixture_df.to_parquet(fixture_path, index=False)
+        try:
+            fixture_df.to_parquet(fixture_path, index=False)
+        except (OSError, pyarrow.lib.ArrowInvalid) as e:
+            logger.error("Failed to write fixtures %s: %s", fixture_path, e)
         results["fixtures"] = fixture_df
         print(f"\n  Fixtures: {len(fixture_df)} matches ({fixture_df['match_status'].value_counts().to_dict()})")
     else:

@@ -18,7 +18,7 @@ xrapm <- seasonal_xrapm |>
   slice_max(total_minutes, n = 1, with_ties = FALSE) |>
   ungroup()
 
-join_key <- if ("player_id" %in% names(seasonal_spm)) c("player_name", "player_id") else "player_name"
+join_key <- if ("player_id" %in% names(seasonal_spm) && "player_id" %in% names(seasonal_xrapm)) c("player_name", "player_id") else "player_name"
 
 spm <- seasonal_spm |>
   filter(season_end_year == latest_season) |>
