@@ -281,7 +281,7 @@ Individual shot-level data with x/y coordinates. Used for xG model training.
 | `y` | num | Shot y-coordinate (0-100 scale) |
 | `outcome` | int | 1 = on target, 0 = off target |
 | `is_goal` | lgl | Whether the shot was a goal |
-| `type_id` | int | Opta type (13=saved, 14=post, 15=miss, 16=goal) |
+| `type_id` | int | Opta type (13=miss, 14=post, 15=saved, 16=goal) |
 | `body_part` | chr | Head, LeftFoot, RightFoot |
 | `situation` | chr | OpenPlay, SetPiece, Corner, Penalty |
 | `big_chance` | lgl | Big chance flag |

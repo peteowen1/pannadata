@@ -11,6 +11,8 @@ https://github.com/peteowen1/pannadata/releases/download/blog-latest/match_predi
 
 `panna_ratings.parquet` — latest season player ratings (xRAPM + SPM).
 
+Produced by `scripts/build_blog_data.R` (GHA workflow: `build-blog-data.yml` uploads to Cloudflare R2) or by `panna/data-raw/match-predictions-opta/10_export_blog_data.R` (uploads to GitHub Releases `blog-latest`).
+
 | Column | Type | Description |
 |---|---|---|
 | `panna_rank` | integer | Overall rank (1 = best) |
@@ -25,6 +27,8 @@ https://github.com/peteowen1/pannadata/releases/download/blog-latest/match_predi
 ## Match Predictions
 
 `match_predictions.parquet` — predicted outcomes for upcoming and recent matches.
+
+Produced by `panna/data-raw/match-predictions-opta/10_export_blog_data.R` only (not by `scripts/build_blog_data.R`).
 
 | Column | Type | Description |
 |---|---|---|
@@ -43,21 +47,32 @@ https://github.com/peteowen1/pannadata/releases/download/blog-latest/match_predi
 
 ## How to Update
 
-From `panna/`, run:
+### Player Ratings (two paths)
+
+**Option A: GHA workflow** — `build-blog-data.yml` (workflow_dispatch). Downloads from `ratings-data` release, aggregates via `scripts/build_blog_data.R`, uploads to Cloudflare R2.
+
+**Option B: Panna pipeline** — from `panna/`:
 
 ```r
-# Option 1: Standalone
+source("data-raw/match-predictions-opta/10_export_blog_data.R")
+```
+
+Requires: `cache-opta/07_seasonal_ratings.rds` (from Opta RAPM pipeline), `gh` CLI authenticated.
+
+### Match Predictions
+
+From `panna/`:
+
+```r
+# Standalone
 source("data-raw/match-predictions-opta/10_export_blog_data.R")
 
-# Option 2: As part of the prediction pipeline
+# As part of the prediction pipeline
 run_steps$step_10_export_blog_data <- TRUE
 source("data-raw/match-predictions-opta/run_predictions_opta.R")
 ```
 
-Requires:
-- `cache-opta/07_seasonal_ratings.rds` (from Opta RAPM pipeline)
-- `cache-predictions-opta/predictions.parquet` (from prediction pipeline step 07)
-- `gh` CLI authenticated with push access to peteowen1/pannadata
+Requires: `cache-predictions-opta/predictions.parquet` (from prediction pipeline step 07), `gh` CLI authenticated.
 
 ## Verify
 

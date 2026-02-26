@@ -720,8 +720,8 @@ def main():
         logger.error("Failed to write scrape summary: %s", e)
         print(f"\nWARNING: Failed to save summary to {summary_path}")
 
-    # Exit non-zero if any league-season failed
-    if error_count > 0:
+    # Exit non-zero if all league-seasons failed (partial failure is expected with flaky APIs)
+    if error_count > 0 and error_count == len(scrape_plan) and len(scrape_plan) > 0:
         sys.exit(1)
 
 
