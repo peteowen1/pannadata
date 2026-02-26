@@ -100,9 +100,11 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
         output_file = output_path / f"events_{league}.parquet"
         backup_file = output_file.with_suffix('.parquet.backup')
         # Backup existing file before overwriting
+        backup_created = False
         if output_file.exists():
             try:
                 shutil.copy2(output_file, backup_file)
+                backup_created = True
             except OSError as e:
                 print(f"  ERROR: Failed to create backup for {output_file}: {e}")
                 print(f"  Skipping {league} to prevent data loss (cannot backup)")
@@ -112,7 +114,7 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
             combined.to_parquet(output_file, index=False, compression='gzip')
         except (OSError, pyarrow.lib.ArrowInvalid) as e:
             print(f"  ERROR: Failed to write {output_file}: {e}")
-            if backup_file.exists():
+            if backup_created and backup_file.exists():
                 try:
                     shutil.copy2(backup_file, output_file)
                     print(f"  Restored {output_file} from backup")
@@ -230,9 +232,11 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
         # Write consolidated parquet (backup existing first)
         output_file = output_path / f"opta_{table_type}.parquet"
         backup_file = output_file.with_suffix('.parquet.backup')
+        backup_created = False
         if output_file.exists():
             try:
                 shutil.copy2(output_file, backup_file)
+                backup_created = True
             except OSError as e:
                 print(f"  ERROR: Failed to create backup for {output_file}: {e}")
                 print(f"  Skipping {table_type} to prevent data loss (cannot backup)")
@@ -242,7 +246,7 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
             combined.to_parquet(output_file, index=False)
         except (OSError, pyarrow.lib.ArrowInvalid) as e:
             print(f"  ERROR: Failed to write {output_file}: {e}")
-            if backup_file.exists():
+            if backup_created and backup_file.exists():
                 try:
                     shutil.copy2(backup_file, output_file)
                     print(f"  Restored {output_file} from backup")

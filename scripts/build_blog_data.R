@@ -5,6 +5,11 @@ library(dplyr)
 seasonal_xrapm <- read_parquet("source/seasonal_xrapm.parquet")
 seasonal_spm <- read_parquet("source/seasonal_spm.parquet")
 
+stopifnot(
+  all(c("season_end_year", "player_name", "total_minutes", "xrapm", "offense", "defense") %in% names(seasonal_xrapm)),
+  all(c("season_end_year", "player_name", "total_minutes", "spm") %in% names(seasonal_spm))
+)
+
 latest_season <- max(seasonal_xrapm$season_end_year)
 
 xrapm <- seasonal_xrapm |>
@@ -34,7 +39,10 @@ panna_ratings <- xrapm |>
   mutate(across(c(panna, offense, defense, spm_overall), \(x) round(x, 4))) |>
   arrange(panna_rank)
 
-stopifnot(nrow(panna_ratings) > 0)
+na_spm <- sum(is.na(panna_ratings$spm_overall))
+cat("SPM join:", nrow(panna_ratings) - na_spm, "/", nrow(panna_ratings),
+    "matched (", round(100 * na_spm / nrow(panna_ratings), 1), "% missing)\n")
+stopifnot(nrow(panna_ratings) > 0, na_spm / nrow(panna_ratings) < 0.2)
 
 dir.create("blog", showWarnings = FALSE)
 write_parquet(panna_ratings, "blog/panna_ratings.parquet")

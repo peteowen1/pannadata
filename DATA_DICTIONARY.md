@@ -36,7 +36,10 @@ data/
 │   ├── opta_shot_events.parquet       # Consolidated
 │   ├── opta_events.parquet            # Consolidated
 │   ├── opta_lineups.parquet           # Consolidated
-│   └── opta_fixtures.parquet          # Consolidated
+│   ├── opta_fixtures.parquet          # Consolidated
+│   ├── opta_match_stats.parquet       # Consolidated (from panna pipeline)
+│   ├── opta_skills.parquet            # Consolidated (from panna pipeline)
+│   └── opta_xmetrics.parquet          # Consolidated (from panna pipeline)
 ├── understat/
 │   ├── roster/{league}/{season}.parquet
 │   ├── shots/{league}/{season}.parquet

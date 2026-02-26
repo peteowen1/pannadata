@@ -686,10 +686,14 @@ class OptaScraper:
 
                 # Convert stats list to dict for easier access
                 stats = {}
+                missing_type = 0
                 for s in player.get("stat", []):
                     if "type" not in s:
+                        missing_type += 1
                         continue
                     stats[s["type"]] = int(s.get("value", 0))
+                if missing_type > 0:
+                    print(f"  Warning: {missing_type} stat entries missing 'type' for player {player_name} in match {match_id}")
 
                 # Only include players who took shots
                 total_shots = stats.get("totalScoringAtt", 0)
@@ -779,15 +783,19 @@ class OptaScraper:
                 }
 
                 # Add all stats
+                missing_type = 0
                 for s in player.get("stat", []):
                     stat_name = s.get("type")
                     if stat_name is None:
+                        missing_type += 1
                         continue
                     stat_value = s.get("value", 0)
                     try:
                         row[stat_name] = int(stat_value)
                     except ValueError:
                         row[stat_name] = stat_value
+                if missing_type > 0:
+                    print(f"  Warning: {missing_type} stat entries missing 'type' for player {row.get('player_name', '?')} in match {match_id}")
 
                 rows.append(row)
 
