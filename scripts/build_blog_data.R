@@ -32,7 +32,7 @@ spm <- seasonal_spm |>
 n_before <- nrow(xrapm)
 panna_ratings <- xrapm |>
   left_join(spm, by = "player_name") |>
-  left_join(player_meta, by = "player_id") |>
+  left_join(player_meta, by = "player_name") |>
   mutate(
     panna_rank = as.integer(rank(-xrapm, ties.method = "min")),
     panna_percentile = round(100 * rank(xrapm, ties.method = "min") / n(), 1)

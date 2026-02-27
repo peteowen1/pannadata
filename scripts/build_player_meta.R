@@ -28,8 +28,16 @@ main_position <- current |>
   ungroup() |>
   select(player_id, position)
 
+# Canonical player_name per player_id (lineups may have slight name variants)
+player_names <- current |>
+  distinct(player_id, player_name) |>
+  group_by(player_id) |>
+  slice(1) |>
+  ungroup()
+
 player_meta <- main_team_league |>
-  left_join(main_position, by = "player_id")
+  left_join(main_position, by = "player_id") |>
+  left_join(player_names, by = "player_id")
 
 cat("Player metadata:", nrow(player_meta), "players\n")
 cat("Position coverage:", round(100 * mean(!is.na(player_meta$position)), 1), "%\n")

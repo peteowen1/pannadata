@@ -19,8 +19,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p blog
-          gh release download blog-latest -p "panna_ratings.parquet" -D blog/
-          gh release download blog-latest -p "match_predictions.parquet" -D blog/
+          gh release download blog-latest -p "panna_ratings.parquet" -D blog/ || { echo "ERROR: Failed to download panna_ratings.parquet from blog-latest"; exit 1; }
+          gh release download blog-latest -p "match_predictions.parquet" -D blog/ || { echo "ERROR: Failed to download match_predictions.parquet from blog-latest"; exit 1; }
           echo "Downloaded blog data:"
           ls -lh blog/
 
