@@ -651,6 +651,13 @@ def main():
     # Sort by tier priority (lower tier = more important = first)
     scrape_plan.sort(key=lambda x: get_competition_metadata(x[0]).get("tier", 99))
 
+    # Warn about competitions with no tier mapping (default to 99)
+    unknown_tier = {l for l, _, _ in scrape_plan if get_competition_metadata(l).get("tier", 99) == 99}
+    if unknown_tier:
+        logger.warning("Competitions with no tier mapping (defaulting to 99): %s. "
+                       "Add them to competition_metadata.py to set priority.",
+                       ", ".join(sorted(unknown_tier)))
+
     # Initialize scraper
     script_dir = Path(__file__).parent
     scraper = OptaScraper(data_dir=str(script_dir / "data"))
@@ -681,6 +688,7 @@ def main():
 
     # Execute scraping with incremental manifest saves
     results = []
+    consecutive_manifest_failures = 0
     for league, season_name, season_id in scrape_plan:
         try:
             result = scrape_season(scraper, league, season_name, season_id,
@@ -690,22 +698,6 @@ def main():
                                    retry_unavailable=args.retry_unavailable,
                                    scrape_types=scrape_types)
             results.append(result)
-
-            # Incremental manifest save after each league-season
-            season_manifest_records = result.get("manifest_records", [])
-            if season_manifest_records:
-                if update_manifest(manifest_path, season_manifest_records):
-                    # Update in-memory sets so subsequent leagues benefit
-                    for rec in season_manifest_records:
-                        key = (rec['match_id'], rec['competition'], rec['season'])
-                        if rec.get('has_match_events'):
-                            complete_matches.add(key)
-                        if rec.get('event_unavailable'):
-                            unavailable_matches.add(key)
-                else:
-                    logger.error("Manifest save failed for %s %s - %d records lost",
-                                 league, season_name, len(season_manifest_records))
-
         except (requests.RequestException, ValueError, OSError, KeyError,
                 TypeError, AttributeError, IndexError) as e:
             logger.error("Failed scraping %s %s: %s", league, season_name, e, exc_info=True)
@@ -714,6 +706,32 @@ def main():
                 "season": season_name,
                 "error": str(e)
             })
+            continue
+
+        # Incremental manifest save (separate from scrape error handling)
+        season_manifest_records = result.get("manifest_records", [])
+        if season_manifest_records:
+            try:
+                if update_manifest(manifest_path, season_manifest_records):
+                    consecutive_manifest_failures = 0
+                    for rec in season_manifest_records:
+                        key = (rec['match_id'], rec['competition'], rec['season'])
+                        if rec.get('has_match_events'):
+                            complete_matches.add(key)
+                        if rec.get('event_unavailable'):
+                            unavailable_matches.add(key)
+                else:
+                    consecutive_manifest_failures += 1
+                    logger.error("Manifest save failed for %s %s - %d matches will be re-scraped on next run",
+                                 league, season_name, len(season_manifest_records))
+            except Exception as e:
+                consecutive_manifest_failures += 1
+                logger.error("Manifest error for %s %s: %s - %d matches will be re-scraped on next run",
+                             league, season_name, e, len(season_manifest_records))
+
+            if consecutive_manifest_failures >= 3:
+                logger.error("3 consecutive manifest failures — likely persistent disk/permission issue. Stopping.")
+                break
 
     # Final summary
     print("\n" + "=" * 60)
