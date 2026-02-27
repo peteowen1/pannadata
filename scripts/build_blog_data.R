@@ -9,30 +9,47 @@ seasonal_xrapm <- read_parquet("source/seasonal_xrapm.parquet")
 seasonal_spm <- read_parquet("source/seasonal_spm.parquet")
 player_meta <- read_parquet("source/player_metadata.parquet")
 
-stopifnot(
-  all(c("season_end_year", "player_name", "total_minutes", "xrapm", "offense", "defense") %in% names(seasonal_xrapm)),
-  all(c("season_end_year", "player_name", "total_minutes", "spm") %in% names(seasonal_spm))
-)
+# Validate required columns (explicit errors instead of cryptic stopifnot)
+xrapm_required <- c("season_end_year", "player_name", "total_minutes", "xrapm", "offense", "defense")
+xrapm_missing <- setdiff(xrapm_required, names(seasonal_xrapm))
+if (length(xrapm_missing) > 0) stop("seasonal_xrapm missing columns: ", paste(xrapm_missing, collapse = ", "))
+
+spm_required <- c("season_end_year", "total_minutes", "spm")
+spm_missing <- setdiff(spm_required, names(seasonal_spm))
+if (length(spm_missing) > 0) stop("seasonal_spm missing columns: ", paste(spm_missing, collapse = ", "))
+
+meta_required <- c("player_name")
+meta_missing <- setdiff(meta_required, names(player_meta))
+if (length(meta_missing) > 0) stop("player_meta missing columns: ", paste(meta_missing, collapse = ", "))
+
+# Determine join key: prefer player_id, fall back to player_name
+has_player_id <- "player_id" %in% names(seasonal_xrapm) &&
+  "player_id" %in% names(seasonal_spm) &&
+  "player_id" %in% names(player_meta)
+dedup_key <- if (has_player_id) "player_id" else "player_name"
+cat("Join key:", dedup_key, "\n")
 
 latest_season <- max(seasonal_xrapm$season_end_year)
 
 xrapm <- seasonal_xrapm |>
   filter(season_end_year == latest_season) |>
-  group_by(player_name) |>
+  group_by(.data[[dedup_key]]) |>
   slice_max(total_minutes, n = 1, with_ties = FALSE) |>
   ungroup()
 
 spm <- seasonal_spm |>
   filter(season_end_year == latest_season) |>
-  group_by(player_name) |>
+  group_by(.data[[dedup_key]]) |>
   slice_max(total_minutes, n = 1, with_ties = FALSE) |>
   ungroup() |>
-  select(player_name, spm_overall = spm)
+  select(all_of(dedup_key), spm_overall = spm)
 
 n_before <- nrow(xrapm)
+# Select only columns from player_meta that aren't already in xrapm (plus the join key)
+meta_cols <- c(dedup_key, setdiff(names(player_meta), c(names(xrapm), "player_name")))
 panna_ratings <- xrapm |>
-  left_join(spm, by = "player_name") |>
-  left_join(player_meta, by = "player_name") |>
+  left_join(spm, by = dedup_key) |>
+  left_join(player_meta |> select(any_of(meta_cols)), by = dedup_key) |>
   mutate(
     panna_rank = as.integer(rank(-xrapm, ties.method = "min")),
     panna_percentile = round(100 * rank(xrapm, ties.method = "min") / n(), 1)

@@ -15,6 +15,11 @@ on:
         required: false
         type: number
         default: 1
+      tier:
+        description: 'Max competition tier to scrape (1=Big5+UCL+WC+EURO, 2=+cups+secondary leagues, 0=all)'
+        required: false
+        type: number
+        default: 2
       force_rescrape:
         description: 'Force rescrape existing matches'
         required: false
@@ -24,7 +29,7 @@ on:
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 120
 
     permissions:
       contents: write
@@ -87,10 +92,14 @@ jobs:
       env:
         INPUT_LEAGUES: ${{ github.event.inputs.leagues }}
         INPUT_RECENT: ${{ github.event.inputs.recent || 1 }}
+        INPUT_TIER: ${{ github.event.inputs.tier || 2 }}
         INPUT_FORCE: ${{ github.event.inputs.force_rescrape }}
       run: |
         cd scripts/opta
         ARGS="--recent $INPUT_RECENT"
+        if [ "$INPUT_TIER" != "0" ]; then
+          ARGS="$ARGS --tier $INPUT_TIER"
+        fi
         if [ -n "$INPUT_LEAGUES" ]; then
           ARGS="$ARGS --leagues $INPUT_LEAGUES"
         fi
