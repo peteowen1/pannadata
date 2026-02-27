@@ -2,9 +2,8 @@ name: Build blog data
 
 on:
   workflow_dispatch:
-  # Uncomment to trigger after the panna model pipeline uploads ratings:
-  # release:
-  #   types: [published, edited]
+  repository_dispatch:
+    types: [predictions-complete]
 
 permissions:
   contents: read
@@ -15,24 +14,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: r-lib/actions/setup-r@v2
-        with:
-          use-public-rspm: true
-
-      - uses: r-lib/actions/setup-r-dependencies@v2
-        with:
-          packages: arrow, dplyr
-
-      - name: Download source data
+      - name: Download blog data
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir -p source
-          gh release download ratings-data -p "seasonal_xrapm.parquet" -D source
-          gh release download ratings-data -p "seasonal_spm.parquet" -D source
-
-      - name: Aggregate
-        run: Rscript scripts/build_blog_data.R
+          mkdir -p blog
+          gh release download blog-latest -p "panna_ratings.parquet" -D blog/ || { echo "ERROR: Failed to download panna_ratings.parquet from blog-latest"; exit 1; }
+          gh release download blog-latest -p "match_predictions.parquet" -D blog/ || { echo "ERROR: Failed to download match_predictions.parquet from blog-latest"; exit 1; }
+          echo "Downloaded blog data:"
+          ls -lh blog/
 
       - name: Upload to R2
         env:

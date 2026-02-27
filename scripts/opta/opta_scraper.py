@@ -800,6 +800,25 @@ class OptaScraper:
 
         return pd.DataFrame(rows)
 
+    @staticmethod
+    def _parse_event_minute(event_dict: Dict) -> tuple:
+        """Extract minute and second from event, handling both old and new formats.
+
+        Opta API formats:
+        - Pre-2015: only 'timeMin' (int)
+        - 2015+: 'timeMinSec' (str like "60:05") AND 'timeMin' (int)
+        """
+        time_min_sec = event_dict.get("timeMinSec")
+        if time_min_sec:
+            parts = str(time_min_sec).split(":")
+            minute = int(parts[0]) if parts else 0
+            second = int(parts[1].split(".")[0]) if len(parts) > 1 else 0
+            return minute, second
+        time_min = event_dict.get("timeMin")
+        if time_min is not None:
+            return int(time_min), 0
+        return 0, 0
+
     def extract_match_events(self, match_data: Dict) -> List[MatchEvent]:
         """Extract goals, cards, and substitutions with timing from matchstats data"""
         events = []
@@ -808,10 +827,7 @@ class OptaScraper:
 
         # Extract goals
         for goal in live_data.get("goal", []):
-            minute_str = goal.get("timeMinSec", "0:0")
-            parts = minute_str.split(":")
-            minute = int(parts[0]) if parts else 0
-            second = int(parts[1].split(".")[0]) if len(parts) > 1 else 0
+            minute, second = self._parse_event_minute(goal)
 
             events.append(MatchEvent(
                 match_id=match_id,
@@ -827,10 +843,7 @@ class OptaScraper:
 
         # Extract cards
         for card in live_data.get("card", []):
-            minute_str = card.get("timeMinSec", "0:0")
-            parts = minute_str.split(":")
-            minute = int(parts[0]) if parts else 0
-            second = int(parts[1].split(".")[0]) if len(parts) > 1 else 0
+            minute, second = self._parse_event_minute(card)
 
             card_type = card.get("type", "")
             if card_type == "YC":
@@ -854,10 +867,7 @@ class OptaScraper:
 
         # Extract substitutions
         for sub in live_data.get("substitute", []):
-            minute_str = sub.get("timeMinSec", "0:0")
-            parts = minute_str.split(":")
-            minute = int(parts[0]) if parts else 0
-            second = int(parts[1].split(".")[0]) if len(parts) > 1 else 0
+            minute, second = self._parse_event_minute(sub)
 
             events.append(MatchEvent(
                 match_id=match_id,
@@ -1001,8 +1011,7 @@ class OptaScraper:
         sub_off_times = {}  # player_id -> minute
 
         for sub in subs:
-            minute_str = sub.get("timeMinSec", "0:0")
-            minute = int(minute_str.split(":")[0]) if minute_str else 0
+            minute, _ = self._parse_event_minute(sub)
             if sub.get("playerOnId"):
                 sub_on_times[sub["playerOnId"]] = minute
             if sub.get("playerOffId"):
@@ -1022,15 +1031,36 @@ class OptaScraper:
                 stats = {s["type"]: s.get("value", 0) for s in player.get("stat", []) if "type" in s}
                 mins_played = int(stats.get("minsPlayed", 0))
 
-                # Determine if starter (formation_place 1-11 or gameStarted stat)
+                # Determine if starter:
+                # 1. formationPlace 1-11 (2018+ data)
+                # 2. gameStarted stat (2015+ data)
+                # 3. position != "Substitute" (pre-2015 fallback)
                 formation_place = player.get("formationPlace", "")
-                is_starter = (
-                    formation_place.isdigit() and int(formation_place) <= 11
-                ) or int(stats.get("gameStarted", 0)) == 1
+                position = player.get("position", "")
+                if formation_place and formation_place.isdigit() and int(formation_place) <= 11:
+                    is_starter = True
+                elif int(stats.get("gameStarted", 0)) == 1:
+                    is_starter = True
+                elif not formation_place and "gameStarted" not in stats:
+                    # Pre-2015: no formationPlace, no gameStarted stat
+                    is_starter = position != "Substitute"
+                else:
+                    is_starter = False
 
                 # Get sub times
                 sub_on = sub_on_times.get(player_id, 0)
                 sub_off = sub_off_times.get(player_id, 0)
+
+                # Reconstruct minsPlayed when stat is missing (pre-2015 data)
+                if mins_played == 0:
+                    if is_starter:
+                        # Starter subbed off: use sub_off time; otherwise assume 90
+                        mins_played = sub_off if sub_off > 0 else 90
+                    elif player_id in sub_on_times:
+                        # Sub who came on: use sub_off - sub_on if also subbed off,
+                        # otherwise approximate as 90 - sub_on
+                        end_min = sub_off if sub_off > 0 else 90
+                        mins_played = max(end_min - sub_on, 1)
 
                 lineups.append(PlayerLineup(
                     match_id=match_id,
@@ -1040,7 +1070,7 @@ class OptaScraper:
                     team_id=team_id,
                     team_name=team_name,
                     team_position=team_position,
-                    position=player.get("position", ""),
+                    position=position,
                     position_side=player.get("positionSide", ""),
                     formation_place=formation_place,
                     shirt_number=int(player.get("shirtNumber", 0)),
@@ -1051,6 +1081,66 @@ class OptaScraper:
                 ))
 
         return lineups
+
+    @staticmethod
+    def validate_lineups(lineups: List[PlayerLineup], match_id: str = "") -> List[str]:
+        """Validate lineup data quality. Returns list of warning messages."""
+        warnings = []
+        if not lineups:
+            return warnings
+
+        match_lineups = [l for l in lineups if l.match_id == match_id] if match_id else lineups
+
+        # Check starter count per team
+        teams = {}
+        for l in match_lineups:
+            teams.setdefault(l.team_id, []).append(l)
+
+        for team_id, players in teams.items():
+            starters = [p for p in players if p.is_starter]
+            if len(starters) != 11 and len(starters) > 0:
+                team_name = players[0].team_name if players else team_id
+                warnings.append(
+                    f"  Warning: {team_name} has {len(starters)} starters (expected 11) in match {match_id}"
+                )
+
+            # Check minutes coverage
+            starters_with_mins = [p for p in starters if p.minutes_played > 0]
+            if starters and len(starters_with_mins) < len(starters) * 0.5:
+                team_name = players[0].team_name if players else team_id
+                warnings.append(
+                    f"  Warning: >50% of {team_name} starters have 0 minutes in match {match_id}"
+                )
+
+            # Check sub timing
+            subs_in = [p for p in players if p.sub_on_minute > 0 or (not p.is_starter and p.minutes_played > 0)]
+            subs_with_zero_time = [p for p in players if not p.is_starter and p.minutes_played > 0 and p.sub_on_minute == 0]
+            if subs_in and len(subs_with_zero_time) == len(subs_in):
+                warnings.append(
+                    f"  Warning: All subs have sub_on_minute=0 for {team_id} in match {match_id}"
+                )
+
+        return warnings
+
+    @staticmethod
+    def validate_events(events: List[MatchEvent], match_id: str = "") -> List[str]:
+        """Validate event data quality. Returns list of warning messages."""
+        warnings = []
+        if not events:
+            return warnings
+
+        match_events = [e for e in events if e.match_id == match_id] if match_id else events
+        if not match_events:
+            return warnings
+
+        zero_minute = [e for e in match_events if e.minute == 0]
+        if len(zero_minute) > len(match_events) * 0.5:
+            warnings.append(
+                f"  Warning: >50% of events have minute=0 in match {match_id} "
+                f"({len(zero_minute)}/{len(match_events)})"
+            )
+
+        return warnings
 
     def scrape_season(self, competition: str, season: str,
                       start_date: str, end_date: str,
