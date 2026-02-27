@@ -20,6 +20,7 @@ Usage:
     python scrape_opta.py --seasons 2024-2025 2023-2024  # Specific seasons
     python scrape_opta.py --leagues EPL --seasons 2024-2025 2023-2024
     python scrape_opta.py --recent 1                # Most recent season per league
+    python scrape_opta.py --tier 2 --recent 1       # Tier 1-2 comps only (Big 5 + secondary)
     python scrape_opta.py --types fixtures           # Only scrape fixture lists
     python scrape_opta.py --types fixtures --recent 1  # Fixtures for current season only
 """
@@ -599,6 +600,8 @@ def main():
                                 "match_events", "events", "lineups"],
                        default=["all"],
                        help="Data types to scrape (default: all)")
+    parser.add_argument("--tier", type=int, default=0,
+                       help="Only scrape competitions with tier <= N (0 = no filter)")
     args = parser.parse_args()
 
     # Determine what to scrape
@@ -635,6 +638,19 @@ def main():
         skipped = original_count - len(scrape_plan)
         print(f"Filtered out {skipped} future seasons from scrape plan")
 
+    # Filter by tier and sort by priority
+    from competition_metadata import get_competition_metadata
+
+    if args.tier > 0:
+        before_tier = len(scrape_plan)
+        scrape_plan = [(l, s, sid) for l, s, sid in scrape_plan
+                       if get_competition_metadata(l).get("tier", 99) <= args.tier]
+        if len(scrape_plan) < before_tier:
+            print(f"Tier filter (≤{args.tier}): {before_tier} → {len(scrape_plan)} league-seasons")
+
+    # Sort by tier priority (lower tier = more important = first)
+    scrape_plan.sort(key=lambda x: get_competition_metadata(x[0]).get("tier", 99))
+
     # Initialize scraper
     script_dir = Path(__file__).parent
     scraper = OptaScraper(data_dir=str(script_dir / "data"))
@@ -663,9 +679,8 @@ def main():
     for league, season, _ in scrape_plan:
         print(f"  - {league} {season}")
 
-    # Execute scraping
+    # Execute scraping with incremental manifest saves
     results = []
-    all_new_manifest_records = []
     for league, season_name, season_id in scrape_plan:
         try:
             result = scrape_season(scraper, league, season_name, season_id,
@@ -675,8 +690,22 @@ def main():
                                    retry_unavailable=args.retry_unavailable,
                                    scrape_types=scrape_types)
             results.append(result)
-            # Collect manifest records from this season
-            all_new_manifest_records.extend(result.get("manifest_records", []))
+
+            # Incremental manifest save after each league-season
+            season_manifest_records = result.get("manifest_records", [])
+            if season_manifest_records:
+                if update_manifest(manifest_path, season_manifest_records):
+                    # Update in-memory sets so subsequent leagues benefit
+                    for rec in season_manifest_records:
+                        key = (rec['match_id'], rec['competition'], rec['season'])
+                        if rec.get('has_match_events'):
+                            complete_matches.add(key)
+                        if rec.get('event_unavailable'):
+                            unavailable_matches.add(key)
+                else:
+                    logger.error("Manifest save failed for %s %s - %d records lost",
+                                 league, season_name, len(season_manifest_records))
+
         except (requests.RequestException, ValueError, OSError, KeyError,
                 TypeError, AttributeError, IndexError) as e:
             logger.error("Failed scraping %s %s: %s", league, season_name, e, exc_info=True)
@@ -685,12 +714,6 @@ def main():
                 "season": season_name,
                 "error": str(e)
             })
-
-    # Update manifest with new matches
-    if all_new_manifest_records:
-        if not update_manifest(manifest_path, all_new_manifest_records):
-            logger.error("MANIFEST UPDATE FAILED - next run will re-scrape %d matches",
-                         len(all_new_manifest_records))
 
     # Final summary
     print("\n" + "=" * 60)

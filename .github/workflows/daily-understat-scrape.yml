@@ -12,10 +12,10 @@ on:
         type: string
         default: '20'
       max_misses:
-        description: 'Stop after N consecutive misses per league (default: 50)'
+        description: 'Stop after N consecutive misses per league (default: 25)'
         required: false
         type: string
-        default: '50'
+        default: '25'
       force_rescrape:
         description: 'Rebuild manifest from scratch'
         required: false
@@ -154,7 +154,7 @@ jobs:
           if (is.na(lookback)) lookback <- 20
 
           max_misses <- as.integer("${{ github.event.inputs.max_misses }}")
-          if (is.na(max_misses)) max_misses <- 50
+          if (is.na(max_misses)) max_misses <- 25
 
           manifest_path <- file.path(getwd(), "data", "understat-manifest.parquet")
 
