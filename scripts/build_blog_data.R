@@ -10,29 +10,29 @@ seasonal_spm <- read_parquet("source/seasonal_spm.parquet")
 player_meta <- read_parquet("source/player_metadata.parquet")
 
 stopifnot(
-  all(c("season_end_year", "player_name", "total_minutes", "xrapm", "offense", "defense") %in% names(seasonal_xrapm)),
-  all(c("season_end_year", "player_name", "total_minutes", "spm") %in% names(seasonal_spm))
+  all(c("season_end_year", "player_id", "player_name", "total_minutes", "xrapm", "offense", "defense") %in% names(seasonal_xrapm)),
+  all(c("season_end_year", "player_id", "total_minutes", "spm") %in% names(seasonal_spm))
 )
 
 latest_season <- max(seasonal_xrapm$season_end_year)
 
 xrapm <- seasonal_xrapm |>
   filter(season_end_year == latest_season) |>
-  group_by(player_name) |>
+  group_by(player_id) |>
   slice_max(total_minutes, n = 1, with_ties = FALSE) |>
   ungroup()
 
 spm <- seasonal_spm |>
   filter(season_end_year == latest_season) |>
-  group_by(player_name) |>
+  group_by(player_id) |>
   slice_max(total_minutes, n = 1, with_ties = FALSE) |>
   ungroup() |>
-  select(player_name, spm_overall = spm)
+  select(player_id, spm_overall = spm)
 
 n_before <- nrow(xrapm)
 panna_ratings <- xrapm |>
-  left_join(spm, by = "player_name") |>
-  left_join(player_meta, by = "player_name") |>
+  left_join(spm, by = "player_id") |>
+  left_join(player_meta |> select(-player_name), by = "player_id") |>
   mutate(
     panna_rank = as.integer(rank(-xrapm, ties.method = "min")),
     panna_percentile = round(100 * rank(xrapm, ties.method = "min") / n(), 1)
