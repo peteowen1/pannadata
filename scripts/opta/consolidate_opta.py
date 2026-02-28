@@ -5,21 +5,151 @@ Consolidate Opta parquet files into single files per table type.
 Reads from: opta/{table_type}/{league}/{season}.parquet
 Writes to:  opta/opta_{table_type}.parquet
            opta/events_consolidated/events_{league}.parquet (per-league events)
+
+Uses a streaming approach to minimize memory usage: splits existing
+consolidated files into per-league temp files, processes one league at a
+time, and writes output via PyArrow ParquetWriter. This keeps peak memory
+at ~1 league's worth of data instead of the entire dataset.
 """
 
+import gc
 import json
 import logging
 import shutil
 import sys
+import tempfile
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pandas as pd
+import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.lib
-from pathlib import Path
+import pyarrow.parquet as pq
 
 from competition_metadata import get_competition_metadata, PANNA_ALIASES
 
 logger = logging.getLogger(__name__)
+
+
+def _get_dedup_cols(table_type):
+    """Return deduplication columns for a given table type."""
+    if table_type in ('shot_events', 'match_events'):
+        return ['match_id', 'event_id']
+    elif table_type == 'events':
+        return ['match_id', 'event_type', 'minute', 'player_id']
+    elif table_type == 'fixtures':
+        return ['match_id']
+    else:
+        # player_stats, lineups, shots, match_stats, skills
+        return ['match_id', 'player_id']
+
+
+def _split_existing_by_league(parquet_file, temp_dir, batch_size=50_000):
+    """Split a consolidated parquet into per-league temp files.
+
+    Reads the file in batches to avoid loading it entirely into memory.
+    Returns total row count of the existing file.
+    """
+    pf = pq.ParquetFile(parquet_file)
+    writers = {}
+    total = 0
+
+    for batch in pf.iter_batches(batch_size=batch_size):
+        table = pa.Table.from_batches([batch])
+        total += len(table)
+
+        competitions = pc.unique(table.column('competition')).to_pylist()
+        for league in competitions:
+            mask = pc.equal(table.column('competition'), league)
+            filtered = table.filter(mask)
+            if len(filtered) == 0:
+                continue
+
+            if league not in writers:
+                league_file = temp_dir / f"{league}.parquet"
+                writers[league] = pq.ParquetWriter(str(league_file), filtered.schema)
+            else:
+                # Align schema if needed (some batches may differ)
+                filtered = _align_table(filtered, writers[league].schema)
+            writers[league].write_table(filtered)
+
+        del table
+    gc.collect()
+
+    for w in writers.values():
+        w.close()
+    del writers
+    gc.collect()
+
+    return total
+
+
+def _align_table(table, target_schema):
+    """Align a PyArrow table to match the target schema.
+
+    Adds missing columns as null, drops extra columns, and casts types.
+    """
+    columns = {}
+    for field in target_schema:
+        if field.name in table.column_names:
+            col = table.column(field.name)
+            if col.type != field.type:
+                try:
+                    col = col.cast(field.type, safe=False)
+                except (pa.ArrowInvalid, pa.ArrowNotImplementedError):
+                    col = pa.nulls(len(table), type=field.type)
+            columns[field.name] = col
+        else:
+            columns[field.name] = pa.nulls(len(table), type=field.type)
+    return pa.table(columns)
+
+
+def _build_unified_schema(existing_file, new_files):
+    """Build a unified schema from all source files.
+
+    Handles type conflicts (e.g., int64 vs double) by promoting to the
+    wider type. Falls back to string if types are truly incompatible.
+    """
+    schemas = []
+    if existing_file and existing_file.exists():
+        try:
+            schemas.append(pq.read_schema(existing_file))
+        except Exception:
+            pass
+    for f in new_files:
+        try:
+            schemas.append(pq.read_schema(f))
+        except Exception:
+            pass
+
+    if not schemas:
+        return None
+
+    try:
+        return pa.unify_schemas(schemas, promote_options='default')
+    except pa.ArrowTypeError:
+        # Manual resolution: collect all fields, resolve conflicts
+        field_types = {}
+        for schema in schemas:
+            for field in schema:
+                if field.name not in field_types:
+                    field_types[field.name] = field.type
+                elif field_types[field.name] != field.type:
+                    # Promote numeric conflicts to float64
+                    existing_type = field_types[field.name]
+                    new_type = field.type
+                    numeric_types = {pa.int8(), pa.int16(), pa.int32(), pa.int64(),
+                                     pa.uint8(), pa.uint16(), pa.uint32(), pa.uint64(),
+                                     pa.float16(), pa.float32(), pa.float64()}
+                    if existing_type in numeric_types and new_type in numeric_types:
+                        field_types[field.name] = pa.float64()
+                    else:
+                        # Fall back to string for non-numeric conflicts
+                        field_types[field.name] = pa.string()
+
+        fields = [pa.field(name, dtype) for name, dtype in field_types.items()]
+        return pa.schema(fields)
 
 
 def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
@@ -90,6 +220,8 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
             continue
 
         combined = pd.concat(dfs, ignore_index=True)
+        del dfs
+        gc.collect()
 
         # Dedupe by match_id + event_id, keeping latest data
         if 'match_id' in combined.columns and 'event_id' in combined.columns:
@@ -104,6 +236,8 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
             print(f"  ERROR: {league} row count dropped from {existing_count:,} to "
                   f"{len(combined):,} ({pct_loss:.1f}% loss). Skipping write to prevent data loss.")
             errors += 1
+            del combined
+            gc.collect()
             continue
 
         output_file = output_path / f"events_{league}.parquet"
@@ -118,6 +252,8 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
                 print(f"  ERROR: Failed to create backup for {output_file}: {e}")
                 print(f"  Skipping {league} to prevent data loss (cannot backup)")
                 errors += 1
+                del combined
+                gc.collect()
                 continue
         try:
             # zstd for events (much larger files); other tables use default snappy
@@ -131,6 +267,8 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
                 except OSError as restore_err:
                     print(f"  CRITICAL: Could not restore backup: {restore_err}")
             errors += 1
+            del combined
+            gc.collect()
             continue
 
         if backup_created and backup_file.exists():
@@ -141,6 +279,8 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
 
         size_mb = output_file.stat().st_size / (1024 * 1024)
         print(f"  {league}: {len(parquet_files)} seasons, {len(combined):,} rows, {size_mb:.1f}MB")
+        del combined
+        gc.collect()
 
     print(f"Events consolidation complete: {len(leagues)} leagues")
     return errors
@@ -149,10 +289,12 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
 def consolidate_opta(opta_dir="opta", output_dir="opta"):
     """Consolidate all Opta parquet files by table type.
 
-    Merges existing consolidated files with newly scraped hierarchical files,
-    deduplicating by appropriate keys. In GHA, existing consolidated files are
-    downloaded to the opta directory (e.g., opta/opta_player_stats.parquet)
-    before consolidation runs.
+    Uses a streaming league-by-league approach to minimize memory:
+    1. Split existing consolidated file into per-league temp files (batch read)
+    2. For each league: merge existing + new per-league files, dedupe
+    3. Stream output via ParquetWriter (one league at a time in memory)
+
+    Peak memory: ~1 league's data instead of the entire dataset.
     """
     opta_path = Path(opta_dir)
     output_path = Path(output_dir)
@@ -172,85 +314,141 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
     errors = 0
     for table_type in table_types:
         tt_dir = opta_path / table_type
-        parquet_files = list(tt_dir.glob("**/*.parquet"))
+        new_files = list(tt_dir.glob("**/*.parquet"))
 
-        if not parquet_files:
+        if not new_files:
             print(f"  Skipping {table_type} - no parquet files")
             continue
 
-        print(f"Consolidating opta_{table_type}... Found {len(parquet_files)} files")
-
-        # Read existing consolidated file first (contains historical data)
-        dfs = []
-        existing_count = 0
         existing_path = output_path / f"opta_{table_type}.parquet"
+        print(f"Consolidating opta_{table_type}... ({len(new_files)} per-league files)")
+
+        # Group new files by league
+        new_by_league = {}
+        for f in new_files:
+            league = f.parent.name
+            new_by_league.setdefault(league, []).append(f)
+
+        # Phase 1: Split existing consolidated into per-league temp files
+        temp_dir = Path(tempfile.mkdtemp(prefix=f"opta_{table_type}_"))
+        existing_total = 0
+        existing_leagues = set()
+
         if existing_path.exists():
             try:
-                existing_df = pd.read_parquet(existing_path)
-                existing_count = len(existing_df)
-                dfs.append(existing_df)
-                print(f"  Loaded {existing_count:,} existing rows from {existing_path}")
-            except (pd.errors.ParserError, FileNotFoundError, OSError, ValueError,
-                    pyarrow.lib.ArrowInvalid) as e:
-                print(f"  ERROR: Failed to read existing {existing_path}: {e}")
+                print(f"  Splitting existing {existing_path.name} by league...")
+                existing_total = _split_existing_by_league(existing_path, temp_dir)
+                existing_leagues = {f.stem for f in temp_dir.glob("*.parquet")}
+                print(f"  Split {existing_total:,} existing rows into {len(existing_leagues)} leagues")
+            except Exception as e:
+                print(f"  ERROR: Failed to split existing {existing_path}: {e}")
                 print(f"  Skipping {table_type} to prevent data loss")
+                shutil.rmtree(temp_dir, ignore_errors=True)
                 errors += 1
                 continue
 
-        # Read new hierarchical data, adding competition and season columns
-        for f in parquet_files:
-            try:
-                df = pd.read_parquet(f)
-                # Extract competition (league) and season from path
-                # Path: opta/{table_type}/{league}/{season}.parquet
-                competition = f.parent.name  # e.g., "EPL"
-                season = f.stem  # e.g., "2024-2025"
-                df['competition'] = competition
-                df['season'] = season
-                dfs.append(df)
-            except (pd.errors.ParserError, FileNotFoundError, OSError, ValueError,
-                    pyarrow.lib.ArrowInvalid) as e:
-                print(f"  ERROR: Failed to read {f}: {e}")
-                errors += 1
-
-        non_empty = [df for df in dfs if not df.empty]
-        if len(non_empty) < len(dfs):
-            print(f"  WARNING: {table_type}: Filtered out {len(dfs) - len(non_empty)} empty DataFrame(s)")
-        dfs = non_empty
-        if not dfs:
-            print(f"  Skipping {table_type} - no valid data")
-            continue
-
-        # Concatenate with pandas (handles type differences across seasons)
-        combined = pd.concat(dfs, ignore_index=True)
-
-        # Deduplicate based on table type (keep='last' so new data wins over stale)
-        before_count = len(combined)
-        if 'match_id' in combined.columns:
-            if 'event_id' in combined.columns and table_type in ['shot_events', 'match_events']:
-                combined = combined.drop_duplicates(subset=['match_id', 'event_id'], keep='last')
-            elif table_type == 'events' and all(c in combined.columns for c in ['match_id', 'event_type', 'minute', 'player_id']):
-                dedup_cols = ['match_id', 'event_type', 'minute', 'player_id']
-                if 'second' in combined.columns:
-                    dedup_cols.append('second')
-                combined = combined.drop_duplicates(subset=dedup_cols, keep='last')
-            elif 'player_id' in combined.columns:
-                combined = combined.drop_duplicates(subset=['match_id', 'player_id'], keep='last')
-            else:
-                combined = combined.drop_duplicates(subset=['match_id'], keep='last')
-            if len(combined) < before_count:
-                print(f"  Removed {before_count - len(combined):,} duplicate rows")
-
-        # Sanity check: don't write if row count drops more than 10%
-        if existing_count > 0 and len(combined) < existing_count * 0.9:
-            pct_loss = 100 * (1 - len(combined) / existing_count)
-            print(f"  ERROR: {table_type} row count dropped from {existing_count:,} to "
-                  f"{len(combined):,} ({pct_loss:.1f}% loss). Skipping write to prevent data loss.")
+        # Phase 2: Determine unified schema
+        unified_schema = _build_unified_schema(existing_path, new_files)
+        if unified_schema is None:
+            print(f"  ERROR: Could not determine schema for {table_type}")
+            shutil.rmtree(temp_dir, ignore_errors=True)
             errors += 1
             continue
 
-        # Write consolidated parquet (backup existing first)
+        # Ensure competition and season columns are in the schema
+        for col_name in ('competition', 'season'):
+            if col_name not in unified_schema.names:
+                unified_schema = unified_schema.append(pa.field(col_name, pa.string()))
+
+        # Phase 3: Process each league, stream to output
+        all_leagues = sorted(existing_leagues | set(new_by_league.keys()))
+        dedup_cols = _get_dedup_cols(table_type)
+
         output_file = output_path / f"opta_{table_type}.parquet"
+        temp_output = output_file.with_suffix('.parquet.new')
+        writer = None
+        total_rows = 0
+
+        for league in all_leagues:
+            dfs = []
+
+            # Load existing data for this league from temp file
+            league_temp = temp_dir / f"{league}.parquet"
+            if league_temp.exists():
+                try:
+                    dfs.append(pd.read_parquet(league_temp))
+                except Exception as e:
+                    print(f"  WARNING: Failed to read temp {league}: {e}")
+
+            # Load new per-league files
+            for f in new_by_league.get(league, []):
+                try:
+                    df = pd.read_parquet(f)
+                    df['competition'] = league
+                    df['season'] = f.stem
+                    dfs.append(df)
+                except (pd.errors.ParserError, FileNotFoundError, OSError, ValueError,
+                        pyarrow.lib.ArrowInvalid) as e:
+                    print(f"  ERROR: Failed to read {f}: {e}")
+                    errors += 1
+
+            non_empty = [df for df in dfs if not df.empty]
+            if not non_empty:
+                del dfs
+                continue
+            dfs = non_empty
+
+            # Concat within this league
+            league_df = pd.concat(dfs, ignore_index=True)
+            del dfs
+
+            # Dedupe within this league
+            valid_dedup = [c for c in dedup_cols if c in league_df.columns]
+            if valid_dedup and 'match_id' in league_df.columns:
+                before = len(league_df)
+                # For events table, also use 'second' if available
+                if table_type == 'events' and 'second' in league_df.columns:
+                    valid_dedup = [c for c in valid_dedup if c != 'player_id'] + ['player_id']
+                    if 'second' not in valid_dedup:
+                        valid_dedup.append('second')
+                league_df = league_df.drop_duplicates(subset=valid_dedup, keep='last')
+                dupes = before - len(league_df)
+                if dupes > 0:
+                    print(f"    {league}: removed {dupes:,} duplicates")
+
+            # Convert to PyArrow and align schema
+            table = pa.Table.from_pandas(league_df, preserve_index=False)
+            del league_df
+            table = _align_table(table, unified_schema)
+
+            if writer is None:
+                writer = pq.ParquetWriter(str(temp_output), unified_schema)
+            writer.write_table(table)
+            total_rows += len(table)
+            del table
+            gc.collect()
+
+        # Cleanup temp dir
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+        if writer:
+            writer.close()
+
+        if total_rows == 0:
+            temp_output.unlink(missing_ok=True)
+            print(f"  Skipping {table_type} - no valid data after processing")
+            continue
+
+        # Sanity check: don't write if row count drops more than 10%
+        if existing_total > 0 and total_rows < existing_total * 0.9:
+            pct_loss = 100 * (1 - total_rows / existing_total)
+            print(f"  ERROR: {table_type} row count dropped from {existing_total:,} to "
+                  f"{total_rows:,} ({pct_loss:.1f}% loss). Skipping write to prevent data loss.")
+            temp_output.unlink(missing_ok=True)
+            errors += 1
+            continue
+
+        # Replace existing with new (backup first)
         backup_file = output_file.with_suffix('.parquet.backup')
         backup_created = False
         if output_file.exists():
@@ -260,12 +458,14 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
             except OSError as e:
                 print(f"  ERROR: Failed to create backup for {output_file}: {e}")
                 print(f"  Skipping {table_type} to prevent data loss (cannot backup)")
+                temp_output.unlink(missing_ok=True)
                 errors += 1
                 continue
+
         try:
-            combined.to_parquet(output_file, index=False)
-        except (OSError, pyarrow.lib.ArrowInvalid) as e:
-            print(f"  ERROR: Failed to write {output_file}: {e}")
+            shutil.move(str(temp_output), str(output_file))
+        except OSError as e:
+            print(f"  ERROR: Failed to move temp to {output_file}: {e}")
             if backup_created and backup_file.exists():
                 try:
                     shutil.copy2(backup_file, output_file)
@@ -282,8 +482,11 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
                 logger.debug("Could not remove backup %s: %s (harmless)", backup_file, e)
 
         size_mb = output_file.stat().st_size / (1024 * 1024)
-        print(f"  Wrote {output_file}: {len(combined):,} rows, {size_mb:.1f} MB "
-              f"(existing={existing_count:,} + new={before_count - existing_count:,} - dupes={before_count - len(combined):,})")
+        new_count = sum(len(files) for files in new_by_league.values())
+        print(f"  Wrote {output_file}: {total_rows:,} rows, {size_mb:.1f} MB "
+              f"(existing={existing_total:,}, {new_count} new files, {len(all_leagues)} leagues)")
+
+        gc.collect()
 
     print("Consolidation complete!")
     return errors
