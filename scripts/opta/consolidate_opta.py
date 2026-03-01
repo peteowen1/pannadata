@@ -179,14 +179,16 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
     """Consolidate match_events by league (too large for single file).
 
     Merges existing consolidated per-league files with newly scraped
-    hierarchical files, deduplicating by match_id. Uses PyArrow streaming
-    to avoid loading entire league histories into memory.
+    hierarchical files. Uses PyArrow streaming to avoid loading entire
+    league histories into memory.
 
     Approach: read new season files into pandas (small), collect their
     match_ids, then stream-read the existing consolidated file in batches,
-    filtering OUT rows whose match_id is in the new set. Write filtered
+    filtering OUT rows whose match_id is in the new set (whole-match
+    replacement ensures re-scraped matches fully supersede old data).
+    New data is internally deduped by match_id + event_id. Write filtered
     existing batches + new data via ParquetWriter (zstd compression).
-    Peak memory: ~batch_size rows + 1 season of new events.
+    Peak memory: ~batch_size rows + new season data for the league.
     """
     opta_path = Path(opta_dir)
     events_dir = opta_path / "match_events"
@@ -232,13 +234,19 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
         if not new_dfs and not existing_file.exists():
             continue
 
-        # Concat and deduplicate new data
+        # Concat and deduplicate new data by match_id + event_id
         if new_dfs:
             new_df = pd.concat(new_dfs, ignore_index=True)
             del new_dfs
-            if 'match_id' in new_df.columns and 'event_id' in new_df.columns:
+            if 'match_id' not in new_df.columns:
+                print(f"  ERROR: {league} new data missing 'match_id' column. "
+                      f"Columns: {list(new_df.columns)}. Skipping league.")
+                del new_df
+                errors += 1
+                continue
+            if 'event_id' in new_df.columns:
                 new_df = new_df.drop_duplicates(subset=['match_id', 'event_id'], keep='last')
-            new_match_ids = set(new_df['match_id'].unique()) if 'match_id' in new_df.columns else set()
+            new_match_ids = set(new_df['match_id'].unique())
         else:
             new_df = None
             new_match_ids = set()
@@ -310,7 +318,10 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
                         del new_df
                     # Close writer and clean up partial temp file
                     if writer:
-                        writer.close()
+                        try:
+                            writer.close()
+                        except Exception:
+                            pass
                         writer = None  # prevent double-close in finally
                     gc.collect()
                     try:
@@ -334,6 +345,15 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
                 gc.collect()
             elif new_df is not None:
                 del new_df
+        except Exception as e:
+            print(f"  ERROR: Unexpected error processing {league}: {e}")
+            errors += 1
+            try:
+                temp_output.unlink(missing_ok=True)
+            except OSError:
+                pass
+            gc.collect()
+            continue
         finally:
             if writer:
                 writer.close()
