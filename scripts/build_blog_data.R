@@ -74,3 +74,34 @@ stopifnot(
 dir.create("blog", showWarnings = FALSE)
 write_parquet(panna_ratings, "blog/panna_ratings.parquet")
 cat("panna_ratings:", nrow(panna_ratings), "players (season", latest_season, ")\n")
+
+# Shot data from Opta — wrapped in tryCatch so missing opta data doesn't block core build
+tryCatch({
+  opta_path <- "source/opta_shot_events.parquet"
+  if (!file.exists(opta_path)) stop("opta_shot_events.parquet not found in source/")
+
+  opta_shots <- read_parquet(opta_path)
+
+  tracked_leagues <- c("EPL", "La_Liga", "Serie_A", "Bundesliga", "Ligue_1", "UCL", "UEL")
+  recent_seasons <- sort(unique(opta_shots$season[opta_shots$competition %in% tracked_leagues]),
+                         decreasing = TRUE)[1:5]
+
+  panna_shots <- opta_shots |>
+    filter(competition %in% tracked_leagues, season %in% recent_seasons) |>
+    transmute(
+      player_name,
+      x = round(x, 1),
+      y = round(y, 1),
+      is_goal,
+      type_id = as.integer(type_id),
+      body_part,
+      situation,
+      season
+    )
+
+  write_parquet(panna_shots, "blog/panna_shots.parquet")
+  cat("panna_shots:", nrow(panna_shots), "shots across", length(recent_seasons), "seasons\n")
+}, error = function(e) {
+  cat("WARNING: Shot data extraction failed, skipping panna_shots.parquet:",
+      conditionMessage(e), "\n")
+})
