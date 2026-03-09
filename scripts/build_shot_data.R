@@ -1,3 +1,7 @@
+# build_shot_data.R — Extract recent shot data from Opta for shot chart feature.
+# Can be run standalone (Rscript scripts/build_shot_data.R) or source()'d from
+# build_blog_data.R (where tryCatch prevents shot failures from blocking ratings).
+
 library(arrow)
 library(dplyr)
 
@@ -22,6 +26,8 @@ panna_shots <- opta_shots |>
     situation,
     season
   )
+
+stopifnot(nrow(panna_shots) > 0, length(recent_seasons) > 0)
 
 dir.create("blog", showWarnings = FALSE)
 write_parquet(panna_shots, "blog/panna_shots.parquet")

@@ -43,8 +43,12 @@ jobs:
           ls -lh blog/ source/
 
       - name: Build shot parquet
-        run: Rscript scripts/build_shot_data.R
-        continue-on-error: true
+        run: |
+          if [ -f source/opta_shot_events.parquet ]; then
+            Rscript scripts/build_shot_data.R
+          else
+            echo "::notice::Skipping shot data — source file not available"
+          fi
 
       - name: Upload to R2
         env:
