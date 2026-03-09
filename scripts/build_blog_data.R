@@ -74,3 +74,11 @@ stopifnot(
 dir.create("blog", showWarnings = FALSE)
 write_parquet(panna_ratings, "blog/panna_ratings.parquet")
 cat("panna_ratings:", nrow(panna_ratings), "players (season", latest_season, ")\n")
+
+# Shot data from Opta — wrapped in tryCatch so shot extraction failure doesn't affect script exit code
+tryCatch({
+  source("scripts/build_shot_data.R")
+}, error = function(e) {
+  message("WARNING: Shot data extraction failed, skipping panna_shots.parquet: ",
+          conditionMessage(e))
+})
