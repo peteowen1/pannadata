@@ -332,6 +332,13 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
 
             # Append new data
             if new_df is not None and not new_df.empty:
+                # Cast mixed-type columns to string before PyArrow conversion
+                if unified_schema is not None:
+                    for field in unified_schema:
+                        if field.type == pa.string() and field.name in new_df.columns:
+                            col = new_df[field.name]
+                            if col.dtype == object:
+                                new_df[field.name] = col.where(col.isna(), col.astype(str))
                 new_table = pa.Table.from_pandas(new_df, preserve_index=False)
                 del new_df
                 new_table = _align_table(new_table, unified_schema)
@@ -560,6 +567,15 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
                     dupes = before - len(league_df)
                     if dupes > 0:
                         print(f"    {league}: removed {dupes:,} duplicates")
+
+                # Cast mixed-type columns to string before PyArrow conversion
+                # (unified schema may specify string for columns with type conflicts)
+                if unified_schema is not None:
+                    for field in unified_schema:
+                        if field.type == pa.string() and field.name in league_df.columns:
+                            col = league_df[field.name]
+                            if col.dtype == object:
+                                league_df[field.name] = col.where(col.isna(), col.astype(str))
 
                 # Convert to PyArrow and align schema
                 table = pa.Table.from_pandas(league_df, preserve_index=False)
