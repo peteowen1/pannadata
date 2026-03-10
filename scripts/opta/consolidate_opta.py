@@ -181,9 +181,16 @@ def _cast_mixed_to_string(col):
     Whole floats become '2' not '2.0' — important for columns like score
     that may contain a mix of int, float, and string values across seasons.
     """
-    return col.where(col.isna(), col.apply(
-        lambda v: str(int(v)) if isinstance(v, float) and v == int(v) else str(v)
-    ))
+    import math
+
+    def _to_str(v):
+        if v is None or (isinstance(v, float) and math.isnan(v)):
+            return v
+        if isinstance(v, float) and v == int(v):
+            return str(int(v))
+        return str(v)
+
+    return col.apply(_to_str)
 
 
 def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
