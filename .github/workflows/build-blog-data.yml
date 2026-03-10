@@ -45,7 +45,9 @@ jobs:
       - name: Build shot parquet
         run: |
           if [ -f source/opta_shot_events.parquet ]; then
-            Rscript scripts/build_shot_data.R
+            if ! Rscript scripts/build_shot_data.R; then
+              echo "::warning::Shot data build failed, continuing without shot charts"
+            fi
           else
             echo "::notice::Skipping shot data — source file not available"
           fi

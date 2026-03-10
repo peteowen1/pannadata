@@ -75,10 +75,12 @@ dir.create("blog", showWarnings = FALSE)
 write_parquet(panna_ratings, "blog/panna_ratings.parquet")
 cat("panna_ratings:", nrow(panna_ratings), "players (season", latest_season, ")\n")
 
-# Shot data from Opta — wrapped in tryCatch so shot extraction failure doesn't affect script exit code
+# Shot data from Opta — tryCatch ensures shot failures don't block ratings
+# when run locally or via source(). In GHA, build_shot_data.R runs as a separate step.
 tryCatch({
   source("scripts/build_shot_data.R")
 }, error = function(e) {
-  message("WARNING: Shot data extraction failed, skipping panna_shots.parquet: ",
-          conditionMessage(e))
+  warning("Shot data extraction failed, skipping panna_shots.parquet: ",
+          conditionMessage(e), call. = FALSE)
+  cat("::warning::Shot data extraction failed:", conditionMessage(e), "\n")
 })

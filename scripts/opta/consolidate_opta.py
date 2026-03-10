@@ -186,11 +186,26 @@ def _cast_mixed_to_string(col):
     def _to_str(v):
         if v is None or (isinstance(v, float) and math.isnan(v)):
             return v
-        if isinstance(v, float) and v == int(v):
-            return str(int(v))
+        if isinstance(v, float):
+            if math.isinf(v) or abs(v) > 1e15:
+                return str(v)
+            if v == int(v):
+                return str(int(v))
         return str(v)
 
     return col.apply(_to_str)
+
+
+def _cast_mixed_columns(df, schema):
+    """Cast object-dtype columns to string where schema expects string."""
+    if schema is None:
+        return df
+    for field in schema:
+        if field.type == pa.string() and field.name in df.columns:
+            col = df[field.name]
+            if col.dtype == object:
+                df[field.name] = _cast_mixed_to_string(col)
+    return df
 
 
 def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
@@ -350,15 +365,7 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
 
             # Append new data
             if new_df is not None and not new_df.empty:
-                # Cast mixed-type columns to string before PyArrow conversion
-                # (unified schema may specify string for columns with type conflicts,
-                # e.g. score columns that are int in some seasons and string in others)
-                if unified_schema is not None:
-                    for field in unified_schema:
-                        if field.type == pa.string() and field.name in new_df.columns:
-                            col = new_df[field.name]
-                            if col.dtype == object:
-                                new_df[field.name] = _cast_mixed_to_string(col)
+                _cast_mixed_columns(new_df, unified_schema)
                 new_table = pa.Table.from_pandas(new_df, preserve_index=False)
                 del new_df
                 new_table = _align_table(new_table, unified_schema)
@@ -588,15 +595,7 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
                     if dupes > 0:
                         print(f"    {league}: removed {dupes:,} duplicates")
 
-                # Cast mixed-type columns to string before PyArrow conversion
-                # (unified schema may specify string for columns with type conflicts,
-                # e.g. score columns that are int in some seasons and string in others)
-                if unified_schema is not None:
-                    for field in unified_schema:
-                        if field.type == pa.string() and field.name in league_df.columns:
-                            col = league_df[field.name]
-                            if col.dtype == object:
-                                league_df[field.name] = _cast_mixed_to_string(col)
+                _cast_mixed_columns(league_df, unified_schema)
 
                 # Convert to PyArrow and align schema
                 table = pa.Table.from_pandas(league_df, preserve_index=False)
