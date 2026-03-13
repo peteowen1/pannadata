@@ -23,6 +23,7 @@ jobs:
           packages: |
             any::arrow
             any::dplyr
+            any::xgboost
 
       - name: Download source data
         env:
@@ -44,6 +45,13 @@ jobs:
             echo "Downloaded opta_shot_events.parquet"
           else
             echo "::warning::No opta shot events available, shot charts will be skipped"
+          fi
+
+          # Pre-trained xG model (optional — shots will lack xG if missing)
+          if gh release download models -p "xg_model.rds" -D source/; then
+            echo "Downloaded xg_model.rds"
+          else
+            echo "::warning::xg_model.rds not available — shots will not include xG"
           fi
 
           echo "Downloaded source data:"
