@@ -35,8 +35,9 @@ jobs:
           gh release download ratings-data -p "seasonal_spm.parquet" -D source/ || { echo "ERROR: Failed to download seasonal_spm.parquet"; exit 1; }
           gh release download ratings-data -p "player_metadata.parquet" -D source/ || { echo "ERROR: Failed to download player_metadata.parquet"; exit 1; }
 
-          # Match predictions (pass through from blog-latest)
+          # Match predictions (pass through from blog-latest → renamed to predictions.parquet)
           gh release download blog-latest -p "match_predictions.parquet" -D blog/ || { echo "ERROR: Failed to download match_predictions.parquet from blog-latest"; exit 1; }
+          mv blog/match_predictions.parquet blog/predictions.parquet
 
           # Opta shot events (optional — doesn't fail build)
           if gh release download opta-latest -p "opta_shot_events.parquet" -D source/; then
@@ -72,7 +73,7 @@ jobs:
               df <- read_parquet("source/opta_skills.parquet")
               latest <- df |> filter(season_end_year == max(season_end_year))
               if (nrow(latest) == 0) stop("Filter produced 0 rows -- aborting")
-              write_parquet(latest, "blog/panna_player_skills.parquet")
+              write_parquet(latest, "blog/player-skills.parquet")
               cat(sprintf("Filtered to season %d: %d players\n", max(df$season_end_year), nrow(latest)))
             '
           else
@@ -91,10 +92,10 @@ jobs:
           fi
           upload_errors=0
           for f in blog/*.parquet; do
-            if wrangler r2 object put "inthegame-data/$(basename $f)" --file "$f" --remote; then
-              echo "Uploaded $(basename $f)"
+            if wrangler r2 object put "inthegame-data/football/$(basename $f)" --file "$f" --remote; then
+              echo "Uploaded football/$(basename $f)"
             else
-              echo "ERROR: Failed to upload $(basename $f)"
+              echo "ERROR: Failed to upload football/$(basename $f)"
               upload_errors=$((upload_errors + 1))
             fi
           done

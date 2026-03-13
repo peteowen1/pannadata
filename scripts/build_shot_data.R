@@ -41,5 +41,5 @@ panna_shots <- opta_shots |>
 stopifnot(nrow(panna_shots) > 0, length(recent_seasons) > 0)
 
 dir.create("blog", showWarnings = FALSE)
-write_parquet(panna_shots, "blog/panna_shots.parquet")
-cat("panna_shots:", nrow(panna_shots), "shots across", length(recent_seasons), "seasons\n")
+write_parquet(panna_shots, "blog/shots.parquet")
+cat("shots:", nrow(panna_shots), "shots across", length(recent_seasons), "seasons\n")

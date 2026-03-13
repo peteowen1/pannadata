@@ -72,8 +72,8 @@ stopifnot(
 )
 
 dir.create("blog", showWarnings = FALSE)
-write_parquet(panna_ratings, "blog/panna_ratings.parquet")
-cat("panna_ratings:", nrow(panna_ratings), "players (season", latest_season, ")\n")
+write_parquet(panna_ratings, "blog/ratings.parquet")
+cat("ratings:", nrow(panna_ratings), "players (season", latest_season, ")\n")
 
 # Shot data from Opta — tryCatch ensures shot failures don't block ratings
 # when run locally or via source(). In GHA, build_shot_data.R runs as a separate step.
