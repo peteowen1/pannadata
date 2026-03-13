@@ -24,12 +24,18 @@ jobs:
             any::arrow
             any::dplyr
 
-      - name: Download blog data
+      - name: Download source data
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p blog source
-          gh release download blog-latest -p "panna_ratings.parquet" -D blog/ || { echo "ERROR: Failed to download panna_ratings.parquet from blog-latest"; exit 1; }
+
+          # Source ratings + metadata (for build_blog_data.R enrichment)
+          gh release download ratings-data -p "seasonal_xrapm.parquet" -D source/ || { echo "ERROR: Failed to download seasonal_xrapm.parquet"; exit 1; }
+          gh release download ratings-data -p "seasonal_spm.parquet" -D source/ || { echo "ERROR: Failed to download seasonal_spm.parquet"; exit 1; }
+          gh release download ratings-data -p "player_metadata.parquet" -D source/ || { echo "ERROR: Failed to download player_metadata.parquet"; exit 1; }
+
+          # Match predictions (pass through from blog-latest)
           gh release download blog-latest -p "match_predictions.parquet" -D blog/ || { echo "ERROR: Failed to download match_predictions.parquet from blog-latest"; exit 1; }
 
           # Opta shot events (optional — doesn't fail build)
@@ -39,8 +45,11 @@ jobs:
             echo "::warning::No opta shot events available, shot charts will be skipped"
           fi
 
-          echo "Downloaded blog data:"
+          echo "Downloaded source data:"
           ls -lh blog/ source/
+
+      - name: Build ratings parquet
+        run: Rscript scripts/build_blog_data.R
 
       - name: Build shot parquet
         run: |
