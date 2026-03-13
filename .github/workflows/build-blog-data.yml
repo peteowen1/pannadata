@@ -52,6 +52,24 @@ jobs:
             echo "::notice::Skipping shot data — source file not available"
           fi
 
+      - name: Download and filter player skills
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release download opta-latest -p "opta_skills.parquet" -D source/; then
+            Rscript -e '
+              library(arrow)
+              library(dplyr)
+              df <- read_parquet("source/opta_skills.parquet")
+              latest <- df |> filter(season_end_year == max(season_end_year))
+              if (nrow(latest) == 0) stop("Filter produced 0 rows -- aborting")
+              write_parquet(latest, "blog/panna_player_skills.parquet")
+              cat(sprintf("Filtered to season %d: %d players\n", max(df$season_end_year), nrow(latest)))
+            '
+          else
+            echo "::warning::opta_skills.parquet not available — player skills won't update"
+          fi
+
       - name: Upload to R2
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_TOKEN }}
