@@ -61,20 +61,16 @@ jobs:
             echo "::warning::opta_player_stats.parquet not available — match stats will be skipped"
           fi
 
-          # Opta lineups + per-league events (optional — for chain visualizer)
+          # Opta lineups (optional — for match-shots team resolution)
           if gh release download opta-latest -p "opta_lineups.parquet" -D source/; then
             echo "Downloaded opta_lineups.parquet"
-            # Download event files for blog leagues
-            for comp in EPL Championship La_Liga Ligue_1 Bundesliga Serie_A Eredivisie Primeira_Liga Scottish_Premiership Super_Lig; do
-              if gh release download opta-latest -p "events_${comp}.parquet" -D source/; then
-                echo "Downloaded events_${comp}.parquet"
-              else
-                echo "::warning::events_${comp}.parquet not available"
-              fi
-            done
           else
-            echo "::warning::opta_lineups.parquet not available — chain data will be skipped"
+            echo "::warning::opta_lineups.parquet not available — match-shots will lack team names"
           fi
+
+          # NOTE: Per-league events_*.parquet files (~2.6GB total) are too large for
+          # GHA runners. Chain parquets are built locally and uploaded to R2 manually.
+          # To build chains: download events from opta-latest, run build_blog_data.R locally.
 
           echo "Downloaded source data:"
           ls -lh blog/ source/
