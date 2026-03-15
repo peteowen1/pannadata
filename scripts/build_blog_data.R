@@ -147,11 +147,69 @@ tryCatch({
       filter(minsPlayed > 0) |>
       arrange(match_id, team_name, desc(minsPlayed))
 
-    write_parquet(match_stats, "blog/match-stats.parquet")
-    cat("match-stats:", nrow(match_stats), "player-match rows\n")
+    # Write per-league parquets (match page loads match-stats-{code}.parquet)
+    for (comp in names(comp_to_code)) {
+      code <- comp_to_code[comp]
+      league_stats <- match_stats |> filter(league == code)
+      if (nrow(league_stats) > 0) {
+        write_parquet(league_stats, paste0("blog/match-stats-", code, ".parquet"))
+        cat("match-stats-", code, ":", nrow(league_stats), "rows\n", sep = "")
+      }
+    }
   }
 }, error = function(e) {
   message("::warning::Match stats processing failed: ", conditionMessage(e))
+})
+
+# ── Match shots parquet for xG timeline + shot map ────────────────────────
+# Combines shot events with team info from lineups for the football match page.
+tryCatch({
+  shot_file <- list.files("source", pattern = "^opta_shot_events\\.parquet$", full.names = TRUE)
+  lineup_file <- list.files("source", pattern = "^opta_lineups\\.parquet$", full.names = TRUE)
+  if (length(shot_file) == 0 || length(lineup_file) == 0) {
+    message("INFO: Missing shot events or lineups — skipping match-shots")
+  } else {
+    shots <- read_parquet(shot_file[1])
+    lineups <- read_parquet(lineup_file[1],
+      col_select = c("match_id", "player_id", "team_id", "team_name"))
+    player_teams <- lineups |>
+      distinct(match_id, player_id, team_id, team_name) |>
+      rename(lineup_team_id = team_id, lineup_team_name = team_name)
+
+    blog_comps <- c("EPL", "Championship", "La_Liga", "Ligue_1", "Bundesliga",
+                    "Serie_A", "Eredivisie", "Primeira_Liga", "Scottish_Premiership",
+                    "Super_Lig")
+
+    shots_filtered <- shots |> filter(competition %in% blog_comps)
+    has_team_id <- "team_id" %in% names(shots_filtered)
+    has_team_name <- "team_name" %in% names(shots_filtered)
+
+    shots_enriched <- shots_filtered |>
+      left_join(player_teams, by = c("match_id", "player_id"))
+
+    match_shots <- shots_enriched |>
+      transmute(
+        match_id,
+        team_id = if (has_team_id) coalesce(team_id, lineup_team_id) else lineup_team_id,
+        team_name = coalesce(lineup_team_name,
+                             if (has_team_name) team_name else NA_character_),
+        player_name,
+        minute = as.integer(minute),
+        second = as.integer(coalesce(second, 0)),
+        x = round(x, 1),
+        y = round(y, 1),
+        type_id = as.integer(type_id),
+        is_goal = type_id == 16L,
+        xg = if ("xg" %in% names(shots_filtered)) round(xg, 3) else NA_real_
+      ) |>
+      filter(!is.na(match_id)) |>
+      arrange(match_id, minute, second)
+
+    write_parquet(match_shots, "blog/match-shots.parquet")
+    cat("match-shots:", nrow(match_shots), "shot events\n")
+  }
+}, error = function(e) {
+  message("::warning::Match shots processing failed: ", conditionMessage(e))
 })
 
 # ── Football chain parquets from Opta events ───────────────────────────────

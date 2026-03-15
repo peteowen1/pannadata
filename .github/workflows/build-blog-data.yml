@@ -54,6 +54,28 @@ jobs:
             echo "::warning::xg_model.rds not available — shots will not include xG"
           fi
 
+          # Opta player stats (optional — for match stats tables)
+          if gh release download opta-latest -p "opta_player_stats.parquet" -D source/; then
+            echo "Downloaded opta_player_stats.parquet"
+          else
+            echo "::warning::opta_player_stats.parquet not available — match stats will be skipped"
+          fi
+
+          # Opta lineups + per-league events (optional — for chain visualizer)
+          if gh release download opta-latest -p "opta_lineups.parquet" -D source/; then
+            echo "Downloaded opta_lineups.parquet"
+            # Download event files for blog leagues
+            for comp in EPL Championship La_Liga Ligue_1 Bundesliga Serie_A Eredivisie Primeira_Liga Scottish_Premiership Super_Lig; do
+              if gh release download opta-latest -p "events_${comp}.parquet" -D source/; then
+                echo "Downloaded events_${comp}.parquet"
+              else
+                echo "::warning::events_${comp}.parquet not available"
+              fi
+            done
+          else
+            echo "::warning::opta_lineups.parquet not available — chain data will be skipped"
+          fi
+
           echo "Downloaded source data:"
           ls -lh blog/ source/
 
