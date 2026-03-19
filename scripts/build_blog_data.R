@@ -212,6 +212,50 @@ tryCatch({
   message("::warning::Match shots processing failed: ", conditionMessage(e))
 })
 
+# ── League-level xG aggregation for standings page ─────────────────────────
+# Sums shot-level xG per team per league per season from match-shots data.
+# Also computes xGA (opponent xG). Output: blog/league-xg.parquet (~2KB).
+tryCatch({
+  if (exists("match_shots") && exists("match_stats")) {
+    # Get match_id → league/season mapping from match_stats
+    match_meta <- match_stats |>
+      distinct(match_id, league, season)
+
+    # Sum xG per team per match
+    team_match_xg <- match_shots |>
+      filter(!is.na(xg)) |>
+      inner_join(match_meta, by = "match_id") |>
+      group_by(match_id, league, season, team_name) |>
+      summarise(xgf = sum(xg, na.rm = TRUE), .groups = "drop")
+
+    # Compute xGA: for each match, each team's xGA = opponent's xGF
+    match_teams <- team_match_xg |>
+      group_by(match_id) |>
+      mutate(xga = sum(xgf) - xgf) |>
+      ungroup()
+
+    # Aggregate to season level
+    league_xg <- match_teams |>
+      group_by(league, season, team_name) |>
+      summarise(
+        matches = n(),
+        xgf = round(sum(xgf), 1),
+        xga = round(sum(xga), 1),
+        xgd = round(sum(xgf) - sum(xga), 1),
+        .groups = "drop"
+      ) |>
+      arrange(league, desc(xgd))
+
+    write_parquet(league_xg, "blog/league-xg.parquet")
+    cat("league-xg:", nrow(league_xg), "team-seasons across",
+        length(unique(league_xg$league)), "leagues\n")
+  } else {
+    message("INFO: match_shots or match_stats not available — skipping league-xg")
+  }
+}, error = function(e) {
+  message("::warning::League xG aggregation failed: ", conditionMessage(e))
+})
+
 # ── Football chain parquets from Opta events ───────────────────────────────
 # Per-league possession chain data for the football chain visualizer page.
 # Source: events_{Competition}.parquet + opta_lineups.parquet from opta-latest release.
