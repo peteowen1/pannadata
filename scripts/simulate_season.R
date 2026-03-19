@@ -31,9 +31,14 @@ cat("Loaded", nrow(predictions), "match predictions\n")
 # For now, we compute current standings from predictions that have actual results.
 # TODO: Load fixtures.json or use a separate results source.
 
-# ── Leagues to simulate ────────────────────────────────────────────────
+# ── Filter to domestic leagues only (cups have TBD matchups) ──────────
+league_codes <- c("ENG", "ENG2", "ESP", "FRA", "GER", "ITA", "NED", "POR", "SCO", "TUR")
+predictions <- predictions |>
+  filter(league %in% league_codes, home_team != "", away_team != "")
+
 leagues <- unique(predictions$league)
-cat("Leagues:", paste(leagues, collapse = ", "), "\n\n")
+cat("Leagues:", paste(leagues, collapse = ", "), "\n")
+cat("Matches after filtering:", nrow(predictions), "\n\n")
 
 # ── Simulate one season for a league ───────────────────────────────────
 simulate_league <- function(preds, n_sims = N_SIMS) {

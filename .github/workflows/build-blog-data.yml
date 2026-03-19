@@ -61,11 +61,21 @@ jobs:
             echo "::warning::opta_lineups.parquet not available — match-shots will lack team names"
           fi
 
-          # NOTE: opta_player_stats.parquet (236MB) and
-          # per-league events_*.parquet files (~2.6GB total) cause OOM on standard GHA
-          # runners when loaded into R. Match stats, match-shots, and chain parquets
-          # are built locally and uploaded to R2 manually.
-          # To build: download from opta-latest, run build_blog_data.R locally.
+          # Opta player stats (247MB — for match-stats per league)
+          if gh release download opta-latest -p "opta_player_stats.parquet" -D source/; then
+            echo "Downloaded opta_player_stats.parquet"
+          else
+            echo "::warning::opta_player_stats.parquet not available — match stats won't update"
+          fi
+
+          # Opta xmetrics (10MB — for league xG aggregation)
+          if gh release download opta-latest -p "opta_xmetrics.parquet" -D source/; then
+            echo "Downloaded opta_xmetrics.parquet"
+          else
+            echo "::warning::opta_xmetrics.parquet not available — league xG won't update"
+          fi
+
+          # Per-league event files downloaded on-demand by build_chains_ci.R
 
           echo "Downloaded source data:"
           ls -lh blog/ source/
@@ -143,6 +153,54 @@ jobs:
             '
           else
             echo "::notice::Skipping match-shots — source files not available"
+          fi
+
+      - name: Build match-stats per league
+        continue-on-error: true
+        run: |
+          if [ -f source/opta_player_stats.parquet ]; then
+            Rscript scripts/rebuild_match_stats.R
+          else
+            echo "::notice::Skipping match-stats — source file not available"
+          fi
+
+      - name: Build league xG from xmetrics
+        continue-on-error: true
+        run: |
+          if [ -f source/opta_xmetrics.parquet ]; then
+            Rscript -e '
+              library(arrow); library(dplyr)
+              xm <- read_parquet("source/opta_xmetrics.parquet")
+              cc <- c(EPL="ENG",Championship="ENG2",La_Liga="ESP",Ligue_1="FRA",
+                Bundesliga="GER",Serie_A="ITA",Eredivisie="NED",
+                Primeira_Liga="POR",Scottish_Premiership="SCO",Super_Lig="TUR")
+              xm_blog <- xm |> filter(competition %in% names(cc))
+              lxg <- xm_blog |> mutate(league=cc[competition]) |>
+                group_by(league, season, team_name) |>
+                summarise(matches=max(round(sum(minutes)/90/11),1),
+                  xgf=round(sum(xg,na.rm=TRUE),1), .groups="drop")
+              latest <- lxg |> group_by(league) |> filter(season==max(season)) |> ungroup()
+              lt <- latest |> group_by(league, season) |>
+                mutate(n_teams=n(), ltx=sum(xgf),
+                  xga=round((ltx-xgf)/(n_teams-1)*2,1), xgd=round(xgf-xga,1)) |>
+                ungroup() |> select(league,season,team_name,matches,xgf,xga,xgd) |>
+                arrange(league, desc(xgd))
+              write_parquet(lt, "blog/league-xg.parquet")
+              cat("league-xg:", nrow(lt), "rows\n")
+            '
+          else
+            echo "::notice::Skipping league-xg — source file not available"
+          fi
+
+      - name: Build chain parquets (one league at a time)
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -f source/opta_lineups.parquet ]; then
+            Rscript scripts/build_chains_ci.R
+          else
+            echo "::notice::Skipping chains — lineups file not available"
           fi
 
       - name: Upload to R2
