@@ -53,19 +53,8 @@ jobs:
             echo "::warning::opta_lineups.parquet not available — match-shots will lack team names"
           fi
 
-          # Opta player stats (247MB — for match-stats per league)
-          if gh release download opta-latest -p "opta_player_stats.parquet" -D source/; then
-            echo "Downloaded opta_player_stats.parquet"
-          else
-            echo "::warning::opta_player_stats.parquet not available — match stats won't update"
-          fi
-
-          # Opta xmetrics (10MB — for league xG aggregation)
-          if gh release download opta-latest -p "opta_xmetrics.parquet" -D source/; then
-            echo "Downloaded opta_xmetrics.parquet"
-          else
-            echo "::warning::opta_xmetrics.parquet not available — league xG won't update"
-          fi
+          # NOTE: opta_player_stats.parquet (247MB) and opta_xmetrics.parquet (10MB) are
+          # downloaded lazily by their respective steps to reduce peak memory usage.
 
           # Per-league event files downloaded on-demand by build_chains_ci.R
 
@@ -136,16 +125,24 @@ jobs:
 
       - name: Build match-stats per league
         continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if [ -f source/opta_player_stats.parquet ]; then
+          # Download on-demand to reduce peak memory (247MB file)
+          if gh release download opta-latest -p "opta_player_stats.parquet" -D source/; then
             Rscript scripts/rebuild_match_stats.R
+            rm -f source/opta_player_stats.parquet  # free disk for chains
           else
             echo "::notice::Skipping match-stats — source file not available"
           fi
 
       - name: Build league xG from xmetrics
         continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          # Download on-demand (10MB)
+          gh release download opta-latest -p "opta_xmetrics.parquet" -D source/ 2>/dev/null || true
           if [ -f source/opta_xmetrics.parquet ]; then
             Rscript -e '
               library(arrow); library(dplyr)
