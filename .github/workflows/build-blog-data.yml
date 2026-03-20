@@ -23,7 +23,6 @@ jobs:
           packages: |
             any::arrow
             any::dplyr
-            any::xgboost
 
       - name: Download source data
         env:
@@ -45,13 +44,6 @@ jobs:
             echo "Downloaded opta_shot_events.parquet"
           else
             echo "::warning::No opta shot events available, shot charts will be skipped"
-          fi
-
-          # Pre-trained xG model (optional — shots will lack xG if missing)
-          if gh release download models -p "xg_model.rds" -D source/; then
-            echo "Downloaded xg_model.rds"
-          else
-            echo "::warning::xg_model.rds not available — shots will not include xG"
           fi
 
           # Opta lineups (63MB — for match-shots team resolution)
@@ -111,48 +103,35 @@ jobs:
             echo "::warning::opta_skills.parquet not available — player skills won't update"
           fi
 
-      - name: Build match-shots with xG
+      - name: Build match-shots (xG from enriched source)
         continue-on-error: true
         run: |
-          if [ -f source/opta_shot_events.parquet ] && [ -f source/xg_model.rds ]; then
+          if [ -f source/opta_shot_events.parquet ]; then
             Rscript -e '
-              library(arrow); library(dplyr); library(xgboost)
+              library(arrow); library(dplyr)
               comps <- c("EPL","Championship","La_Liga","Ligue_1","Bundesliga","Serie_A","Eredivisie","Primeira_Liga","Scottish_Premiership","Super_Lig")
               shots <- read_parquet("source/opta_shot_events.parquet") |> filter(competition %in% comps)
-              # xG model
-              xg_model <- readRDS("source/xg_model.rds")
-              dist <- sqrt((100 - shots$x)^2 + (50 - shots$y)^2)
-              dtgl <- pmax(100 - shots$x, 0.1)
-              al <- atan2(50 - 6 - shots$y, dtgl); ar <- atan2(50 + 6 - shots$y, dtgl)
-              bp <- tolower(shots$body_part); si <- tolower(shots$situation)
-              feat <- data.frame(x=shots$x, y=shots$y, distance_to_goal=dist, angle_to_goal=abs(ar-al),
-                in_penalty_area=as.integer(shots$x>83 & shots$y>21 & shots$y<79),
-                in_six_yard_box=as.integer(shots$x>94 & shots$y>37 & shots$y<63),
-                is_header=as.integer(grepl("head",bp)), is_right_foot=as.integer(grepl("right",bp)),
-                is_left_foot=as.integer(grepl("left",bp)), is_open_play=as.integer(grepl("open",si)),
-                is_set_piece=as.integer(grepl("set",si)), is_corner=as.integer(grepl("corner",si)),
-                is_direct_freekick=as.integer(grepl("free",si)),
-                is_big_chance=as.integer(coalesce(shots$big_chance, 0L)))
-              fc <- xg_model$panna_metadata$feature_cols
-              for (c in setdiff(fc, names(feat))) feat[[c]] <- 0
-              X <- as.matrix(feat[, fc, drop=FALSE]); X[is.na(X)] <- 0
-              shots$xg <- round(predict(xg_model$model, X), 3)
+              has_xg <- "xg" %in% names(shots)
+              cat("Source has xG:", has_xg, "\n")
               # Team names from lineups
               if (file.exists("source/opta_lineups.parquet")) {
                 lu <- read_parquet("source/opta_lineups.parquet", col_select=c("match_id","player_id","team_id","team_name"))
                 pt <- lu |> distinct(match_id, player_id, team_id, team_name) |> rename(lu_tid=team_id, lu_tn=team_name)
                 shots <- shots |> left_join(pt, by=c("match_id","player_id"))
               }
-              ms <- shots |> transmute(match_id, team_id=if("lu_tid" %in% names(shots)) coalesce(team_id,lu_tid) else team_id,
-                team_name=if("lu_tn" %in% names(shots)) lu_tn else NA_character_,
-                player_name, minute=as.integer(minute), second=as.integer(coalesce(second,0)),
-                x=round(x,1), y=round(y,1), type_id=as.integer(type_id), is_goal=type_id==16L, xg) |>
+              ms <- shots |> transmute(match_id,
+                team_id = if ("lu_tid" %in% names(shots)) coalesce(team_id, lu_tid) else team_id,
+                team_name = if ("lu_tn" %in% names(shots)) lu_tn else NA_character_,
+                player_name, minute = as.integer(minute), second = as.integer(coalesce(second, 0)),
+                x = round(x, 1), y = round(y, 1), type_id = as.integer(type_id),
+                is_goal = type_id == 16L,
+                xg = if (has_xg) round(xg, 3) else NA_real_) |>
                 filter(!is.na(match_id)) |> arrange(match_id, minute, second)
               write_parquet(ms, "blog/match-shots.parquet")
-              cat("match-shots:", nrow(ms), "shots with xG\n")
+              cat("match-shots:", nrow(ms), "shots", if(has_xg) "with xG" else "(no xG)", "\n")
             '
           else
-            echo "::notice::Skipping match-shots — source files not available"
+            echo "::notice::Skipping match-shots — source file not available"
           fi
 
       - name: Build match-stats per league

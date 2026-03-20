@@ -127,6 +127,35 @@ jobs:
         fi
         python ../scripts/opta/consolidate_opta.py
 
+    - name: Setup R for xG enrichment
+      uses: r-lib/actions/setup-r@v2
+      with:
+        use-public-rspm: true
+
+    - name: Install R dependencies for xG
+      uses: r-lib/actions/setup-r-dependencies@v2
+      with:
+        packages: |
+          any::arrow
+          any::dplyr
+          any::xgboost
+
+    - name: Enrich shots with xG
+      continue-on-error: true
+      run: |
+        if [ -f data/opta/opta_shot_events.parquet ]; then
+          mkdir -p source
+          if gh release download models -p "xg_model.rds" -D source/; then
+            Rscript scripts/enrich_shots_xg.R data/opta/opta_shot_events.parquet source/xg_model.rds
+          else
+            echo "::warning::xg_model.rds not available — shots will not include xG"
+          fi
+        else
+          echo "::notice::No shot events file — skipping xG enrichment"
+        fi
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
     - name: Upload to GitHub Releases
       run: |
         cd data
