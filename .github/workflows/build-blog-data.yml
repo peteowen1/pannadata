@@ -137,36 +137,41 @@ jobs:
             echo "::notice::Skipping match-stats — source file not available"
           fi
 
-      - name: Build league xG from xmetrics
+      - name: Build league xG from match-shots
         continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          # Download on-demand (10MB)
-          gh release download opta-latest -p "opta_xmetrics.parquet" -D source/ 2>/dev/null || true
-          if [ -f source/opta_xmetrics.parquet ]; then
+          if [ -f blog/match-shots.parquet ]; then
             Rscript -e '
               library(arrow); library(dplyr)
-              xm <- read_parquet("source/opta_xmetrics.parquet")
-              cc <- c(EPL="ENG",Championship="ENG2",La_Liga="ESP",Ligue_1="FRA",
-                Bundesliga="GER",Serie_A="ITA",Eredivisie="NED",
-                Primeira_Liga="POR",Scottish_Premiership="SCO",Super_Lig="TUR")
-              xm_blog <- xm |> filter(competition %in% names(cc))
-              lxg <- xm_blog |> mutate(league=cc[competition]) |>
-                group_by(league, season, team_name) |>
-                summarise(matches=max(round(sum(minutes)/90/11),1),
-                  xgf=round(sum(xg,na.rm=TRUE),1), .groups="drop")
-              latest <- lxg |> group_by(league) |> filter(season==max(season)) |> ungroup()
-              lt <- latest |> group_by(league, season) |>
-                mutate(n_teams=n(), ltx=sum(xgf),
-                  xga=round((ltx-xgf)/(n_teams-1)*2,1), xgd=round(xgf-xga,1)) |>
-                ungroup() |> select(league,season,team_name,matches,xgf,xga,xgd) |>
-                arrange(league, desc(xgd))
-              write_parquet(lt, "blog/league-xg.parquet")
-              cat("league-xg:", nrow(lt), "rows\n")
+              ms <- read_parquet("blog/match-shots.parquet")
+              if (!"xg" %in% names(ms) || all(is.na(ms$xg))) {
+                cat("No xG in match-shots — skipping league-xg\n"); q()
+              }
+              # Read match-stats per league for match_id → league/season mapping
+              codes <- c("ENG","ENG2","ESP","FRA","GER","ITA","NED","POR","SCO","TUR")
+              meta <- list()
+              for (code in codes) {
+                f <- paste0("blog/match-stats-", code, ".parquet")
+                if (file.exists(f)) {
+                  meta[[code]] <- read_parquet(f, col_select=c("match_id","league","season")) |>
+                    distinct(match_id, league, season)
+                }
+              }
+              meta <- bind_rows(meta)
+              tmx <- ms |> filter(!is.na(xg)) |> inner_join(meta, by="match_id") |>
+                group_by(match_id, league, season, team_name) |>
+                summarise(xgf=sum(xg, na.rm=TRUE), .groups="drop") |>
+                group_by(match_id) |> mutate(xga=sum(xgf)-xgf) |> ungroup()
+              lxg <- tmx |> group_by(league, season, team_name) |>
+                summarise(matches=n(), xgf=round(sum(xgf),1), xga=round(sum(xga),1),
+                  xgd=round(sum(xgf)-sum(xga),1), .groups="drop")
+              latest <- lxg |> group_by(league) |> filter(season==max(season)) |>
+                ungroup() |> arrange(league, desc(xgd))
+              write_parquet(latest, "blog/league-xg.parquet")
+              cat("league-xg:", nrow(latest), "rows from per-match xG\n")
             '
           else
-            echo "::notice::Skipping league-xg — source file not available"
+            echo "::notice::Skipping league-xg — match-shots not available"
           fi
 
       - name: Build chain parquets (one league at a time)
