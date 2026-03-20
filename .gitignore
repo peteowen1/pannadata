@@ -17,3 +17,8 @@ CLAUDE.md
 # Claude Code temp files
 tmpclaude-*
 _ul*
+
+# Generated/cached artifacts
+.wrangler/
+blog/
+source/
