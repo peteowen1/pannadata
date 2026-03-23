@@ -174,6 +174,49 @@ jobs:
             echo "::notice::Skipping league-xg — match-shots not available"
           fi
 
+      - name: Enrich predictions with match-level xG
+        continue-on-error: true
+        run: |
+          if [ -f blog/match-shots.parquet ] && [ -f blog/predictions.parquet ]; then
+            Rscript -e '
+              library(arrow); library(dplyr)
+              ms <- read_parquet("blog/match-shots.parquet")
+              if (!"xg" %in% names(ms) || all(is.na(ms$xg))) {
+                cat("No xG in match-shots — skipping predictions enrichment\n"); q()
+              }
+              # Per-match, per-team xG totals
+              team_xg <- ms |> filter(!is.na(xg)) |>
+                group_by(match_id, team_id) |>
+                summarise(xg = round(sum(xg, na.rm = TRUE), 2), .groups = "drop")
+              # Get home/away from match-stats team_position
+              codes <- c("ENG","ENG2","ESP","FRA","GER","ITA","NED","POR","SCO","TUR")
+              pos <- list()
+              for (code in codes) {
+                f <- paste0("blog/match-stats-", code, ".parquet")
+                if (file.exists(f)) {
+                  pos[[code]] <- read_parquet(f, col_select = c("match_id","team_id","team_position")) |>
+                    distinct(match_id, team_id, team_position)
+                }
+              }
+              pos <- bind_rows(pos)
+              # Pivot to one row per match: xg_home, xg_away
+              match_xg <- team_xg |>
+                inner_join(pos, by = c("match_id", "team_id")) |>
+                filter(team_position %in% c("home", "away")) |>
+                tidyr::pivot_wider(id_cols = match_id, names_from = team_position,
+                  values_from = xg, names_prefix = "xg_")
+              # Enrich predictions
+              pred <- read_parquet("blog/predictions.parquet")
+              pred_enriched <- pred |>
+                left_join(match_xg |> select(match_id, xg_home, xg_away), by = "match_id")
+              write_parquet(pred_enriched, "blog/predictions.parquet")
+              n_xg <- sum(!is.na(pred_enriched$xg_home))
+              cat("predictions enriched:", n_xg, "/", nrow(pred_enriched), "matches have xG\n")
+            '
+          else
+            echo "::notice::Skipping predictions xG enrichment — required files not available"
+          fi
+
       - name: Build chain parquets (one league at a time)
         continue-on-error: true
         env:
