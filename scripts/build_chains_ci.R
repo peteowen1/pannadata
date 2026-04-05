@@ -15,6 +15,16 @@ dir.create(out_dir, showWarnings = FALSE)
 cat("=== Chain Builder (CI) ===\n")
 cat("Memory:", round(as.numeric(system("free -m | awk '/Mem:/{print $2}'", intern = TRUE)), 0), "MB total\n\n")
 
+# Load equity lookup (optional — from panna predictions pipeline)
+equity_file <- file.path(src_dir, "action_equity.parquet")
+has_equity <- file.exists(equity_file)
+if (has_equity) {
+  equity_lookup <- read_parquet(equity_file)
+  cat("Equity loaded:", nrow(equity_lookup), "actions\n")
+} else {
+  cat("No equity file — chains will not include EPV credit\n")
+}
+
 # Load lineups once (shared across all leagues)
 lineup_file <- file.path(src_dir, "opta_lineups.parquet")
 if (!file.exists(lineup_file)) stop("Missing: ", lineup_file)
@@ -110,6 +120,7 @@ for (comp in blog_comps) {
     transmute(
       match_id, chain_number = as.integer(chain_number),
       display_order = as.integer(display_order),
+      event_id,
       player_id, player_name, team_id,
       x = round(x, 1), y = round(y, 1),
       end_x = round(end_x, 1), end_y = round(end_y, 1),
@@ -124,6 +135,15 @@ for (comp in blog_comps) {
     ) |>
     select(-any_of("team_name_lookup")) |>
     arrange(match_id, chain_number, display_order)
+
+  # Join EPV equity if available
+  if (has_equity) {
+    chains <- chains |>
+      left_join(equity_lookup |> select(match_id, event_id, equity),
+                by = c("match_id", "event_id"))
+    n_eq <- sum(!is.na(chains$equity))
+    cat("  equity: ", n_eq, "/", nrow(chains), " actions\n", sep = "")
+  }
 
   league_code <- comp_to_code[comp]
   out_path <- file.path(out_dir, paste0("chains-", league_code, ".parquet"))

@@ -41,6 +41,21 @@ jobs:
           gh release download blog-latest -p "match_predictions.parquet" -D blog/ || { echo "ERROR: Failed to download match_predictions.parquet from blog-latest"; exit 1; }
           mv blog/match_predictions.parquet blog/predictions.parquet
 
+          # Game logs (per-match player value metrics — optional, pass through to R2)
+          if gh release download blog-latest -p "game_logs.parquet" -D blog/; then
+            mv blog/game_logs.parquet blog/game-logs.parquet
+            echo "Downloaded game-logs.parquet"
+          else
+            echo "::warning::game_logs.parquet not available — Value tab will be empty"
+          fi
+
+          # Action equity (per-action EPV credit — optional, used by chain builder)
+          if gh release download blog-latest -p "action_equity.parquet" -D source/; then
+            echo "Downloaded action_equity.parquet"
+          else
+            echo "::warning::action_equity.parquet not available — chains will lack equity"
+          fi
+
           # Opta shot events (optional — doesn't fail build)
           if gh release download opta-latest -p "opta_shot_events.parquet" -D source/; then
             echo "Downloaded opta_shot_events.parquet"
@@ -65,6 +80,15 @@ jobs:
 
       - name: Build ratings parquet
         run: Rscript scripts/build_blog_data.R
+
+      - name: Build player details parquet
+        continue-on-error: true
+        run: |
+          if [ -f source/opta_lineups.parquet ]; then
+            Rscript scripts/build_player_meta.R
+          else
+            echo "::notice::Skipping player details — lineups file not available"
+          fi
 
       - name: Build shot parquet
         run: |

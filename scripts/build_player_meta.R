@@ -1,7 +1,13 @@
 library(arrow)
 library(dplyr)
 
-lu <- read_parquet("data/opta/opta_lineups.parquet")
+# Support both local (data/opta/) and CI (source/) paths
+lu_path <- if (file.exists("source/opta_lineups.parquet")) {
+  "source/opta_lineups.parquet"
+} else {
+  "data/opta/opta_lineups.parquet"
+}
+lu <- read_parquet(lu_path)
 
 # Use the main league season format (e.g. "2024-2025"), not tournament seasons
 league_seasons <- grep("^\\d{4}-\\d{4}$", unique(lu$season), value = TRUE)
@@ -43,5 +49,5 @@ cat("Player metadata:", nrow(player_meta), "players\n")
 cat("Position coverage:", round(100 * mean(!is.na(player_meta$position)), 1), "%\n")
 
 dir.create("blog", showWarnings = FALSE)
-write_parquet(player_meta, "blog/player_metadata.parquet")
-cat("Saved blog/player_metadata.parquet\n")
+write_parquet(player_meta, "blog/player-details.parquet")
+cat("Saved blog/player-details.parquet\n")
