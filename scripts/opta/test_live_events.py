@@ -18,13 +18,13 @@ scraper = OptaScraper()
 # Season IDs for leagues we want to test (add more as needed)
 SEASONS = {
     "EPL": "51r6ph2woavlbbpk8f29nynf8",
+    "Serie A": "emdmtfr1v8rey2qru3xzfwges",
+    "La Liga": "80zg2v1cuqcfhphn56u4qpyqc",
+    "Bundesliga": "2bchmrj23l9u42d68ntcekob8",
+    "Ligue 1": "dbxs75cag7zyip5re0ppsanmc",
     "AFC CL Two": "bx57cmq1edfq53ckfk791supi",
     "AFC CL Elite": "3qixixbgvsajit71o6mxb7x4a",
     "A-League": "bi1u4m4xssntipznvmocabh39",
-    "La Liga": "eum3wxkqwgz7bhrk5kz7zu5ek",
-    "Serie A": "41cp0wg7b0ck2g85kpwtvdkm2",
-    "Bundesliga": "ajnp97j8msxafqbqyq3sd2s3e",
-    "Ligue 1": "bnh4b93kc4g5s2lv2kbvl3p22",
 }
 
 # Check for --match-id argument
