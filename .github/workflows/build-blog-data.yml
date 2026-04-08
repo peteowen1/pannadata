@@ -131,7 +131,7 @@ jobs:
           if [ -f source/opta_shot_events.parquet ]; then
             Rscript -e '
               library(arrow); library(dplyr)
-              comps <- c("EPL","Championship","La_Liga","Ligue_1","Bundesliga","Serie_A","Eredivisie","Primeira_Liga","Scottish_Premiership","Super_Lig")
+              comps <- c("EPL","Championship","La_Liga","Ligue_1","Bundesliga","Serie_A","Eredivisie","Primeira_Liga","Scottish_Premiership","Super_Lig","UCL","UEL","Conference_League")
               shots <- read_parquet("source/opta_shot_events.parquet") |> filter(competition %in% comps)
               has_xg <- "xg" %in% names(shots)
               cat("Source has xG:", has_xg, "\n")
@@ -180,7 +180,7 @@ jobs:
                 cat("No xG in match-shots — skipping league-xg\n"); q()
               }
               # Read match-stats per league for match_id → league/season mapping
-              codes <- c("ENG","ENG2","ESP","FRA","GER","ITA","NED","POR","SCO","TUR")
+              codes <- c("ENG","ENG2","ESP","FRA","GER","ITA","NED","POR","SCO","TUR","UCL","UEL","UECL")
               meta <- list()
               for (code in codes) {
                 f <- paste0("blog/match-stats-", code, ".parquet")
@@ -221,7 +221,7 @@ jobs:
                 group_by(match_id, team_id) |>
                 summarise(xg = round(sum(xg, na.rm = TRUE), 2), .groups = "drop")
               # Get home/away from match-stats team_position
-              codes <- c("ENG","ENG2","ESP","FRA","GER","ITA","NED","POR","SCO","TUR")
+              codes <- c("ENG","ENG2","ESP","FRA","GER","ITA","NED","POR","SCO","TUR","UCL","UEL","UECL")
               pos <- list()
               for (code in codes) {
                 f <- paste0("blog/match-stats-", code, ".parquet")

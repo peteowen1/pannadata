@@ -47,11 +47,12 @@ cat("Lineups loaded:", nrow(match_teams), "matches\n\n")
 
 blog_comps <- c("EPL", "Championship", "La_Liga", "Ligue_1", "Bundesliga",
                 "Serie_A", "Eredivisie", "Primeira_Liga", "Scottish_Premiership",
-                "Super_Lig")
+                "Super_Lig", "UCL", "UEL", "Conference_League")
 comp_to_code <- c(
   EPL = "ENG", Championship = "ENG2", La_Liga = "ESP", Ligue_1 = "FRA",
   Bundesliga = "GER", Serie_A = "ITA", Eredivisie = "NED",
-  Primeira_Liga = "POR", Scottish_Premiership = "SCO", Super_Lig = "TUR"
+  Primeira_Liga = "POR", Scottish_Premiership = "SCO", Super_Lig = "TUR",
+  UCL = "UCL", UEL = "UEL", Conference_League = "UECL"
 )
 dead_ball_types <- c(2L, 4L, 5L, 6L, 17L, 55L, 56L, 57L, 70L, 80L, 81L)
 non_play_types <- c(18L, 19L, 24L, 27L, 28L, 30L, 32L, 34L, 37L, 40L, 43L, 65L, 68L)
