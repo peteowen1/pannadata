@@ -2,12 +2,8 @@
 library(arrow); library(dplyr)
 dir.create("blog", showWarnings = FALSE)
 
-comp_to_code <- c(
-  EPL = "ENG", Championship = "ENG2", La_Liga = "ESP", Ligue_1 = "FRA",
-  Bundesliga = "GER", Serie_A = "ITA", Eredivisie = "NED",
-  Primeira_Liga = "POR", Scottish_Premiership = "SCO", Super_Lig = "TUR",
-  UCL = "UCL", UEL = "UEL", Conference_League = "UECL"
-)
+source("scripts/league_config.R")
+comp_to_code <- BLOG_COMP_TO_CODE
 
 # Use arrow dataset for lazy evaluation — avoids loading 247MB into R memory at once
 ds <- open_dataset("source/opta_player_stats.parquet", format = "parquet")

@@ -45,15 +45,9 @@ global_team_map <- lineups |> distinct(team_id, team_name) |>
 rm(lineups); gc(verbose = FALSE)
 cat("Lineups loaded:", nrow(match_teams), "matches\n\n")
 
-blog_comps <- c("EPL", "Championship", "La_Liga", "Ligue_1", "Bundesliga",
-                "Serie_A", "Eredivisie", "Primeira_Liga", "Scottish_Premiership",
-                "Super_Lig", "UCL", "UEL", "Conference_League")
-comp_to_code <- c(
-  EPL = "ENG", Championship = "ENG2", La_Liga = "ESP", Ligue_1 = "FRA",
-  Bundesliga = "GER", Serie_A = "ITA", Eredivisie = "NED",
-  Primeira_Liga = "POR", Scottish_Premiership = "SCO", Super_Lig = "TUR",
-  UCL = "UCL", UEL = "UEL", Conference_League = "UECL"
-)
+source("scripts/league_config.R")
+blog_comps <- BLOG_COMPS
+comp_to_code <- BLOG_COMP_TO_CODE
 dead_ball_types <- c(2L, 4L, 5L, 6L, 17L, 55L, 56L, 57L, 70L, 80L, 81L)
 non_play_types <- c(18L, 19L, 24L, 27L, 28L, 30L, 32L, 34L, 37L, 40L, 43L, 65L, 68L)
 shot_types <- c(13L, 14L, 15L, 16L)
@@ -143,7 +137,8 @@ for (comp in blog_comps) {
       left_join(equity_lookup |> select(match_id, event_id, equity),
                 by = c("match_id", "event_id"))
     n_eq <- sum(!is.na(chains$equity))
-    cat("  equity: ", n_eq, "/", nrow(chains), " actions\n", sep = "")
+    if (n_eq == 0) cat("  WARNING: equity join matched 0 actions (check event_id format)\n")
+    else cat("  equity: ", n_eq, "/", nrow(chains), " actions\n", sep = "")
   }
 
   league_code <- comp_to_code[comp]

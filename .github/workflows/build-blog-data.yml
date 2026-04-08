@@ -131,8 +131,8 @@ jobs:
           if [ -f source/opta_shot_events.parquet ]; then
             Rscript -e '
               library(arrow); library(dplyr)
-              comps <- c("EPL","Championship","La_Liga","Ligue_1","Bundesliga","Serie_A","Eredivisie","Primeira_Liga","Scottish_Premiership","Super_Lig","UCL","UEL","Conference_League")
-              shots <- read_parquet("source/opta_shot_events.parquet") |> filter(competition %in% comps)
+              source("scripts/league_config.R")
+              shots <- read_parquet("source/opta_shot_events.parquet") |> filter(competition %in% BLOG_COMPS)
               has_xg <- "xg" %in% names(shots)
               cat("Source has xG:", has_xg, "\n")
               # Team names from lineups
@@ -175,12 +175,13 @@ jobs:
           if [ -f blog/match-shots.parquet ]; then
             Rscript -e '
               library(arrow); library(dplyr)
+              source("scripts/league_config.R")
               ms <- read_parquet("blog/match-shots.parquet")
               if (!"xg" %in% names(ms) || all(is.na(ms$xg))) {
                 cat("No xG in match-shots — skipping league-xg\n"); q()
               }
               # Read match-stats per league for match_id → league/season mapping
-              codes <- c("ENG","ENG2","ESP","FRA","GER","ITA","NED","POR","SCO","TUR","UCL","UEL","UECL")
+              codes <- BLOG_CODES
               meta <- list()
               for (code in codes) {
                 f <- paste0("blog/match-stats-", code, ".parquet")
@@ -212,6 +213,7 @@ jobs:
           if [ -f blog/match-shots.parquet ] && [ -f blog/predictions.parquet ]; then
             Rscript -e '
               library(arrow); library(dplyr)
+              source("scripts/league_config.R")
               ms <- read_parquet("blog/match-shots.parquet")
               if (!"xg" %in% names(ms) || all(is.na(ms$xg))) {
                 cat("No xG in match-shots — skipping predictions enrichment\n"); q()
@@ -221,7 +223,7 @@ jobs:
                 group_by(match_id, team_id) |>
                 summarise(xg = round(sum(xg, na.rm = TRUE), 2), .groups = "drop")
               # Get home/away from match-stats team_position
-              codes <- c("ENG","ENG2","ESP","FRA","GER","ITA","NED","POR","SCO","TUR","UCL","UEL","UECL")
+              codes <- BLOG_CODES
               pos <- list()
               for (code in codes) {
                 f <- paste0("blog/match-stats-", code, ".parquet")

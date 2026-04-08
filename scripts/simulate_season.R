@@ -131,7 +131,7 @@ simulate_league <- function(preds, league_standings = NULL, n_sims = N_SIMS) {
     top_half_pct = round(colMeans(positions <= ceiling(n_teams / 2)), 4),
     bottom_3_pct = round(colMeans(positions > n_teams - 3), 4),
     current_points = as.integer(cur_pts[teams]),
-    current_gd = as.integer(cur_gd[teams]),
+    current_gd = round(cur_gd[teams]),
     games_played = as.integer(cur_gp[teams])
   )
 
