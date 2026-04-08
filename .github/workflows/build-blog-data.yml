@@ -41,6 +41,13 @@ jobs:
           gh release download blog-latest -p "match_predictions.parquet" -D blog/ || { echo "ERROR: Failed to download match_predictions.parquet from blog-latest"; exit 1; }
           mv blog/match_predictions.parquet blog/predictions.parquet
 
+          # Season standings (for simulation script — optional)
+          if gh release download blog-latest -p "season_standings.parquet" -D blog/; then
+            echo "Downloaded season_standings.parquet"
+          else
+            echo "::warning::season_standings.parquet not available — simulations will lack current standings"
+          fi
+
           # Game logs (per-match player value metrics — optional, pass through to R2)
           if gh release download blog-latest -p "game_logs.parquet" -D blog/; then
             mv blog/game_logs.parquet blog/game-logs.parquet
