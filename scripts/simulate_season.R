@@ -42,10 +42,12 @@ leagues <- unique(predictions$league)
 cat("Leagues:", paste(leagues, collapse = ", "), "\n")
 cat("Matches after filtering:", nrow(predictions), "\n\n")
 
-# ── Simulate one season for a league ───────────────────────────────────
+# ── Simulate one season for a league (vectorized) ─────────────────────
 simulate_league <- function(preds, league_standings = NULL, n_sims = N_SIMS) {
   teams <- sort(unique(c(preds$home_team, preds$away_team)))
   n_teams <- length(teams)
+  n_matches <- nrow(preds)
+  team_idx <- setNames(seq_along(teams), teams)
 
   # Build current standings lookup
   cur_pts <- setNames(rep(0L, n_teams), teams)
@@ -63,45 +65,58 @@ simulate_league <- function(preds, league_standings = NULL, n_sims = N_SIMS) {
     }
   }
 
-  # Initialize result arrays (remaining games only — added to current later)
+  # Pre-compute match indices and probabilities as vectors
+  home_idx <- team_idx[preds$home_team]
+  away_idx <- team_idx[preds$away_team]
+  prob_H <- preds$prob_H
+  prob_HD <- preds$prob_H + preds$prob_D
+  gd_match <- preds$pred_home_goals - preds$pred_away_goals  # home perspective
+
+  # Generate all random numbers at once: n_sims x n_matches
+  rand <- matrix(runif(n_sims * n_matches), nrow = n_sims, ncol = n_matches)
+
+  # Classify outcomes: 1=home win, 2=draw, 3=away win
+  # Vectorized across all sims and matches simultaneously
+  is_home_win <- rand < rep(prob_H, each = n_sims)
+  is_draw <- !is_home_win & (rand < rep(prob_HD, each = n_sims))
+  is_away_win <- !is_home_win & !is_draw
+
+  # Initialize accumulators
   sim_points <- matrix(0L, nrow = n_sims, ncol = n_teams)
   sim_gd <- matrix(0, nrow = n_sims, ncol = n_teams)
-  colnames(sim_points) <- teams
-  colnames(sim_gd) <- teams
 
-  for (sim in seq_len(n_sims)) {
-    for (i in seq_len(nrow(preds))) {
-      m <- preds[i, ]
-      r <- runif(1)
-      if (r < m$prob_H) {
-        # Home win
-        sim_points[sim, m$home_team] <- sim_points[sim, m$home_team] + 3L
-        sim_gd[sim, m$home_team] <- sim_gd[sim, m$home_team] + (m$pred_home_goals - m$pred_away_goals)
-        sim_gd[sim, m$away_team] <- sim_gd[sim, m$away_team] - (m$pred_home_goals - m$pred_away_goals)
-      } else if (r < m$prob_H + m$prob_D) {
-        # Draw
-        sim_points[sim, m$home_team] <- sim_points[sim, m$home_team] + 1L
-        sim_points[sim, m$away_team] <- sim_points[sim, m$away_team] + 1L
-      } else {
-        # Away win
-        sim_points[sim, m$away_team] <- sim_points[sim, m$away_team] + 3L
-        sim_gd[sim, m$away_team] <- sim_gd[sim, m$away_team] + (m$pred_away_goals - m$pred_home_goals)
-        sim_gd[sim, m$home_team] <- sim_gd[sim, m$home_team] - (m$pred_away_goals - m$pred_home_goals)
-      }
-    }
+  # Process each match vectorized across all sims
+  for (m in seq_len(n_matches)) {
+    hi <- home_idx[m]
+    ai <- away_idx[m]
+    gd_m <- gd_match[m]
+
+    hw <- is_home_win[, m]
+    dr <- is_draw[, m]
+    aw <- is_away_win[, m]
+
+    # Points
+    sim_points[hw, hi] <- sim_points[hw, hi] + 3L
+    sim_points[dr, hi] <- sim_points[dr, hi] + 1L
+    sim_points[dr, ai] <- sim_points[dr, ai] + 1L
+    sim_points[aw, ai] <- sim_points[aw, ai] + 3L
+
+    # Goal difference
+    sim_gd[hw, hi] <- sim_gd[hw, hi] + gd_m
+    sim_gd[hw, ai] <- sim_gd[hw, ai] - gd_m
+    sim_gd[aw, ai] <- sim_gd[aw, ai] - gd_m
+    sim_gd[aw, hi] <- sim_gd[aw, hi] + gd_m
   }
 
-  # Add current standings to each simulation for ranking
+  # Add current standings for ranking
   total_points <- sweep(sim_points, 2, cur_pts, "+")
   total_gd <- sweep(sim_gd, 2, cur_gd, "+")
 
-  # Compute positions per simulation (using full-season totals)
+  # Compute positions per simulation (vectorized ranking)
   positions <- matrix(0L, nrow = n_sims, ncol = n_teams)
   colnames(positions) <- teams
   for (sim in seq_len(n_sims)) {
-    pts <- total_points[sim, ]
-    gd <- total_gd[sim, ]
-    ord <- order(-pts, -gd)
+    ord <- order(-total_points[sim, ], -total_gd[sim, ])
     positions[sim, ord] <- seq_along(ord)
   }
 
@@ -151,15 +166,19 @@ for (league in leagues) {
     "no standings"
   }
 
+  t0 <- proc.time()["elapsed"]
   cat("Simulating", league, ":", nrow(league_preds), "remaining matches,",
       length(unique(c(league_preds$home_team, league_preds$away_team))), "teams,",
-      standings_label, "\n")
+      standings_label)
 
   result <- simulate_league(league_preds, league_standings, N_SIMS)
   result$league <- league
   result$season <- season %||% ""
   result$matchday <- as.integer(matchdays)
   result$n_sims <- N_SIMS
+
+  elapsed <- round(proc.time()["elapsed"] - t0, 1)
+  cat(sprintf(" [%.1fs]\n", elapsed))
 
   all_results[[league]] <- result
 }
