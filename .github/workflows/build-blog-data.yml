@@ -262,6 +262,24 @@ jobs:
             echo "::notice::Skipping chains — lineups file not available"
           fi
 
+      - name: Simulate domestic seasons
+        continue-on-error: true
+        run: |
+          if [ -f blog/predictions.parquet ]; then
+            Rscript scripts/simulate_season.R
+          else
+            echo "::notice::Skipping domestic simulations — predictions not available"
+          fi
+
+      - name: Simulate cup competitions (UCL/UEL/UECL)
+        continue-on-error: true
+        run: |
+          if [ -f blog/predictions.parquet ]; then
+            Rscript scripts/simulate_cup.R
+          else
+            echo "::notice::Skipping cup simulations — predictions not available"
+          fi
+
       - name: Upload to R2
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_TOKEN }}
