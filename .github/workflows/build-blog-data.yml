@@ -24,6 +24,7 @@ jobs:
           packages: |
             any::arrow
             any::dplyr
+            any::tidyr
 
       - name: Download source data
         env:
@@ -39,6 +40,28 @@ jobs:
           # Match predictions (pass through from blog-latest → renamed to predictions.parquet)
           gh release download blog-latest -p "match_predictions.parquet" -D blog/ || { echo "ERROR: Failed to download match_predictions.parquet from blog-latest"; exit 1; }
           mv blog/match_predictions.parquet blog/predictions.parquet
+
+          # Season standings (for simulation script — optional)
+          if gh release download blog-latest -p "season_standings.parquet" -D blog/; then
+            echo "Downloaded season_standings.parquet"
+          else
+            echo "::warning::season_standings.parquet not available — simulations will lack current standings"
+          fi
+
+          # Game logs (per-match player value metrics — optional, pass through to R2)
+          if gh release download blog-latest -p "game_logs.parquet" -D blog/; then
+            mv blog/game_logs.parquet blog/game-logs.parquet
+            echo "Downloaded game-logs.parquet"
+          else
+            echo "::warning::game_logs.parquet not available — Value tab will be empty"
+          fi
+
+          # Action equity (per-action EPV credit — optional, used by chain builder)
+          if gh release download blog-latest -p "action_equity.parquet" -D source/; then
+            echo "Downloaded action_equity.parquet"
+          else
+            echo "::warning::action_equity.parquet not available — chains will lack equity"
+          fi
 
           # Opta shot events (optional — doesn't fail build)
           if gh release download opta-latest -p "opta_shot_events.parquet" -D source/; then
@@ -64,6 +87,15 @@ jobs:
 
       - name: Build ratings parquet
         run: Rscript scripts/build_blog_data.R
+
+      - name: Build player details parquet
+        continue-on-error: true
+        run: |
+          if [ -f source/opta_lineups.parquet ]; then
+            Rscript scripts/build_player_meta.R
+          else
+            echo "::notice::Skipping player details — lineups file not available"
+          fi
 
       - name: Build shot parquet
         run: |
@@ -99,8 +131,8 @@ jobs:
           if [ -f source/opta_shot_events.parquet ]; then
             Rscript -e '
               library(arrow); library(dplyr)
-              comps <- c("EPL","Championship","La_Liga","Ligue_1","Bundesliga","Serie_A","Eredivisie","Primeira_Liga","Scottish_Premiership","Super_Lig")
-              shots <- read_parquet("source/opta_shot_events.parquet") |> filter(competition %in% comps)
+              source("scripts/league_config.R")
+              shots <- read_parquet("source/opta_shot_events.parquet") |> filter(competition %in% BLOG_COMPS)
               has_xg <- "xg" %in% names(shots)
               cat("Source has xG:", has_xg, "\n")
               # Team names from lineups
@@ -143,12 +175,13 @@ jobs:
           if [ -f blog/match-shots.parquet ]; then
             Rscript -e '
               library(arrow); library(dplyr)
+              source("scripts/league_config.R")
               ms <- read_parquet("blog/match-shots.parquet")
               if (!"xg" %in% names(ms) || all(is.na(ms$xg))) {
                 cat("No xG in match-shots — skipping league-xg\n"); q()
               }
               # Read match-stats per league for match_id → league/season mapping
-              codes <- c("ENG","ENG2","ESP","FRA","GER","ITA","NED","POR","SCO","TUR")
+              codes <- BLOG_CODES
               meta <- list()
               for (code in codes) {
                 f <- paste0("blog/match-stats-", code, ".parquet")
@@ -172,6 +205,50 @@ jobs:
             '
           else
             echo "::notice::Skipping league-xg — match-shots not available"
+          fi
+
+      - name: Enrich predictions with match-level xG
+        continue-on-error: true
+        run: |
+          if [ -f blog/match-shots.parquet ] && [ -f blog/predictions.parquet ]; then
+            Rscript -e '
+              library(arrow); library(dplyr)
+              source("scripts/league_config.R")
+              ms <- read_parquet("blog/match-shots.parquet")
+              if (!"xg" %in% names(ms) || all(is.na(ms$xg))) {
+                cat("No xG in match-shots — skipping predictions enrichment\n"); q()
+              }
+              # Per-match, per-team xG totals
+              team_xg <- ms |> filter(!is.na(xg)) |>
+                group_by(match_id, team_id) |>
+                summarise(xg = round(sum(xg, na.rm = TRUE), 2), .groups = "drop")
+              # Get home/away from match-stats team_position
+              codes <- BLOG_CODES
+              pos <- list()
+              for (code in codes) {
+                f <- paste0("blog/match-stats-", code, ".parquet")
+                if (file.exists(f)) {
+                  pos[[code]] <- read_parquet(f, col_select = c("match_id","team_id","team_position")) |>
+                    distinct(match_id, team_id, team_position)
+                }
+              }
+              pos <- bind_rows(pos)
+              # Pivot to one row per match: xg_home, xg_away
+              match_xg <- team_xg |>
+                inner_join(pos, by = c("match_id", "team_id")) |>
+                filter(team_position %in% c("home", "away")) |>
+                tidyr::pivot_wider(id_cols = match_id, names_from = team_position,
+                  values_from = xg, names_prefix = "xg_")
+              # Enrich predictions
+              pred <- read_parquet("blog/predictions.parquet")
+              pred_enriched <- pred |>
+                left_join(match_xg |> select(match_id, xg_home, xg_away), by = "match_id")
+              write_parquet(pred_enriched, "blog/predictions.parquet")
+              n_xg <- sum(!is.na(pred_enriched$xg_home))
+              cat("predictions enriched:", n_xg, "/", nrow(pred_enriched), "matches have xG\n")
+            '
+          else
+            echo "::notice::Skipping predictions xG enrichment — required files not available"
           fi
 
       - name: Build chain parquets (one league at a time)

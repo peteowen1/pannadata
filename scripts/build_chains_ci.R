@@ -15,6 +15,16 @@ dir.create(out_dir, showWarnings = FALSE)
 cat("=== Chain Builder (CI) ===\n")
 cat("Memory:", round(as.numeric(system("free -m | awk '/Mem:/{print $2}'", intern = TRUE)), 0), "MB total\n\n")
 
+# Load equity lookup (optional — from panna predictions pipeline)
+equity_file <- file.path(src_dir, "action_equity.parquet")
+has_equity <- file.exists(equity_file)
+if (has_equity) {
+  equity_lookup <- read_parquet(equity_file)
+  cat("Equity loaded:", nrow(equity_lookup), "actions\n")
+} else {
+  cat("No equity file — chains will not include EPV credit\n")
+}
+
 # Load lineups once (shared across all leagues)
 lineup_file <- file.path(src_dir, "opta_lineups.parquet")
 if (!file.exists(lineup_file)) stop("Missing: ", lineup_file)
@@ -35,14 +45,9 @@ global_team_map <- lineups |> distinct(team_id, team_name) |>
 rm(lineups); gc(verbose = FALSE)
 cat("Lineups loaded:", nrow(match_teams), "matches\n\n")
 
-blog_comps <- c("EPL", "Championship", "La_Liga", "Ligue_1", "Bundesliga",
-                "Serie_A", "Eredivisie", "Primeira_Liga", "Scottish_Premiership",
-                "Super_Lig")
-comp_to_code <- c(
-  EPL = "ENG", Championship = "ENG2", La_Liga = "ESP", Ligue_1 = "FRA",
-  Bundesliga = "GER", Serie_A = "ITA", Eredivisie = "NED",
-  Primeira_Liga = "POR", Scottish_Premiership = "SCO", Super_Lig = "TUR"
-)
+source("scripts/league_config.R")
+blog_comps <- BLOG_COMPS
+comp_to_code <- BLOG_COMP_TO_CODE
 dead_ball_types <- c(2L, 4L, 5L, 6L, 17L, 55L, 56L, 57L, 70L, 80L, 81L)
 non_play_types <- c(18L, 19L, 24L, 27L, 28L, 30L, 32L, 34L, 37L, 40L, 43L, 65L, 68L)
 shot_types <- c(13L, 14L, 15L, 16L)
@@ -110,6 +115,7 @@ for (comp in blog_comps) {
     transmute(
       match_id, chain_number = as.integer(chain_number),
       display_order = as.integer(display_order),
+      event_id,
       player_id, player_name, team_id,
       x = round(x, 1), y = round(y, 1),
       end_x = round(end_x, 1), end_y = round(end_y, 1),
@@ -124,6 +130,16 @@ for (comp in blog_comps) {
     ) |>
     select(-any_of("team_name_lookup")) |>
     arrange(match_id, chain_number, display_order)
+
+  # Join EPV equity if available
+  if (has_equity) {
+    chains <- chains |>
+      left_join(equity_lookup |> select(match_id, event_id, equity),
+                by = c("match_id", "event_id"))
+    n_eq <- sum(!is.na(chains$equity))
+    if (n_eq == 0) cat("  WARNING: equity join matched 0 actions (check event_id format)\n")
+    else cat("  equity: ", n_eq, "/", nrow(chains), " actions\n", sep = "")
+  }
 
   league_code <- comp_to_code[comp]
   out_path <- file.path(out_dir, paste0("chains-", league_code, ".parquet"))
