@@ -44,12 +44,70 @@ spm <- seasonal_spm |>
   ungroup() |>
   select(all_of(dedup_key), spm_overall = spm)
 
+# Aggregate per-season EPV / WPA / PSV from per-match game-logs.parquet (if present).
+# game-logs.parquet is downloaded into blog/ by the workflow before this script runs.
+# We produce per-90 rates (to match the scale of panna/offense/defense) and join on dedup_key.
+gl_path <- "blog/game-logs.parquet"
+gl_extra <- NULL
+if (file.exists(gl_path)) {
+  game_logs <- read_parquet(gl_path)
+  # Only pull columns that don't already exist in xrapm/spm (to avoid collisions).
+  # panna/offense/defense/spm_overall/panna_percentile are excluded — those come from xrapm+spm.
+  extra_cols <- intersect(
+    c("epv_total", "epv_passing", "epv_shooting", "epv_dribbling", "epv_defending",
+      "wpa_total", "wpa_as_actor", "wpa_as_receiver",
+      "psv", "osv", "dsv", "panna_value_p90"),
+    names(game_logs)
+  )
+  if (length(extra_cols) > 0 && dedup_key %in% names(game_logs) &&
+      "total_minutes" %in% names(game_logs)) {
+    gl_dt <- data.table::as.data.table(game_logs)
+    # panna_value_p90 is already a per-90 rate — average weighted by minutes.
+    # Everything else is per-match credit — sum then divide by season minutes * 90.
+    rate_cols <- setdiff(extra_cols, "panna_value_p90")
+    agg <- gl_dt[, c(
+      list(gl_minutes = sum(total_minutes, na.rm = TRUE)),
+      lapply(.SD, \(x) sum(x, na.rm = TRUE))
+    ), by = dedup_key, .SDcols = rate_cols]
+    if ("panna_value_p90" %in% extra_cols) {
+      pvp_agg <- gl_dt[, .(
+        panna_value_p90 = sum(panna_value_p90 * total_minutes, na.rm = TRUE) /
+          pmax(sum(total_minutes, na.rm = TRUE), 1)
+      ), by = dedup_key]
+      agg <- merge(agg, pvp_agg, by = dedup_key, all.x = TRUE)
+    }
+    for (col in rate_cols) {
+      data.table::set(
+        agg, j = col,
+        value = ifelse(agg$gl_minutes > 0,
+                       round(agg[[col]] / agg$gl_minutes * 90, 4),
+                       NA_real_)
+      )
+    }
+    if ("panna_value_p90" %in% extra_cols) {
+      data.table::set(agg, j = "panna_value_p90", value = round(agg$panna_value_p90, 4))
+    }
+    agg[, gl_minutes := NULL]
+    gl_extra <- as.data.frame(agg)
+    cat("game-logs enrichment:", nrow(gl_extra), "players,",
+        length(extra_cols), "columns\n")
+  } else {
+    cat("game-logs found but missing required columns — skipping EPV/WPA/PSV enrichment\n")
+  }
+} else {
+  cat("game-logs.parquet not present — ratings will lack EPV/WPA/PSV columns\n")
+}
+
 n_before <- nrow(xrapm)
 # Select only columns from player_meta that aren't already in xrapm (plus the join key)
 meta_cols <- c(dedup_key, setdiff(names(player_meta), c(names(xrapm), "player_name")))
-panna_ratings <- xrapm |>
+enriched <- xrapm |>
   left_join(spm, by = dedup_key) |>
-  left_join(player_meta |> select(any_of(meta_cols)), by = dedup_key) |>
+  left_join(player_meta |> select(any_of(meta_cols)), by = dedup_key)
+if (!is.null(gl_extra)) {
+  enriched <- left_join(enriched, gl_extra, by = dedup_key)
+}
+panna_ratings <- enriched |>
   mutate(
     panna_rank = as.integer(rank(-xrapm, ties.method = "min")),
     panna_percentile = round(100 * rank(xrapm, ties.method = "min") / n(), 1)
@@ -57,7 +115,12 @@ panna_ratings <- xrapm |>
   select(
     panna_rank, player_name, team, league, position,
     panna = xrapm, offense, defense, spm_overall,
-    total_minutes, panna_percentile
+    total_minutes, panna_percentile,
+    any_of(c(
+      "epv_total", "epv_passing", "epv_shooting", "epv_dribbling", "epv_defending",
+      "wpa_total", "wpa_as_actor", "wpa_as_receiver",
+      "psv", "osv", "dsv", "panna_value_p90"
+    ))
   ) |>
   mutate(across(c(panna, offense, defense, spm_overall), \(x) round(x, 4))) |>
   arrange(panna_rank)
