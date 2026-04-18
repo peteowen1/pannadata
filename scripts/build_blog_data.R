@@ -112,10 +112,32 @@ panna_ratings <- enriched |>
     panna_rank = as.integer(rank(-xrapm, ties.method = "min")),
     panna_percentile = round(100 * rank(xrapm, ties.method = "min") / n(), 1)
   ) |>
+  # Position-stratified ranks/percentiles. Allows the blog UI to compare
+  # players against peers in the same position bucket (e.g. "Salah is the
+  # 99th-percentile striker" rather than just "99th overall"). Resolves the
+  # confusion users get when a winger like L. Diaz appears among "top
+  # defenders" — that's a team-effect artefact of additive RAPM that goes
+  # away once you compare wingers vs wingers. Players with NA position
+  # (no main starting position recorded) get NA percentiles.
+  group_by(position) |>
+  mutate(
+    panna_rank_position = ifelse(is.na(position), NA_integer_,
+                                  as.integer(rank(-xrapm, ties.method = "min"))),
+    panna_percentile_position = ifelse(is.na(position), NA_real_,
+                                        round(100 * rank(xrapm, ties.method = "min") / n(), 1)),
+    offense_percentile_position = ifelse(is.na(position), NA_real_,
+                                          round(100 * rank(offense, ties.method = "min") / n(), 1)),
+    defense_percentile_position = ifelse(is.na(position), NA_real_,
+                                          round(100 * rank(defense, ties.method = "min") / n(), 1))
+  ) |>
+  ungroup() |>
   select(
     panna_rank, player_name, team, league, position,
     panna = xrapm, offense, defense, spm_overall,
-    total_minutes, panna_percentile,
+    total_minutes,
+    panna_percentile,
+    panna_rank_position, panna_percentile_position,
+    offense_percentile_position, defense_percentile_position,
     any_of(c(
       "epv_total", "epv_passing", "epv_shooting", "epv_dribbling", "epv_defending",
       "wpa_total", "wpa_as_actor", "wpa_as_receiver",
