@@ -38,6 +38,85 @@ league_codes <- c("ENG", "ENG2", "ESP", "FRA", "GER", "ITA", "NED", "POR", "SCO"
 predictions <- predictions |>
   filter(league %in% league_codes, home_team != "", away_team != "")
 
+# predictions.parquet carries every match 2013-2026 (blog Results view shows
+# historical predictions). We only want CURRENT SEASON REMAINING FIXTURES.
+#
+# Season filter: take max(season) per league — handles mid-year when some
+# leagues are mid-season and others haven't started.
+if ("season" %in% names(predictions)) {
+  predictions <- predictions |>
+    group_by(league) |>
+    filter(season == max(season)) |>
+    ungroup()
+  cat("Filtered to current season per league:", nrow(predictions), "matches\n")
+}
+
+# Status filter: status == "fixture" means unplayed. Older exports lack the
+# column — fall back to "matches after today" as a best-effort guard.
+if ("status" %in% names(predictions)) {
+  predictions <- predictions |> filter(status == "fixture")
+  cat("Filtered to status == 'fixture':", nrow(predictions), "matches remaining\n")
+} else {
+  today <- Sys.Date()
+  predictions <- predictions |> filter(as.Date(match_date) >= today)
+  cat("No 'status' column — filtered to match_date >=", as.character(today),
+      ":", nrow(predictions), "matches\n")
+}
+
+# Team name normalization: Opta sometimes serves the same team under two names
+# within a single season (e.g. "Ajax" → "AFC Ajax" mid-year). Standings are
+# built from played matches so their names are canonical. Map every fixture
+# variant back to its standings counterpart so the sim treats them as one team.
+normalize_team_names <- function(fixture_teams, canonical_teams) {
+  mapping <- setNames(fixture_teams, fixture_teams)  # identity default
+  if (length(canonical_teams) == 0) return(mapping)
+
+  canon_norm <- tolower(trimws(canonical_teams))
+  for (ft in fixture_teams) {
+    if (ft %in% canonical_teams) next
+    ft_n <- tolower(trimws(ft))
+
+    # 1. Word-bounded substring match (either direction); pick longest canonical
+    subs <- character()
+    for (i in seq_along(canonical_teams)) {
+      ct_n <- canon_norm[i]
+      pat <- paste0("(^|\\b)", ct_n, "($|\\b)")
+      if (grepl(pat, ft_n, perl = TRUE)) subs <- c(subs, canonical_teams[i])
+    }
+    if (length(subs) > 0) {
+      mapping[ft] <- subs[which.max(nchar(subs))]
+      next
+    }
+
+    # 2. Acronym fallback — "Nijmegen Eendracht Combinatie" → "NEC"
+    initials <- paste(substr(strsplit(ft_n, "\\s+")[[1]], 1, 1), collapse = "")
+    idx <- which(canon_norm == initials)
+    if (length(idx) == 1) mapping[ft] <- canonical_teams[idx]
+  }
+  mapping
+}
+
+# Apply the mapping per league (standings are league-scoped).
+if (!is.null(standings)) {
+  predictions <- predictions |>
+    group_by(league) |>
+    group_modify(function(df, key) {
+      canon <- standings |> filter(league == key$league) |> pull(team)
+      fixture_names <- unique(c(df$home_team, df$away_team))
+      m <- normalize_team_names(fixture_names, canon)
+      unmapped <- fixture_names[!fixture_names %in% canon & m[fixture_names] == fixture_names]
+      if (length(unmapped) > 0) {
+        warning(sprintf("[%s] %d fixture team names did not match standings: %s",
+                        key$league, length(unmapped),
+                        paste(unmapped, collapse = ", ")), call. = FALSE)
+      }
+      df$home_team <- unname(m[df$home_team])
+      df$away_team <- unname(m[df$away_team])
+      df
+    }) |>
+    ungroup()
+}
+
 leagues <- unique(predictions$league)
 cat("Leagues:", paste(leagues, collapse = ", "), "\n")
 cat("Matches after filtering:", nrow(predictions), "\n\n")

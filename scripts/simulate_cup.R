@@ -73,6 +73,55 @@ cup_codes <- c("UCL", "UEL", "UECL")
 cup_preds <- predictions |>
   filter(league %in% cup_codes, home_team != "", away_team != "")
 
+# Keep only current-season matches (predictions.parquet covers 2013-2026 for
+# the blog Results view). Cup composition changes yearly, so stale seasons
+# would contaminate team-strength derivation and league-phase sim.
+if ("season" %in% names(cup_preds) && nrow(cup_preds) > 0) {
+  cup_preds <- cup_preds |>
+    group_by(league) |>
+    filter(season == max(season)) |>
+    ungroup()
+  cat("Filtered cups to current season:", nrow(cup_preds), "matches\n")
+}
+
+# Team-name normalization (same as simulate_season.R) — apply before the
+# played/fixture split so both sides see canonical names.
+normalize_team_names <- function(fixture_teams, canonical_teams) {
+  mapping <- setNames(fixture_teams, fixture_teams)
+  if (length(canonical_teams) == 0) return(mapping)
+  canon_norm <- tolower(trimws(canonical_teams))
+  for (ft in fixture_teams) {
+    if (ft %in% canonical_teams) next
+    ft_n <- tolower(trimws(ft))
+    subs <- character()
+    for (i in seq_along(canonical_teams)) {
+      pat <- paste0("(^|\\b)", canon_norm[i], "($|\\b)")
+      if (grepl(pat, ft_n, perl = TRUE)) subs <- c(subs, canonical_teams[i])
+    }
+    if (length(subs) > 0) {
+      mapping[ft] <- subs[which.max(nchar(subs))]; next
+    }
+    initials <- paste(substr(strsplit(ft_n, "\\s+")[[1]], 1, 1), collapse = "")
+    idx <- which(canon_norm == initials)
+    if (length(idx) == 1) mapping[ft] <- canonical_teams[idx]
+  }
+  mapping
+}
+
+if (!is.null(standings) && nrow(cup_preds) > 0) {
+  cup_preds <- cup_preds |>
+    group_by(league) |>
+    group_modify(function(df, key) {
+      canon <- standings |> filter(league == key$league) |> pull(team)
+      fixture_names <- unique(c(df$home_team, df$away_team))
+      m <- normalize_team_names(fixture_names, canon)
+      df$home_team <- unname(m[df$home_team])
+      df$away_team <- unname(m[df$away_team])
+      df
+    }) |>
+    ungroup()
+}
+
 if (nrow(cup_preds) == 0) {
   cat("No cup predictions found — skipping cup simulation\n")
   # Write empty parquet with correct schema
@@ -519,14 +568,31 @@ for (cup_name in names(CUP_CONFIG)) {
     cat("  no standings — simulating all league phase matches\n")
   }
 
-  # Derive team strengths from predictions
+  # Derive team strengths from ALL current-season matches (more data = better
+  # attack/defense estimates), but simulate only UNPLAYED fixtures — otherwise
+  # we'd double-count already-played matches whose points are in standings.
   strengths <- derive_team_strengths(league_preds)
   cat("  team strengths derived for", nrow(strengths), "teams\n")
+
+  if ("status" %in% names(league_preds)) {
+    remaining_preds <- league_preds |> filter(status == "fixture")
+  } else {
+    remaining_preds <- league_preds |> filter(as.Date(match_date) >= Sys.Date())
+  }
+  cat("  remaining fixtures to simulate:", nrow(remaining_preds), "\n")
 
   t0 <- proc.time()["elapsed"]
 
   # Phase 1: League phase simulation
-  lp_result <- simulate_league_phase(league_preds, cup_standings, N_SIMS)
+  lp_result <- simulate_league_phase(remaining_preds, cup_standings, N_SIMS)
+
+  # simulate_league_phase builds its team universe from remaining_preds ∪ standings.
+  # When league phase is already finished (remaining_preds empty, knockout fixtures
+  # not in standings), that universe can differ from the outer `teams` list sourced
+  # from all current-season cup matches. Re-align to the sim's canonical teams so
+  # downstream indexing and the result tibble stay consistent.
+  teams <- colnames(lp_result$sim_points)
+  n_teams <- length(teams)
 
   # Phase 2: Knockout simulation
   if (n_teams >= PLAYOFF_END) {
