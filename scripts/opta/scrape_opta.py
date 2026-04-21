@@ -92,6 +92,67 @@ def load_manifest(manifest_path: Path, include_unavailable: bool = True) -> tupl
         return set(), set()
 
 
+def reconcile_events_with_manifest(opta_dir: Path,
+                                    complete_matches: set,
+                                    scrape_plan: list) -> tuple:
+    """Invalidate manifest entries that claim has_match_events=True but whose
+    events.parquet has 0 rows for the match_id.
+
+    Background: Opta exposes two event endpoints — matchstats/{id} (goals,
+    cards, subs; drives events.parquet) and matchevent/{id} (all events with
+    x/y coords; drives match_events.parquet). For recent matches, matchevent
+    can publish BEFORE matchstats-liveData is populated, leaving events.parquet
+    empty for a match that the manifest marks "complete". Without this
+    reconciliation, the match is never re-scraped and its goals are lost,
+    causing silent corruption downstream (see panna#59).
+
+    Args:
+        opta_dir: pannadata/data/opta directory
+        complete_matches: set of (match_id, competition, season) tuples
+        scrape_plan: list of (league, season_name, season_id) tuples — scoped
+            so we only read parquets we're about to process
+
+    Returns:
+        (pruned_complete_matches, n_invalidated)
+    """
+    if not complete_matches:
+        return complete_matches, 0
+
+    events_dir = opta_dir / "events"
+    if not events_dir.exists():
+        return complete_matches, 0
+
+    # Build set of (match_id, competition, season) that actually have rows in
+    # events.parquet, scoped to the leagues/seasons we're about to scrape.
+    present_in_events = set()
+    for league, season_name, _ in scrape_plan:
+        events_file = events_dir / league / f"{season_name}.parquet"
+        if not events_file.exists():
+            continue
+        try:
+            df = pd.read_parquet(events_file, columns=["match_id"])
+        except (pd.errors.ParserError, OSError, ValueError, pyarrow.lib.ArrowInvalid) as e:
+            logger.warning("Reconcile: could not read %s (%s) — skipping", events_file, e)
+            continue
+        for mid in df["match_id"].unique():
+            present_in_events.add((mid, league, season_name))
+
+    # Find manifest entries scoped to this run that claim complete but have
+    # no events rows — these are the scrape-gap matches that need re-scraping.
+    scoped_complete = {(mid, c, s) for (mid, c, s) in complete_matches
+                       if any(c == l and s == sn for l, sn, _ in scrape_plan)}
+    to_invalidate = scoped_complete - present_in_events
+
+    if to_invalidate:
+        print(f"Reconcile: invalidating {len(to_invalidate)} manifest entries "
+              f"with has_match_events=True but empty events.parquet rows")
+        # Show a handful so the user knows what's being retried
+        for mid, c, s in list(to_invalidate)[:5]:
+            print(f"  - {c} {s} / {mid}")
+
+    return complete_matches - to_invalidate, len(to_invalidate)
+
+
 def update_manifest(manifest_path: Path, new_matches: list) -> bool:
     """Update manifest with newly scraped matches.
 
@@ -457,15 +518,27 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
             match_dt = datetime.fromisoformat(match_date.replace('Z', '+00:00'))
             is_recent = (datetime.now(match_dt.tzinfo) - match_dt) < timedelta(days=7)
 
+            # A match is "complete" only when BOTH endpoints returned usable data:
+            # - matchevent endpoint (event_data, x/y coords)  → has_events
+            # - matchstats endpoint's liveData.goal/card/sub → len(events) > 0
+            # Opta sometimes publishes matchevent before matchstats-liveData
+            # is populated, producing lineups-without-events gaps (panna#59).
+            # Without this AND, the match would be flagged complete based on
+            # matchevent alone and never retried, leaving events.parquet empty
+            # for that match and corrupting downstream goal-counting.
+            has_stats_events = len(events) > 0
+            has_match_events_complete = has_events and has_stats_events
+
             new_manifest_records.append({
                 'match_id': match_id,
                 'competition': competition,
                 'season': season_name,
                 'has_player_stats': True,
                 'has_shots': len(shots) > 0,
-                'has_match_events': has_events,
+                'has_match_events': has_match_events_complete,
+                'has_stats_events': has_stats_events,
                 'has_lineups': len(lineups) > 0,
-                'event_unavailable': not has_events and not is_recent,  # Only mark if old AND no events
+                'event_unavailable': not has_match_events_complete and not is_recent,
             })
 
             # Save raw JSON files
@@ -701,6 +774,14 @@ def main():
         complete_matches, unavailable_matches = set(), set()
     else:
         complete_matches, unavailable_matches = load_manifest(manifest_path)
+        # Self-heal: drop manifest entries that claim has_match_events=True
+        # but whose events.parquet is actually missing rows. Scoped to the
+        # scrape plan so we only pay for parquets we'd read anyway.
+        complete_matches, n_invalidated = reconcile_events_with_manifest(
+            pannadata_dir / "opta", complete_matches, scrape_plan
+        )
+        if n_invalidated:
+            print(f"Reconciliation: {n_invalidated} matches will be re-scraped")
 
     print("=" * 60)
     print("OPTA LEAGUES SCRAPER")
