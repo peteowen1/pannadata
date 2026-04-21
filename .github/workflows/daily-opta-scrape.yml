@@ -227,3 +227,22 @@ jobs:
         echo "Consolidated by table:"
         ls -lh data/opta/opta_*.parquet 2>/dev/null || echo "  None"
         echo "Events by league: $(ls data/opta/events_consolidated/events_*.parquet 2>/dev/null | wc -l) files"
+
+    # panna's predictions-pipeline.yml listens for this event and regenerates
+    # match_predictions.parquet + season_standings.parquet on blog-latest.
+    # Without this dispatch the predictions pipeline only ran on the weekly
+    # cron (Wed 8 AM UTC), so blog sim standings were up to 5-6 days stale.
+    # WORKFLOW_PAT is a cross-repo PAT with workflow scope (already configured
+    # for panna→pannadata dispatches in predictions-pipeline.yml).
+    - name: Trigger panna predictions pipeline
+      if: success()
+      env:
+        GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+      run: |
+        if [ -z "$GH_TOKEN" ]; then
+          echo "::warning::WORKFLOW_PAT secret not set — predictions pipeline will not auto-run."
+          exit 0
+        fi
+        gh api repos/peteowen1/panna/dispatches \
+          -f event_type=opta-scrape-complete
+        echo "Dispatched opta-scrape-complete to panna"

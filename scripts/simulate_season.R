@@ -24,6 +24,11 @@ predictions <- read_parquet(pred_file)
 cat("Loaded", nrow(predictions), "match predictions\n")
 
 # ── Load current standings ────────────────────────────────────────────
+# Read blog-latest snapshot. Stale standings are acceptable here: the sim
+# treats its inputs as a self-consistent snapshot — current_points, avg_points,
+# avg_position, title_pct etc. are all computed against the same baseline, so
+# a stale snapshot just means older-but-internally-consistent output. The blog
+# surfaces a "stale simulation" banner when live GP has advanced past sim GP.
 standings_file <- "blog/season_standings.parquet"
 if (file.exists(standings_file)) {
   standings <- read_parquet(standings_file)
