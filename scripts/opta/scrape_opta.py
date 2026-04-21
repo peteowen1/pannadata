@@ -208,12 +208,37 @@ def is_future_season(season_name: str) -> bool:
         return year > current_year
 
 
+# Tournaments that don't follow the "name year IS the year it was played in"
+# convention — COVID delays, winter World Cups, etc. The standard logic of
+# "year - 1 → year" misses their actual fixture windows entirely, so the scrape
+# returns "no new matches" even though the season exists in seasons.json.
+TOURNAMENT_DATE_EXCEPTIONS = {
+    # Winter World Cup — played Nov 20 – Dec 18, 2022. Not in the default
+    # Aug 2021 – Jul 2022 window.
+    "2022 Qatar": [
+        ("2022-11-01", "2022-12-31"),
+    ],
+    # EURO 2020 — COVID-delayed to Jun 11 – Jul 11, 2021. Labelled "2020" in
+    # Opta (no host country) because it was pan-European.
+    "2020": [
+        ("2021-06-01", "2021-07-31"),
+    ],
+}
+
+
 def get_season_date_range(season_name: str) -> tuple:
     """Get start and end dates for a season (Aug-May typical)
 
-    Handles both league seasons (2024-2025) and tournament seasons (2025 Morocco, 2024/2025)
+    Handles both league seasons (2024-2025) and tournament seasons (2025 Morocco, 2024/2025).
+    Returns an explicit exception table for tournaments whose actual play window
+    doesn't match the naming convention (e.g. Qatar 2022 played winter, EURO 2020
+    played in 2021).
     """
     import re
+
+    # Explicit exceptions override the name-based inference.
+    if season_name in TOURNAMENT_DATE_EXCEPTIONS:
+        return TOURNAMENT_DATE_EXCEPTIONS[season_name]
 
     # Extract year(s) from season name
     years = re.findall(r'20\d\d', season_name)
