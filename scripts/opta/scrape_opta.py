@@ -122,9 +122,18 @@ def reconcile_events_with_manifest(opta_dir: Path,
     if not events_dir.exists():
         return complete_matches, 0
 
+    # Scoped to the leagues/seasons we're about to scrape — a dispatched
+    # --leagues GER run will NOT heal a stale ENG entry. Full-manifest
+    # reconciliation is deferred to the daily full run (cron 5 AM UTC). This
+    # is intentional: avoids unbounded I/O and keeps targeted debug dispatches
+    # cheap. Do not "fix" by reading every parquet unless you want a 10-minute
+    # startup on fresh clones.
+    plan_keys = {(l, sn) for l, sn, _ in scrape_plan}
+
     # Build set of (match_id, competition, season) that actually have rows in
-    # events.parquet, scoped to the leagues/seasons we're about to scrape.
+    # events.parquet.
     present_in_events = set()
+    n_corrupt = 0
     for league, season_name, _ in scrape_plan:
         events_file = events_dir / league / f"{season_name}.parquet"
         if not events_file.exists():
@@ -132,7 +141,13 @@ def reconcile_events_with_manifest(opta_dir: Path,
         try:
             df = pd.read_parquet(events_file, columns=["match_id"])
         except (pd.errors.ParserError, OSError, ValueError, pyarrow.lib.ArrowInvalid) as e:
-            logger.warning("Reconcile: could not read %s (%s) — skipping", events_file, e)
+            # Log at ERROR (not WARNING) so a corrupt parquet isn't silent in
+            # scrollback — silently skipping would mask the same class of
+            # corruption this reconciliation exists to catch. Counter surfaces
+            # to the happy-path log line below.
+            logger.error("Reconcile: CORRUPT events parquet %s (%s) — skipping, "
+                         "reconciliation for this scope is incomplete", events_file, e)
+            n_corrupt += 1
             continue
         for mid in df["match_id"].unique():
             present_in_events.add((mid, league, season_name))
@@ -140,12 +155,15 @@ def reconcile_events_with_manifest(opta_dir: Path,
     # Find manifest entries scoped to this run that claim complete but have
     # no events rows — these are the scrape-gap matches that need re-scraping.
     scoped_complete = {(mid, c, s) for (mid, c, s) in complete_matches
-                       if any(c == l and s == sn for l, sn, _ in scrape_plan)}
+                       if (c, s) in plan_keys}
     to_invalidate = scoped_complete - present_in_events
 
+    # Always log the outcome so "ran and passed" is distinguishable from
+    # "errored and was skipped" in logs.
+    print(f"Reconcile: checked {len(scoped_complete)} scoped manifest entries, "
+          f"{len(to_invalidate)} invalidated" +
+          (f", {n_corrupt} parquet(s) unreadable" if n_corrupt else ""))
     if to_invalidate:
-        print(f"Reconcile: invalidating {len(to_invalidate)} manifest entries "
-              f"with has_match_events=True but empty events.parquet rows")
         # Show a handful so the user knows what's being retried
         for mid, c, s in list(to_invalidate)[:5]:
             print(f"  - {c} {s} / {mid}")
@@ -518,14 +536,14 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
             match_dt = datetime.fromisoformat(match_date.replace('Z', '+00:00'))
             is_recent = (datetime.now(match_dt.tzinfo) - match_dt) < timedelta(days=7)
 
-            # A match is "complete" only when BOTH endpoints returned usable data:
-            # - matchevent endpoint (event_data, x/y coords)  → has_events
-            # - matchstats endpoint's liveData.goal/card/sub → len(events) > 0
-            # Opta sometimes publishes matchevent before matchstats-liveData
-            # is populated, producing lineups-without-events gaps (panna#59).
-            # Without this AND, the match would be flagged complete based on
-            # matchevent alone and never retried, leaving events.parquet empty
-            # for that match and corrupting downstream goal-counting.
+            # Require BOTH endpoints: matchevent (has_events) AND matchstats
+            # liveData (len(events) > 0). Opta can publish matchevent ahead of
+            # matchstats-liveData; an OR gate would mark such matches complete
+            # with zero goals. See reconcile_events_with_manifest() for recovery.
+            # Caveat: a genuine 0-0 with no cards and no subs would also fail
+            # this gate and retry indefinitely. Vanishingly rare at top-flight
+            # level (subs are effectively mandatory now), and the retry is
+            # bounded by event_unavailable after 7 days — not worth guarding.
             has_stats_events = len(events) > 0
             has_match_events_complete = has_events and has_stats_events
 
@@ -777,11 +795,19 @@ def main():
         # Self-heal: drop manifest entries that claim has_match_events=True
         # but whose events.parquet is actually missing rows. Scoped to the
         # scrape plan so we only pay for parquets we'd read anyway.
-        complete_matches, n_invalidated = reconcile_events_with_manifest(
-            pannadata_dir / "opta", complete_matches, scrape_plan
-        )
-        if n_invalidated:
-            print(f"Reconciliation: {n_invalidated} matches will be re-scraped")
+        # Wrap in try/except so an unexpected reconcile failure (pandas
+        # version drift, unforeseen file state) logs and continues with the
+        # unreconciled manifest rather than aborting the cron. Worst case
+        # we miss one day's self-heal; the scraper still runs.
+        try:
+            complete_matches, n_invalidated = reconcile_events_with_manifest(
+                pannadata_dir / "opta", complete_matches, scrape_plan
+            )
+            if n_invalidated:
+                print(f"Reconciliation: {n_invalidated} matches will be re-scraped")
+        except Exception as e:
+            logger.error("Reconcile failed unexpectedly — proceeding with "
+                         "unreconciled manifest. Error: %s", e, exc_info=True)
 
     print("=" * 60)
     print("OPTA LEAGUES SCRAPER")
