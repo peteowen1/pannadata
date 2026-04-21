@@ -96,21 +96,29 @@ def reconcile_events_with_manifest(opta_dir: Path,
                                     complete_matches: set,
                                     scrape_plan: list) -> tuple:
     """Invalidate manifest entries that claim has_match_events=True but whose
-    events.parquet has 0 rows for the match_id.
+    match_id is absent from the consolidated opta_events.parquet.
 
     Background: Opta exposes two event endpoints — matchstats/{id} (goals,
-    cards, subs; drives events.parquet) and matchevent/{id} (all events with
-    x/y coords; drives match_events.parquet). For recent matches, matchevent
-    can publish BEFORE matchstats-liveData is populated, leaving events.parquet
-    empty for a match that the manifest marks "complete". Without this
-    reconciliation, the match is never re-scraped and its goals are lost,
-    causing silent corruption downstream (see panna#59).
+    cards, subs; drives events.parquet / opta_events.parquet) and
+    matchevent/{id} (all events with x/y coords; drives match_events.parquet).
+    For recent matches, matchevent can publish BEFORE matchstats-liveData is
+    populated, leaving opta_events empty for a match that the manifest marks
+    "complete". Without this reconciliation, the match is never re-scraped
+    and its goals are lost, causing silent corruption downstream (see panna#59).
+
+    We read from the single consolidated opta_events.parquet at
+    `opta_dir / "opta_events.parquet"` — this is what the daily-opta-scrape
+    workflow downloads (per the "Download existing per-league parquet files"
+    step) and it contains all leagues and all seasons. Reading from it once
+    with a scope-filtered WHERE-style filter is O(1) I/O. Per-league-per-season
+    hierarchical files at `opta_dir / "events/{league}/{season}.parquet"`
+    are NOT present on GHA (the workflow only downloads consolidated files).
 
     Args:
         opta_dir: pannadata/data/opta directory
         complete_matches: set of (match_id, competition, season) tuples
         scrape_plan: list of (league, season_name, season_id) tuples — scoped
-            so we only read parquets we're about to process
+            so we only consider matches we're about to re-scrape
 
     Returns:
         (pruned_complete_matches, n_invalidated)
@@ -118,39 +126,41 @@ def reconcile_events_with_manifest(opta_dir: Path,
     if not complete_matches:
         return complete_matches, 0
 
-    events_dir = opta_dir / "events"
-    if not events_dir.exists():
+    consolidated_file = opta_dir / "opta_events.parquet"
+    if not consolidated_file.exists():
+        # First run (no prior consolidation) — nothing to reconcile against.
+        # Write-time guards will prevent future gaps from being flagged complete.
         return complete_matches, 0
 
     # Scoped to the leagues/seasons we're about to scrape — a dispatched
     # --leagues GER run will NOT heal a stale ENG entry. Full-manifest
     # reconciliation is deferred to the daily full run (cron 5 AM UTC). This
-    # is intentional: avoids unbounded I/O and keeps targeted debug dispatches
-    # cheap. Do not "fix" by reading every parquet unless you want a 10-minute
-    # startup on fresh clones.
+    # is intentional: avoids unbounded work and keeps targeted debug dispatches
+    # cheap.
     plan_keys = {(l, sn) for l, sn, _ in scrape_plan}
 
-    # Build set of (match_id, competition, season) that actually have rows in
-    # events.parquet.
-    present_in_events = set()
-    n_corrupt = 0
-    for league, season_name, _ in scrape_plan:
-        events_file = events_dir / league / f"{season_name}.parquet"
-        if not events_file.exists():
-            continue
-        try:
-            df = pd.read_parquet(events_file, columns=["match_id"])
-        except (pd.errors.ParserError, OSError, ValueError, pyarrow.lib.ArrowInvalid) as e:
-            # Log at ERROR (not WARNING) so a corrupt parquet isn't silent in
-            # scrollback — silently skipping would mask the same class of
-            # corruption this reconciliation exists to catch. Counter surfaces
-            # to the happy-path log line below.
-            logger.error("Reconcile: CORRUPT events parquet %s (%s) — skipping, "
-                         "reconciliation for this scope is incomplete", events_file, e)
-            n_corrupt += 1
-            continue
-        for mid in df["match_id"].unique():
-            present_in_events.add((mid, league, season_name))
+    # Read the consolidated events file once, filter by the scope we care
+    # about. pyarrow's read_parquet with filters pushes predicate down into
+    # the row-group scanner so we don't materialize the full 3.6M-row frame.
+    try:
+        plan_list = list(plan_keys)
+        df = pd.read_parquet(
+            consolidated_file,
+            columns=["match_id", "competition", "season"],
+            filters=[
+                [("competition", "=", l), ("season", "=", sn)]
+                for l, sn in plan_list
+            ] if plan_list else None,
+        )
+    except (pd.errors.ParserError, OSError, ValueError, pyarrow.lib.ArrowInvalid) as e:
+        # Log at ERROR so a corrupt consolidated file isn't silent in scrollback
+        # — silently skipping would mask the same class of corruption this
+        # reconciliation exists to catch.
+        logger.error("Reconcile: could not read %s (%s) — skipping reconciliation",
+                     consolidated_file, e)
+        return complete_matches, 0
+
+    present_in_events = set(zip(df["match_id"], df["competition"], df["season"]))
 
     # Find manifest entries scoped to this run that claim complete but have
     # no events rows — these are the scrape-gap matches that need re-scraping.
@@ -160,9 +170,9 @@ def reconcile_events_with_manifest(opta_dir: Path,
 
     # Always log the outcome so "ran and passed" is distinguishable from
     # "errored and was skipped" in logs.
-    print(f"Reconcile: checked {len(scoped_complete)} scoped manifest entries, "
-          f"{len(to_invalidate)} invalidated" +
-          (f", {n_corrupt} parquet(s) unreadable" if n_corrupt else ""))
+    print(f"Reconcile: checked {len(scoped_complete)} scoped manifest entries "
+          f"against {len(present_in_events)} events-parquet entries, "
+          f"{len(to_invalidate)} invalidated")
     if to_invalidate:
         # Show a handful so the user knows what's being retried
         for mid, c, s in list(to_invalidate)[:5]:
