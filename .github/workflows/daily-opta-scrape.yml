@@ -93,6 +93,11 @@ jobs:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Run Opta scraper
+      # Normal daily runs are 10-18 min. Cap at 35 to catch hangs (Opta
+      # rate-limiting backoff, reconcile-bug over-scraping) without waiting
+      # for the overall 120-min job timeout to fire. Override via dispatch
+      # if a legitimate full-catalog rebuild is expected to take longer.
+      timeout-minutes: 35
       env:
         INPUT_LEAGUES: ${{ github.event.inputs.leagues }}
         INPUT_SEASONS: ${{ github.event.inputs.seasons }}

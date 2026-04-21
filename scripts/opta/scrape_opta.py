@@ -168,6 +168,25 @@ def reconcile_events_with_manifest(opta_dir: Path,
                        if (c, s) in plan_keys}
     to_invalidate = scoped_complete - present_in_events
 
+    # Sanity guard: if we'd invalidate a pathological fraction of scoped
+    # entries, refuse to proceed. Real scraper-lag gaps are usually 1-5%
+    # of scoped matches at most; anything >25% almost always indicates a
+    # reconcile bug (e.g., reading the wrong file — this function regressed
+    # exactly that way once, invalidating 100% when it read a non-existent
+    # path on GHA). Raising here triggers the caller's try/except and falls
+    # back to the unreconciled manifest, which is safe — the scrape runs
+    # without self-heal but also without burning hours on over-scraping.
+    if scoped_complete:
+        invalidation_rate = len(to_invalidate) / len(scoped_complete)
+        if invalidation_rate > 0.25:
+            raise RuntimeError(
+                f"Reconcile would invalidate {len(to_invalidate)}/{len(scoped_complete)} "
+                f"scoped manifest entries ({invalidation_rate:.1%}) — refusing to "
+                f"proceed. This suggests a bug in reconcile_events_with_manifest "
+                f"(e.g., wrong events file path) rather than a real scrape gap. "
+                f"Inspect opta_events.parquet and use --force to bypass reconciliation."
+            )
+
     # Always log the outcome so "ran and passed" is distinguishable from
     # "errored and was skipped" in logs.
     print(f"Reconcile: checked {len(scoped_complete)} scoped manifest entries "
@@ -827,6 +846,13 @@ def main():
     print(f"Scrape plan: {len(scrape_plan)} league-seasons")
     for league, season, _ in scrape_plan:
         print(f"  - {league} {season}")
+    # Pre-scrape state summary — makes it obvious when something is off
+    # before any API calls. If these numbers look wrong (e.g., manifest
+    # dropped from 100k to 50k, or reconcile invalidated 5000 when you
+    # expected 20), stop the run and investigate.
+    if not fixtures_only:
+        print(f"Manifest: {len(complete_matches):,} complete, "
+              f"{len(unavailable_matches):,} unavailable")
 
     # Execute scraping with incremental manifest saves
     results = []
