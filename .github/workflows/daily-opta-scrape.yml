@@ -29,6 +29,11 @@ on:
         required: false
         type: boolean
         default: false
+      scrape_timeout_minutes:
+        description: 'Override the Run Opta scraper timeout (default 35; raise for full-catalog rebuilds)'
+        required: false
+        type: number
+        default: 35
 
 jobs:
   scrape:
@@ -93,6 +98,12 @@ jobs:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Run Opta scraper
+      # Normal daily runs are 10-18 min. Cap at 35 to catch hangs (Opta
+      # rate-limiting backoff, reconcile-bug over-scraping) without waiting
+      # for the overall 120-min job timeout to fire. Override via dispatch
+      # input `scrape_timeout_minutes` if a legitimate full-catalog rebuild
+      # needs longer.
+      timeout-minutes: ${{ fromJson(github.event.inputs.scrape_timeout_minutes || '35') }}
       env:
         INPUT_LEAGUES: ${{ github.event.inputs.leagues }}
         INPUT_SEASONS: ${{ github.event.inputs.seasons }}
