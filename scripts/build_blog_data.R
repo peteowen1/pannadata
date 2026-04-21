@@ -54,7 +54,10 @@ if (file.exists(gl_path)) {
   # Only pull columns that don't already exist in xrapm/spm (to avoid collisions).
   # panna/offense/defense/spm_overall/panna_percentile are excluded — those come from xrapm+spm.
   extra_cols <- intersect(
-    c("epv_total", "epv_passing", "epv_shooting", "epv_dribbling", "epv_defending",
+    c("epv_total",
+      "epv_total_adj", "epv_offensive_adj", "epv_defensive_adj", "opp_adj",
+      "epv_passing", "epv_shooting", "epv_dribbling",
+      "epv_aerial", "epv_keeping", "epv_defending",
       "wpa_total", "wpa_as_actor", "wpa_as_receiver",
       "psv", "osv", "dsv", "panna_value_p90"),
     names(game_logs)
@@ -139,7 +142,10 @@ panna_ratings <- enriched |>
     panna_rank_position, panna_percentile_position,
     offense_percentile_position, defense_percentile_position,
     any_of(c(
-      "epv_total", "epv_passing", "epv_shooting", "epv_dribbling", "epv_defending",
+      "epv_total",
+      "epv_total_adj", "epv_offensive_adj", "epv_defensive_adj", "opp_adj",
+      "epv_passing", "epv_shooting", "epv_dribbling",
+      "epv_aerial", "epv_keeping", "epv_defending",
       "wpa_total", "wpa_as_actor", "wpa_as_receiver",
       "psv", "osv", "dsv", "panna_value_p90"
     ))
