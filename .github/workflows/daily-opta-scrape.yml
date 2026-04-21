@@ -122,6 +122,8 @@ jobs:
         fi
 
     - name: Build consolidated parquet files
+      env:
+        INPUT_SEASONS: ${{ github.event.inputs.seasons }}
       run: |
         cd data
         # Count only raw per-league season files (not consolidated opta_*.parquet at the root)
@@ -130,6 +132,21 @@ jobs:
         if [ "$PARQUET_COUNT" -eq 0 ]; then
           # Distinguish "no new data" from "scraper crashed"
           if [ -f "../scripts/opta/data/scrape_summary.json" ]; then
+            # Silent-empty guard: if the user dispatched with --seasons (targeted
+            # a specific tournament/season) and zero new matches came back,
+            # fail loudly rather than exit 0. A silent-success here hides real
+            # bugs like the TOURNAMENT_DATE_EXCEPTIONS miss that wasted 20 min
+            # thinking WC 2022 Qatar had landed when the wrong date window had
+            # silently returned nothing.
+            if [ -n "$INPUT_SEASONS" ]; then
+              echo "::error::--seasons='$INPUT_SEASONS' dispatched but scraper returned zero new matches."
+              echo "Likely causes:"
+              echo "  1. Wrong date window for this tournament — add to TOURNAMENT_DATE_EXCEPTIONS in scrape_opta.py"
+              echo "  2. All matches already in the manifest (try --force)"
+              echo "  3. Season name mismatch with seasons.json"
+              echo "  4. Upstream Opta API issue"
+              exit 1
+            fi
             echo "No new parquet files, but scraper ran successfully (no new matches)"
             exit 0
           else
@@ -137,6 +154,20 @@ jobs:
             exit 1
           fi
         fi
+
+        # Snapshot existing event-consolidated mtimes BEFORE consolidate so
+        # the upload step can later skip unchanged files (prevents the
+        # concurrent-scrape race where one run overwrites another's uploads
+        # of leagues it didn't touch).
+        mkdir -p /tmp/scrape-state
+        if [ -d "opta/events_consolidated" ]; then
+          find opta/events_consolidated -name "events_*.parquet" \
+            -printf "%f %T@\n" 2>/dev/null | sort > /tmp/scrape-state/pre_mtimes.txt
+          echo "Snapshotted $(wc -l < /tmp/scrape-state/pre_mtimes.txt) existing events parquet mtimes"
+        else
+          touch /tmp/scrape-state/pre_mtimes.txt
+        fi
+
         python ../scripts/opta/consolidate_opta.py
 
     - name: Setup R for xG enrichment
@@ -209,18 +240,38 @@ jobs:
           fi
         fi
 
-        # Upload per-league events files
+        # Upload per-league events files — but only those the consolidate
+        # step actually modified. This prevents the concurrent-scrape race
+        # condition where run A (scrapes WC) and run B (scrapes EURO) both
+        # upload the full set of events_*.parquet files at the end, and
+        # whichever finishes second silently overwrites the other's
+        # modifications for leagues it didn't touch. Compare pre-consolidate
+        # mtimes (snapshotted in the Build step) against current mtimes.
         if [ -d "opta/events_consolidated" ]; then
+          PRE_MTIMES=/tmp/scrape-state/pre_mtimes.txt
+          uploaded_count=0
+          skipped_count=0
           for f in opta/events_consolidated/events_*.parquet; do
             [ -f "$f" ] || continue
-            if gh release upload opta-latest "$f" --clobber; then
-              echo "Uploaded $(basename $f)"
+            base=$(basename "$f")
+            post_mtime=$(stat --printf "%Y" "$f")
+            pre_mtime=""
+            if [ -f "$PRE_MTIMES" ]; then
+              pre_mtime=$(awk -v name="$base" '$1 == name {printf "%d", $2}' "$PRE_MTIMES")
+            fi
+            if [ -z "$pre_mtime" ] || [ "$pre_mtime" != "$post_mtime" ]; then
+              if gh release upload opta-latest "$f" --clobber; then
+                echo "Uploaded $base (modified this run)"
+                uploaded_count=$((uploaded_count + 1))
+              else
+                echo "ERROR: Failed to upload $base"
+                upload_errors=$((upload_errors + 1))
+              fi
             else
-              echo "ERROR: Failed to upload $(basename $f)"
-              upload_errors=$((upload_errors + 1))
+              skipped_count=$((skipped_count + 1))
             fi
           done
-          echo "Uploaded $(ls opta/events_consolidated/events_*.parquet 2>/dev/null | wc -l) events files"
+          echo "Events files: $uploaded_count uploaded (modified), $skipped_count skipped (unchanged)"
         fi
 
         if [ "$upload_errors" -gt 0 ]; then
