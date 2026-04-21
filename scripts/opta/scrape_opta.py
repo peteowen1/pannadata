@@ -36,6 +36,7 @@ from opta_scraper import OptaScraper, MatchEvent, ShotEvent, PlayerLineup, AllMa
 from dataclasses import asdict
 import pandas as pd
 import pyarrow.lib
+import pyarrow.parquet
 import requests
 
 logger = logging.getLogger(__name__)
@@ -132,6 +133,24 @@ def reconcile_events_with_manifest(opta_dir: Path,
         # Write-time guards will prevent future gaps from being flagged complete.
         return complete_matches, 0
 
+    # Schema check: if required columns are missing/renamed, pyarrow's
+    # filters= returns an empty frame SILENTLY rather than raising — which
+    # would show up downstream as "100% invalidation" and trip the sanity
+    # guard with a misleading error. Fail early with a clear message.
+    try:
+        schema_names = set(pyarrow.parquet.read_schema(consolidated_file).names)
+    except (pd.errors.ParserError, OSError, ValueError, pyarrow.lib.ArrowInvalid) as e:
+        logger.error("Reconcile: could not read schema of %s (%s) — skipping",
+                     consolidated_file, e)
+        return complete_matches, 0
+    required = {"match_id", "competition", "season"}
+    missing = required - schema_names
+    if missing:
+        raise RuntimeError(
+            f"opta_events.parquet missing required columns: {missing}. "
+            f"Schema may have drifted — inspect the file and update reconcile_events_with_manifest."
+        )
+
     # Scoped to the leagues/seasons we're about to scrape — a dispatched
     # --leagues GER run will NOT heal a stale ENG entry. Full-manifest
     # reconciliation is deferred to the daily full run (cron 5 AM UTC). This
@@ -142,6 +161,7 @@ def reconcile_events_with_manifest(opta_dir: Path,
     # Read the consolidated events file once, filter by the scope we care
     # about. pyarrow's read_parquet with filters pushes predicate down into
     # the row-group scanner so we don't materialize the full 3.6M-row frame.
+    # Syntax is DNF: outer list = OR, inner list = AND.
     try:
         plan_list = list(plan_keys)
         df = pd.read_parquet(
@@ -168,23 +188,29 @@ def reconcile_events_with_manifest(opta_dir: Path,
                        if (c, s) in plan_keys}
     to_invalidate = scoped_complete - present_in_events
 
-    # Sanity guard: if we'd invalidate a pathological fraction of scoped
-    # entries, refuse to proceed. Real scraper-lag gaps are usually 1-5%
-    # of scoped matches at most; anything >25% almost always indicates a
-    # reconcile bug (e.g., reading the wrong file — this function regressed
-    # exactly that way once, invalidating 100% when it read a non-existent
-    # path on GHA). Raising here triggers the caller's try/except and falls
-    # back to the unreconciled manifest, which is safe — the scrape runs
-    # without self-heal but also without burning hours on over-scraping.
+    # Sanity guard, two-tier: warn at 10% (unusual but possibly legitimate),
+    # fail at 25% (almost always a reconcile bug). Real scraper-lag gaps are
+    # usually 1-5% of scoped matches. This function regressed during the
+    # panna#59 hotfix — read a non-existent path on GHA and invalidated 100%
+    # of scoped entries, burning 43+ min of GHA time before being cancelled.
+    # Raising RuntimeError here propagates to main(); the daily-opta-scrape
+    # workflow fails loudly rather than silently running with wrong data.
     if scoped_complete:
         invalidation_rate = len(to_invalidate) / len(scoped_complete)
+        if invalidation_rate > 0.10:
+            # Warn but proceed — could be legitimate (Opta wiped a league, etc.)
+            print(f"::warning::Reconcile invalidation rate {invalidation_rate:.1%} "
+                  f"({len(to_invalidate)}/{len(scoped_complete)}) is above the "
+                  f"typical 1-5% range. Proceeding but worth investigating.")
         if invalidation_rate > 0.25:
             raise RuntimeError(
                 f"Reconcile would invalidate {len(to_invalidate)}/{len(scoped_complete)} "
                 f"scoped manifest entries ({invalidation_rate:.1%}) — refusing to "
-                f"proceed. This suggests a bug in reconcile_events_with_manifest "
-                f"(e.g., wrong events file path) rather than a real scrape gap. "
-                f"Inspect opta_events.parquet and use --force to bypass reconciliation."
+                f"proceed. This almost always indicates a bug in "
+                f"reconcile_events_with_manifest (e.g., wrong events file path) "
+                f"rather than a real scrape gap. Inspect opta_events.parquet; "
+                f"if the high invalidation is genuine, temporarily lower the "
+                f"threshold or pass --force to bypass reconciliation entirely."
             )
 
     # Always log the outcome so "ran and passed" is distinguishable from
@@ -814,6 +840,7 @@ def main():
     fixtures_only = scrape_types == ["fixtures"]
 
     manifest_path = pannadata_dir / "opta-manifest.parquet"
+    n_invalidated = 0
     if fixtures_only:
         # No need to load manifest when only scraping fixtures
         complete_matches, unavailable_matches = set(), set()
@@ -824,19 +851,19 @@ def main():
         # Self-heal: drop manifest entries that claim has_match_events=True
         # but whose events.parquet is actually missing rows. Scoped to the
         # scrape plan so we only pay for parquets we'd read anyway.
-        # Wrap in try/except so an unexpected reconcile failure (pandas
-        # version drift, unforeseen file state) logs and continues with the
-        # unreconciled manifest rather than aborting the cron. Worst case
-        # we miss one day's self-heal; the scraper still runs.
+        # Intentionally narrow except: RuntimeError from the sanity guard is
+        # a loud signal we WANT to surface (the workflow job will fail),
+        # while file-IO errors are transient/recoverable and fall back to
+        # the unreconciled manifest.
         try:
             complete_matches, n_invalidated = reconcile_events_with_manifest(
                 pannadata_dir / "opta", complete_matches, scrape_plan
             )
             if n_invalidated:
                 print(f"Reconciliation: {n_invalidated} matches will be re-scraped")
-        except Exception as e:
-            logger.error("Reconcile failed unexpectedly — proceeding with "
-                         "unreconciled manifest. Error: %s", e, exc_info=True)
+        except (pd.errors.ParserError, OSError, ValueError, pyarrow.lib.ArrowInvalid) as e:
+            logger.error("Reconcile file-IO error — proceeding with unreconciled "
+                         "manifest. Error: %s", e, exc_info=True)
 
     print("=" * 60)
     print("OPTA LEAGUES SCRAPER")
@@ -848,11 +875,12 @@ def main():
         print(f"  - {league} {season}")
     # Pre-scrape state summary — makes it obvious when something is off
     # before any API calls. If these numbers look wrong (e.g., manifest
-    # dropped from 100k to 50k, or reconcile invalidated 5000 when you
-    # expected 20), stop the run and investigate.
+    # dropped from 100k to 50k, or reconciled count unexpectedly large),
+    # stop the run and investigate.
     if not fixtures_only:
         print(f"Manifest: {len(complete_matches):,} complete, "
-              f"{len(unavailable_matches):,} unavailable")
+              f"{len(unavailable_matches):,} unavailable, "
+              f"{n_invalidated} reconciled this run")
 
     # Execute scraping with incremental manifest saves
     results = []
