@@ -10,8 +10,12 @@ on:
         description: 'Leagues to scrape (space-separated, e.g., "EPL La_Liga")'
         required: false
         type: string
+      seasons:
+        description: 'Specific season name — overrides `recent`. Tournament names may contain spaces (e.g. "2022 Qatar" or "2020" for EURO 2020). One season per dispatch; run multiple times for multiple.'
+        required: false
+        type: string
       recent:
-        description: 'Number of recent seasons to scrape per league'
+        description: 'Number of recent seasons to scrape per league (ignored if `seasons` is set)'
         required: false
         type: number
         default: 1
@@ -91,6 +95,7 @@ jobs:
     - name: Run Opta scraper
       env:
         INPUT_LEAGUES: ${{ github.event.inputs.leagues }}
+        INPUT_SEASONS: ${{ github.event.inputs.seasons }}
         INPUT_RECENT: ${{ github.event.inputs.recent || 1 }}
         INPUT_TIER: ${{ github.event.inputs.tier || 2 }}
         INPUT_FORCE: ${{ github.event.inputs.force_rescrape }}
@@ -106,8 +111,15 @@ jobs:
         if [ "$INPUT_FORCE" = "true" ]; then
           ARGS="$ARGS --force"
         fi
-        echo "Running: python scrape_opta.py $ARGS"
-        python scrape_opta.py $ARGS
+        # --seasons may contain spaces (tournament names like "2022 Qatar"),
+        # so pass it as a quoted argument after the unquoted ARGS expansion.
+        if [ -n "$INPUT_SEASONS" ]; then
+          echo "Running: python scrape_opta.py $ARGS --seasons \"$INPUT_SEASONS\""
+          python scrape_opta.py $ARGS --seasons "$INPUT_SEASONS"
+        else
+          echo "Running: python scrape_opta.py $ARGS"
+          python scrape_opta.py $ARGS
+        fi
 
     - name: Build consolidated parquet files
       run: |
