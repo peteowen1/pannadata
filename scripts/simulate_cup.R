@@ -73,9 +73,10 @@ cup_codes <- c("UCL", "UEL", "UECL")
 cup_preds <- predictions |>
   filter(league %in% cup_codes, home_team != "", away_team != "")
 
-# Keep only current-season matches (predictions.parquet covers 2013-2026 for
-# the blog Results view). Cup composition changes yearly, so stale seasons
-# would contaminate team-strength derivation and league-phase sim.
+# Keep only current-season cup matches (predictions.parquet carries every
+# historical match plus upcoming fixtures for the blog's Results view). Cup
+# composition changes yearly, so stale seasons would contaminate team-strength
+# derivation and league-phase sim. See pannadata#28 / inthegame-blog#189.
 if ("season" %in% names(cup_preds) && nrow(cup_preds) > 0) {
   cup_preds <- cup_preds |>
     group_by(league) |>
@@ -85,7 +86,8 @@ if ("season" %in% names(cup_preds) && nrow(cup_preds) > 0) {
 }
 
 # Team-name normalization (same as simulate_season.R) — apply before the
-# played/fixture split so both sides see canonical names.
+# played/fixture split so both sides see canonical names. Defensive workaround;
+# the upstream fix is in panna step 01 via team_id-based canonicalization.
 normalize_team_names <- function(fixture_teams, canonical_teams) {
   mapping <- setNames(fixture_teams, fixture_teams)
   if (length(canonical_teams) == 0) return(mapping)
@@ -102,8 +104,11 @@ normalize_team_names <- function(fixture_teams, canonical_teams) {
       mapping[ft] <- subs[which.max(nchar(subs))]; next
     }
     initials <- paste(substr(strsplit(ft_n, "\\s+")[[1]], 1, 1), collapse = "")
-    idx <- which(canon_norm == initials)
-    if (length(idx) == 1) mapping[ft] <- canonical_teams[idx]
+    # Guard 1-letter initials against unrelated canonicals
+    if (nchar(initials) >= 2) {
+      idx <- which(canon_norm == initials)
+      if (length(idx) == 1) mapping[ft] <- canonical_teams[idx]
+    }
   }
   mapping
 }
@@ -115,6 +120,13 @@ if (!is.null(standings) && nrow(cup_preds) > 0) {
       canon <- standings |> filter(league == key$league) |> pull(team)
       fixture_names <- unique(c(df$home_team, df$away_team))
       m <- normalize_team_names(fixture_names, canon)
+      # Mirror simulate_season.R — warn on unmapped so silent orphans surface
+      unmapped <- fixture_names[!fixture_names %in% canon & m[fixture_names] == fixture_names]
+      if (length(unmapped) > 0) {
+        warning(sprintf("[%s] %d fixture team names did not match standings: %s",
+                        key$league, length(unmapped),
+                        paste(unmapped, collapse = ", ")), call. = FALSE)
+      }
       df$home_team <- unname(m[df$home_team])
       df$away_team <- unname(m[df$away_team])
       df
@@ -577,7 +589,11 @@ for (cup_name in names(CUP_CONFIG)) {
   if ("status" %in% names(league_preds)) {
     remaining_preds <- league_preds |> filter(status == "fixture")
   } else {
-    remaining_preds <- league_preds |> filter(as.Date(match_date) >= Sys.Date())
+    # match_date may be ISO with time/timezone; take first 10 chars so as.Date
+    # parses deterministically instead of silently returning NA.
+    date_str <- substr(as.character(league_preds$match_date), 1, 10)
+    parsed <- suppressWarnings(as.Date(date_str))
+    remaining_preds <- league_preds[!is.na(parsed) & parsed >= Sys.Date(), ]
   }
   cat("  remaining fixtures to simulate:", nrow(remaining_preds), "\n")
 
@@ -593,6 +609,16 @@ for (cup_name in names(CUP_CONFIG)) {
   # downstream indexing and the result tibble stay consistent.
   teams <- colnames(lp_result$sim_points)
   n_teams <- length(teams)
+
+  # Guard against degenerate cup state: empty remaining_preds AND empty cup_standings
+  # (e.g. a brand-new cup season where nothing has been played yet and predictions
+  # aren't available). Skip cleanly rather than writing an empty tibble into the
+  # cup-simulations parquet with no downstream signal.
+  if (n_teams == 0) {
+    cat(sprintf("  [%s] no teams in sim universe (empty fixtures + empty standings) — skipping\n",
+                cup_code))
+    next
+  }
 
   # Phase 2: Knockout simulation
   if (n_teams >= PLAYOFF_END) {

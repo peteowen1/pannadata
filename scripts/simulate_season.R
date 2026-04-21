@@ -43,8 +43,9 @@ league_codes <- c("ENG", "ENG2", "ESP", "FRA", "GER", "ITA", "NED", "POR", "SCO"
 predictions <- predictions |>
   filter(league %in% league_codes, home_team != "", away_team != "")
 
-# predictions.parquet carries every match 2013-2026 (blog Results view shows
-# historical predictions). We only want CURRENT SEASON REMAINING FIXTURES.
+# predictions.parquet carries every historical match plus upcoming fixtures
+# (the blog's Results view shows past predictions alongside projections).
+# We only want CURRENT SEASON REMAINING FIXTURES. See pannadata#28 / inthegame-blog#189.
 #
 # Season filter: take max(season) per league — handles mid-year when some
 # leagues are mid-season and others haven't started.
@@ -58,12 +59,21 @@ if ("season" %in% names(predictions)) {
 
 # Status filter: status == "fixture" means unplayed. Older exports lack the
 # column — fall back to "matches after today" as a best-effort guard.
+# `match_date` can arrive as an ISO timestamp ("2026-04-19T15:30:00Z"); take
+# the first 10 chars so as.Date parses deterministically across locales. Without
+# this, full-string as.Date silently returns NA and the filter drops every row.
 if ("status" %in% names(predictions)) {
   predictions <- predictions |> filter(status == "fixture")
   cat("Filtered to status == 'fixture':", nrow(predictions), "matches remaining\n")
 } else {
   today <- Sys.Date()
-  predictions <- predictions |> filter(as.Date(match_date) >= today)
+  date_str <- substr(as.character(predictions$match_date), 1, 10)
+  parsed <- suppressWarnings(as.Date(date_str))
+  if (any(is.na(parsed) & !is.na(predictions$match_date))) {
+    stop(sprintf("Failed to parse %d match_date values as Date — check predictions.parquet schema",
+                 sum(is.na(parsed) & !is.na(predictions$match_date))))
+  }
+  predictions <- predictions[!is.na(parsed) & parsed >= today, ]
   cat("No 'status' column — filtered to match_date >=", as.character(today),
       ":", nrow(predictions), "matches\n")
 }
@@ -72,6 +82,9 @@ if ("status" %in% names(predictions)) {
 # within a single season (e.g. "Ajax" → "AFC Ajax" mid-year). Standings are
 # built from played matches so their names are canonical. Map every fixture
 # variant back to its standings counterpart so the sim treats them as one team.
+# Defensive workaround — the upstream fix is in panna step 01 (team_id-based
+# name canonicalization at source); this layer exists to keep older blog-latest
+# exports working before that fix propagates.
 normalize_team_names <- function(fixture_teams, canonical_teams) {
   mapping <- setNames(fixture_teams, fixture_teams)  # identity default
   if (length(canonical_teams) == 0) return(mapping)
@@ -93,10 +106,13 @@ normalize_team_names <- function(fixture_teams, canonical_teams) {
       next
     }
 
-    # 2. Acronym fallback — "Nijmegen Eendracht Combinatie" → "NEC"
+    # 2. Acronym fallback — "Nijmegen Eendracht Combinatie" → "NEC".
+    # Guard against 1-letter initials matching unrelated single-letter canonicals.
     initials <- paste(substr(strsplit(ft_n, "\\s+")[[1]], 1, 1), collapse = "")
-    idx <- which(canon_norm == initials)
-    if (length(idx) == 1) mapping[ft] <- canonical_teams[idx]
+    if (nchar(initials) >= 2) {
+      idx <- which(canon_norm == initials)
+      if (length(idx) == 1) mapping[ft] <- canonical_teams[idx]
+    }
   }
   mapping
 }

@@ -242,10 +242,11 @@ jobs:
 
     # panna's predictions-pipeline.yml listens for this event and regenerates
     # match_predictions.parquet + season_standings.parquet on blog-latest.
-    # Without this dispatch the predictions pipeline only ran on the weekly
-    # cron (Wed 8 AM UTC), so blog sim standings were up to 5-6 days stale.
-    # WORKFLOW_PAT is a cross-repo PAT with workflow scope (already configured
-    # for panna→pannadata dispatches in predictions-pipeline.yml).
+    # Without this dispatch, predictions only ran on its weekly cron (see
+    # `panna/.github/workflows/predictions-pipeline.yml`), so blog sim
+    # standings could be 5-6 days stale. WORKFLOW_PAT is a cross-repo PAT with
+    # workflow scope (already configured for the reverse direction in
+    # predictions-pipeline.yml). See pannadata#28 / inthegame-blog#189.
     - name: Trigger panna predictions pipeline
       if: success()
       env:
@@ -255,6 +256,16 @@ jobs:
           echo "::warning::WORKFLOW_PAT secret not set — predictions pipeline will not auto-run."
           exit 0
         fi
-        gh api repos/peteowen1/panna/dispatches \
-          -f event_type=opta-scrape-complete
-        echo "Dispatched opta-scrape-complete to panna"
+        # Retry transient GitHub API failures (rate limit, 5xx) before giving
+        # up — a missed dispatch means waiting for the weekly cron to refresh.
+        for attempt in 1 2 3; do
+          if gh api repos/peteowen1/panna/dispatches \
+               -f event_type=opta-scrape-complete; then
+            echo "Dispatched opta-scrape-complete to panna (attempt $attempt)"
+            exit 0
+          fi
+          echo "::warning::Dispatch attempt $attempt failed"
+          [ "$attempt" -lt 3 ] && sleep $((attempt * 10))
+        done
+        echo "::error::Failed to dispatch opta-scrape-complete after 3 attempts"
+        exit 1
