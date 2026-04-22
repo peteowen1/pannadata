@@ -615,7 +615,13 @@ class OptaScraper:
 
     def get_season_matches(self, season_id: str, start_date: str, end_date: str) -> List[Dict]:
         """
-        Get all matches for a season within date range
+        Get all matches for a season within date range.
+
+        Paginates across the API's 100-match page size. Two-month windows for
+        busy leagues (e.g., EPL Dec-Jan with holiday fixtures) can exceed 100
+        matches; prior to pagination, those overflow matches were silently
+        dropped and never ingested. Loops until a page returns fewer than
+        the page size (last page) or empty.
 
         Args:
             season_id: Tournament calendar ID (e.g., "51r6ph2woavlbbpk8f29nynf8")
@@ -626,16 +632,35 @@ class OptaScraper:
             List of match info dicts with match IDs
         """
         endpoint = f"match/{self.PROVIDER_ID}"
-        params = {
-            "tmcl": season_id,
-            "live": "yes",
-            "_pgSz": "100",
-            "mt.mDt": f"[{start_date}T00:00:00Z TO {end_date}T23:59:59Z]",
-        }
-        data = self._fetch(endpoint, params)
-        if data and "match" in data:
-            return data["match"]
-        return []
+        page_size = 100
+        all_matches: List[Dict] = []
+        page = 1
+        max_pages = 50  # safety: >5000 matches per 2-month window is implausible
+
+        while page <= max_pages:
+            params = {
+                "tmcl": season_id,
+                "live": "yes",
+                "_pgSz": str(page_size),
+                "_pgNm": str(page),
+                "mt.mDt": f"[{start_date}T00:00:00Z TO {end_date}T23:59:59Z]",
+            }
+            data = self._fetch(endpoint, params)
+            if not data or "match" not in data:
+                break
+            batch = data["match"] or []
+            if not batch:
+                break
+            all_matches.extend(batch)
+            if len(batch) < page_size:
+                break  # last page (partial)
+            page += 1
+
+        if page > max_pages:
+            print(f"WARNING: get_season_matches hit {max_pages}-page safety cap "
+                  f"for season {season_id} {start_date}..{end_date}")
+
+        return all_matches
 
     def get_match_stats(self, match_id: str) -> Optional[Dict]:
         """Get detailed match statistics including player stats"""
