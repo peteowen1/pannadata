@@ -56,10 +56,24 @@ for (col in setdiff(feature_cols, names(features))) features[[col]] <- 0
 X <- as.matrix(features[, feature_cols, drop = FALSE])
 X[is.na(X)] <- 0
 
-shots$xg <- round(predict(xg_model$model, X), 3)
+pred_xg <- round(predict(xg_model$model, X), 3)
 
-cat("xG: mean =", round(mean(shots$xg), 4),
-    ", total =", round(sum(shots$xg), 1),
+# Preserve existing non-NA xG values; only fill NaN/NA rows with model
+# predictions. Today the model is the only xG source, so this is a no-op —
+# but if upstream ever provides real Opta xG we don't want to overwrite it
+# with a weaker signal. Also makes re-runs idempotent on already-enriched
+# rows, since build-blog-data.yml now invokes this script defensively.
+if ("xg" %in% names(shots)) {
+  n_filled <- sum(is.na(shots$xg))
+  shots$xg <- ifelse(is.na(shots$xg), pred_xg, shots$xg)
+  cat("Filled xG on", n_filled, "NaN rows (preserved", nrow(shots) - n_filled, "existing)\n")
+} else {
+  shots$xg <- pred_xg
+  cat("Added xG to all", nrow(shots), "rows\n")
+}
+
+cat("xG: mean =", round(mean(shots$xg, na.rm = TRUE), 4),
+    ", total =", round(sum(shots$xg, na.rm = TRUE), 1),
     ", goals =", sum(shots$is_goal, na.rm = TRUE), "\n")
 
 write_parquet(shots, shot_path)
