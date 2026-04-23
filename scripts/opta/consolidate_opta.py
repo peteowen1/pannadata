@@ -46,6 +46,57 @@ def _get_dedup_cols(table_type):
         return ['match_id', 'player_id']
 
 
+def _parse_force_full_env():
+    """Parse OPTA_CONSOLIDATE_FORCE env var robustly.
+
+    `bool(os.environ.get(...))` would evaluate every non-empty string as
+    True — a user setting `OPTA_CONSOLIDATE_FORCE=0` to mean "off" would
+    unexpectedly trigger a full rebuild. Explicit whitelist avoids the
+    footgun; anything else (including "0", "false", "no", or unset) is
+    treated as off.
+    """
+    return os.environ.get("OPTA_CONSOLIDATE_FORCE", "").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+
+
+def _consolidated_is_fresh(existing_path, source_files):
+    """Return True if the consolidated parquet at existing_path is usable
+    AND newer than every file in source_files.
+
+    Two checks:
+    - mtime comparison: newest source ≤ existing mtime. Standard freshness.
+    - parquet metadata probe: pq.read_metadata() succeeds. Catches the
+      edge case where a prior consolidation crashed mid-write and left
+      a truncated file with a fresh mtime — without this check, the skip
+      would lock that corrupt file in place forever because future runs
+      would always see it as "fresh".
+
+    Args:
+        existing_path: Path to the consolidated output parquet.
+        source_files: iterable of Path — the per-league inputs whose
+            aggregate latest mtime should be compared.
+    Returns:
+        True iff the consolidated file is both fresh and structurally
+        readable; False otherwise (caller should fall through to full
+        re-consolidation).
+    """
+    try:
+        existing_mtime = existing_path.stat().st_mtime
+        newest_input = max(f.stat().st_mtime for f in source_files)
+    except (OSError, ValueError):
+        return False
+    if newest_input > existing_mtime:
+        return False
+    try:
+        pq.read_metadata(existing_path)
+    except (OSError, pa.ArrowInvalid, pyarrow.lib.ArrowInvalid) as e:
+        print(f"  WARNING: existing consolidated file {existing_path.name} "
+              f"failed metadata probe ({e}); will re-consolidate.")
+        return False
+    return True
+
+
 def _split_existing_by_league(parquet_file, temp_dir, batch_size=50_000):
     """Split a consolidated parquet into per-league temp files.
 
@@ -238,7 +289,7 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
     print(f"Consolidating match_events for {len(leagues)} leagues...")
 
     errors = 0
-    force_full = bool(os.environ.get("OPTA_CONSOLIDATE_FORCE", ""))
+    force_full = _parse_force_full_env()
 
     for league in leagues:
         league_dir = events_dir / league
@@ -256,12 +307,13 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
         # Fast skip: consolidated file is newer than every per-season source.
         # Same rationale as consolidate_opta() — when a scrape left this
         # league's parquets untouched, there's nothing to do. Saves ~2-3
-        # seconds per league × ~106 leagues = ~4 minutes on a no-change run.
-        if existing_file.exists() and not force_full:
-            existing_mtime = existing_file.stat().st_mtime
-            newest_input = max(f.stat().st_mtime for f in parquet_files)
-            if newest_input <= existing_mtime:
-                continue
+        # seconds per league (summed across all leagues ≈ 4 minutes on a
+        # no-change run).
+        if existing_file.exists() and not force_full and \
+                _consolidated_is_fresh(existing_file, parquet_files):
+            print(f"  {league}: consolidated newer than sources, skipping "
+                  f"(set OPTA_CONSOLIDATE_FORCE=1 to override)")
+            continue
 
         # Phase 1: Read new season files into pandas (small — just recent data)
         new_dfs = []
@@ -495,7 +547,7 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
     print(f"Found table types: {table_types}")
 
     errors = 0
-    force_full = bool(os.environ.get("OPTA_CONSOLIDATE_FORCE", ""))
+    force_full = _parse_force_full_env()
 
     for table_type in table_types:
         tt_dir = opta_path / table_type
@@ -510,19 +562,19 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
         # Fast skip: if the consolidated file is newer than every per-league
         # parquet, no new data has landed for this table type since the last
         # run and re-splitting/re-concatenating would just rewrite identical
-        # output. This is the dominant case when a scrape touched only one
-        # table type (e.g. `--types fixtures`) but the consolidator has to
-        # run across all six for the scheduler. Set OPTA_CONSOLIDATE_FORCE=1
-        # to override (e.g. after a schema migration that changed the output
-        # layout without touching source files).
-        if existing_path.exists() and not force_full:
-            existing_mtime = existing_path.stat().st_mtime
-            newest_input = max(f.stat().st_mtime for f in new_files)
-            if newest_input <= existing_mtime:
-                print(f"Skipping opta_{table_type} - consolidated file "
-                      f"is newer than every source (set OPTA_CONSOLIDATE_FORCE=1 "
-                      f"to override)")
-                continue
+        # output. Dominant case when a scrape touched only one table type
+        # (e.g. `--types fixtures`) but the consolidator has to run across
+        # every table_type for the scheduler. Override via
+        # OPTA_CONSOLIDATE_FORCE=1 — useful when the existing consolidated
+        # file is suspected stale (schema migration, corrupt write,
+        # debugging an upstream consolidation issue) but inputs weren't
+        # re-touched.
+        if existing_path.exists() and not force_full and \
+                _consolidated_is_fresh(existing_path, new_files):
+            print(f"Skipping opta_{table_type} - consolidated file "
+                  f"is newer than every source (set OPTA_CONSOLIDATE_FORCE=1 "
+                  f"to override)")
+            continue
 
         print(f"Consolidating opta_{table_type}... ({len(new_files)} per-league files)")
 

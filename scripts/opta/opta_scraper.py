@@ -617,11 +617,17 @@ class OptaScraper:
         """
         Get all matches for a season within date range.
 
-        Paginates across the API's 100-match page size. Two-month windows for
-        busy leagues (e.g., EPL Dec-Jan with holiday fixtures) can exceed 100
-        matches; prior to pagination, those overflow matches were silently
-        dropped and never ingested. Loops until a page returns fewer than
-        the page size (last page) or empty.
+        Paginates across the local 100-match page size (the API accepts a
+        larger _pgSz but we stay at 100 for consistency with long-standing
+        behavior). Two-month windows for busy leagues (e.g., EPL Dec-Jan
+        with holiday fixtures) can exceed 100 matches; prior to pagination,
+        those overflow matches were silently dropped and never ingested.
+
+        Raises RuntimeError on any mid-pagination failure (fetch returned
+        None after retries, or the 50-page safety cap was hit). The caller
+        must treat a successful return as "complete list for the window" —
+        silently returning a truncated list would re-introduce the exact
+        silent-drop regression the pagination loop was written to prevent.
 
         Args:
             season_id: Tournament calendar ID (e.g., "51r6ph2woavlbbpk8f29nynf8")
@@ -629,7 +635,12 @@ class OptaScraper:
             end_date: ISO date string (e.g., "2026-05-31")
 
         Returns:
-            List of match info dicts with match IDs
+            List of match info dicts with match IDs (all pages).
+
+        Raises:
+            RuntimeError: if _fetch returns None mid-pagination or if the
+                50-page safety cap is hit. Truncation is never returned
+                silently.
         """
         endpoint = f"match/{self.PROVIDER_ID}"
         page_size = 100
@@ -646,9 +657,24 @@ class OptaScraper:
                 "mt.mDt": f"[{start_date}T00:00:00Z TO {end_date}T23:59:59Z]",
             }
             data = self._fetch(endpoint, params)
-            if not data or "match" not in data:
+            if data is None:
+                # _fetch exhausted retries. Any return here would be a
+                # truncated-but-looks-complete list — the exact silent-drop
+                # regression we're preventing. Raise so the caller can
+                # decide (retry the whole season later, skip, fail the run).
+                raise RuntimeError(
+                    f"get_season_matches: _fetch returned None at page {page} "
+                    f"for season {season_id} {start_date}..{end_date}. "
+                    f"Refusing to return a potentially truncated list."
+                )
+            if "match" not in data:
+                # No match key means the API returned a valid response with
+                # no matches in this window. First page: legitimately empty
+                # (e.g., a summer window with no fixtures). Later page: the
+                # previous page was exactly page_size AND this one is empty,
+                # which is also legitimate (total exactly divides page_size).
                 break
-            batch = data["match"] or []
+            batch = data["match"] if isinstance(data["match"], list) else []
             if not batch:
                 break
             all_matches.extend(batch)
@@ -657,8 +683,17 @@ class OptaScraper:
             page += 1
 
         if page > max_pages:
-            print(f"WARNING: get_season_matches hit {max_pages}-page safety cap "
-                  f"for season {season_id} {start_date}..{end_date}")
+            # Hitting the cap means either (a) a real runaway loop (bug)
+            # or (b) a legitimate window exceeding 5000 matches which is
+            # implausible for a single-league 2-month span. Either way,
+            # raising is the right call — silently truncating at 5000
+            # would be the same silent-drop failure pattern.
+            raise RuntimeError(
+                f"get_season_matches hit {max_pages}-page safety cap for "
+                f"season {season_id} {start_date}..{end_date}. "
+                f"Investigate: this implies >{max_pages * page_size} matches "
+                f"in the window or a pagination bug."
+            )
 
         return all_matches
 
