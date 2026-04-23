@@ -25,6 +25,7 @@ jobs:
             any::arrow
             any::dplyr
             any::tidyr
+            any::xgboost
 
       - name: Download source data
         env:
@@ -84,6 +85,84 @@ jobs:
 
           echo "Downloaded source data:"
           ls -lh blog/ source/
+
+      - name: Enrich shot xG (belt-and-suspenders — re-run if upstream is stale)
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ ! -f source/opta_shot_events.parquet ]; then
+            echo "::notice::No opta_shot_events.parquet — skipping xG enrichment"
+            exit 0
+          fi
+
+          # Guard against the failure mode where a manual upload to opta-latest
+          # replaced the enriched file with an un-enriched one (ships ~99% NaN
+          # xG to the blog). daily-opta-scrape.yml runs enrich_shots_xg.R too,
+          # but a local scrape + manual upload can bypass it.
+          #
+          # If this step fires: check opta-latest asset `updatedAt` timestamps
+          # (`gh release view opta-latest -R peteowen1/pannadata --json assets`)
+          # — a manual upload likely clobbered the enriched file. Fix upstream
+          # by re-running daily-opta-scrape.yml or re-uploading enriched output;
+          # this step is a safety net, not the source of truth.
+          #
+          # Probe reads xG NaN rate on the most recent season (derived from the
+          # data, not hardcoded, so the check doesn't rot at season rollover).
+          # Any Rscript error path returns 100 so we fail-closed: treat failures
+          # to measure as "broken" and force re-enrichment rather than silently
+          # skip (the whole point of this guard is catching silent failure).
+          NAN_PCT=$(Rscript -e '
+            suppressMessages({ library(arrow); library(dplyr) })
+            tryCatch({
+              s <- read_parquet("source/opta_shot_events.parquet")
+              if (!"xg"     %in% names(s)) { cat(100); quit() }
+              if (!"season" %in% names(s)) { cat(100); quit() }
+              latest <- max(s$season, na.rm = TRUE)
+              recent <- s |> filter(season == latest)
+              if (nrow(recent) == 0)       { cat(100); quit() }
+              cat(round(100 * mean(is.na(recent$xg))))
+            }, error = function(e) { cat(100) })
+          ' 2>/dev/null | tr -dc '0-9')
+          [ -z "$NAN_PCT" ] && NAN_PCT=100
+          echo "Upstream xG NaN rate on latest season: ${NAN_PCT}%"
+
+          # Threshold 50: healthy enriched data is <5% NaN on any season; a
+          # clobbered un-enriched file is ~99%. 50 is the safe midpoint — won't
+          # trip on transient partial-enrichment but reliably catches the
+          # clobber case.
+          if [ "$NAN_PCT" -lt "50" ]; then
+            echo "xG coverage is healthy — skipping re-enrichment"
+            exit 0
+          fi
+
+          echo "::warning::xG coverage is broken (${NAN_PCT}% NaN on latest season) — re-running enrichment"
+          if ! gh release download models -p "xg_model.rds" -D source/; then
+            echo "::error::xg_model.rds unavailable from models release AND upstream is broken (${NAN_PCT}% NaN). Blog will ship with broken xG until upstream is fixed."
+            exit 1
+          fi
+
+          Rscript scripts/enrich_shots_xg.R source/opta_shot_events.parquet source/xg_model.rds
+
+          # Post-enrichment verification: catch model/schema drift where
+          # predict() produces garbage or still-NaN values on the current shot
+          # format. If still > 10% NaN, the enrichment didn't actually fix it.
+          POST_NAN=$(Rscript -e '
+            suppressMessages({ library(arrow); library(dplyr) })
+            tryCatch({
+              s <- read_parquet("source/opta_shot_events.parquet")
+              latest <- max(s$season, na.rm = TRUE)
+              recent <- s |> filter(season == latest)
+              if (nrow(recent) == 0) { cat(100); quit() }
+              cat(round(100 * mean(is.na(recent$xg))))
+            }, error = function(e) { cat(100) })
+          ' 2>/dev/null | tr -dc '0-9')
+          [ -z "$POST_NAN" ] && POST_NAN=100
+          if [ "$POST_NAN" -gt "10" ]; then
+            echo "::error::Post-enrichment NaN still ${POST_NAN}% — enrichment did not fix the problem. Likely model/schema drift in xg_model.rds vs shot columns."
+            exit 1
+          fi
+          echo "Post-enrichment NaN rate: ${POST_NAN}% (healthy)"
 
       - name: Build ratings parquet
         run: Rscript scripts/build_blog_data.R
