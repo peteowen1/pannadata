@@ -15,6 +15,7 @@ at ~1 league's worth of data instead of the entire dataset.
 import gc
 import json
 import logging
+import os
 import shutil
 import sys
 import tempfile
@@ -237,6 +238,8 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
     print(f"Consolidating match_events for {len(leagues)} leagues...")
 
     errors = 0
+    force_full = bool(os.environ.get("OPTA_CONSOLIDATE_FORCE", ""))
+
     for league in leagues:
         league_dir = events_dir / league
         parquet_files = list(league_dir.glob("*.parquet")) if league_dir.exists() else []
@@ -249,6 +252,16 @@ def consolidate_events_by_league(opta_dir="opta", output_dir="opta"):
         if not parquet_files:
             print(f"  {league}: No new data, skipping")
             continue
+
+        # Fast skip: consolidated file is newer than every per-season source.
+        # Same rationale as consolidate_opta() — when a scrape left this
+        # league's parquets untouched, there's nothing to do. Saves ~2-3
+        # seconds per league × ~106 leagues = ~4 minutes on a no-change run.
+        if existing_file.exists() and not force_full:
+            existing_mtime = existing_file.stat().st_mtime
+            newest_input = max(f.stat().st_mtime for f in parquet_files)
+            if newest_input <= existing_mtime:
+                continue
 
         # Phase 1: Read new season files into pandas (small — just recent data)
         new_dfs = []
@@ -482,6 +495,8 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
     print(f"Found table types: {table_types}")
 
     errors = 0
+    force_full = bool(os.environ.get("OPTA_CONSOLIDATE_FORCE", ""))
+
     for table_type in table_types:
         tt_dir = opta_path / table_type
         new_files = list(tt_dir.glob("**/*.parquet"))
@@ -491,6 +506,24 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
             continue
 
         existing_path = output_path / f"opta_{table_type}.parquet"
+
+        # Fast skip: if the consolidated file is newer than every per-league
+        # parquet, no new data has landed for this table type since the last
+        # run and re-splitting/re-concatenating would just rewrite identical
+        # output. This is the dominant case when a scrape touched only one
+        # table type (e.g. `--types fixtures`) but the consolidator has to
+        # run across all six for the scheduler. Set OPTA_CONSOLIDATE_FORCE=1
+        # to override (e.g. after a schema migration that changed the output
+        # layout without touching source files).
+        if existing_path.exists() and not force_full:
+            existing_mtime = existing_path.stat().st_mtime
+            newest_input = max(f.stat().st_mtime for f in new_files)
+            if newest_input <= existing_mtime:
+                print(f"Skipping opta_{table_type} - consolidated file "
+                      f"is newer than every source (set OPTA_CONSOLIDATE_FORCE=1 "
+                      f"to override)")
+                continue
+
         print(f"Consolidating opta_{table_type}... ({len(new_files)} per-league files)")
 
         # Group new files by league
