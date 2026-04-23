@@ -25,6 +25,7 @@ jobs:
             any::arrow
             any::dplyr
             any::tidyr
+            any::xgboost
 
       - name: Download source data
         env:
@@ -84,6 +85,43 @@ jobs:
 
           echo "Downloaded source data:"
           ls -lh blog/ source/
+
+      - name: Enrich shot xG (belt-and-suspenders — re-run if upstream is stale)
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ ! -f source/opta_shot_events.parquet ]; then
+            echo "::notice::No opta_shot_events.parquet — skipping xG enrichment"
+            exit 0
+          fi
+
+          # Guard against the failure mode where a manual upload to opta-latest
+          # replaced the enriched file with an un-enriched one (ships ~99% NaN
+          # xG to the blog). daily-opta-scrape.yml runs enrich_shots_xg.R too,
+          # but a local scrape + manual upload can bypass it. We check recent-
+          # season xG coverage and re-enrich only if it looks broken.
+          NAN_PCT=$(Rscript -e '
+            suppressMessages({ library(arrow); library(dplyr) })
+            s <- read_parquet("source/opta_shot_events.parquet")
+            if (!"xg" %in% names(s)) { cat("100"); quit() }
+            recent <- s |> filter(season == "2025-2026")
+            if (nrow(recent) == 0) { cat("0"); quit() }
+            cat(round(100 * mean(is.na(recent$xg)), 0))
+          ')
+          echo "Upstream xG NaN rate on 2025-2026: ${NAN_PCT}%"
+
+          if [ "$NAN_PCT" -lt "50" ]; then
+            echo "xG coverage is healthy — skipping re-enrichment"
+            exit 0
+          fi
+
+          echo "::warning::xG coverage is broken (${NAN_PCT}% NaN on 2025-2026) — re-running enrichment"
+          if gh release download models -p "xg_model.rds" -D source/; then
+            Rscript scripts/enrich_shots_xg.R source/opta_shot_events.parquet source/xg_model.rds
+          else
+            echo "::warning::xg_model.rds not available from models release — cannot re-enrich"
+          fi
 
       - name: Build ratings parquet
         run: Rscript scripts/build_blog_data.R
