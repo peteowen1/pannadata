@@ -474,6 +474,7 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
             print(msg)
 
     date_ranges = get_season_date_range(season_name)
+    today_iso = datetime.now().date().isoformat()
 
     # Collectors for all data types
     all_player_stats = []
@@ -488,6 +489,9 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
     all_fixture_records = []
 
     for start_date, end_date in date_ranges:
+        if start_date > today_iso:
+            print(f"\nSkipping future window {start_date} to {end_date} (start > {today_iso})")
+            continue
         print(f"\nFetching {start_date} to {end_date}...")
 
         matches = scraper.get_season_matches(season_id, start_date, end_date)
