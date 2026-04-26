@@ -31,7 +31,7 @@ import logging
 import shutil
 import sys
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 from opta_scraper import OptaScraper, MatchEvent, ShotEvent, PlayerLineup, AllMatchEvent
 from dataclasses import asdict
 import pandas as pd
@@ -591,7 +591,6 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
             # Add manifest record for this match
             # Don't mark as event_unavailable if match is recent (< 7 days old)
             # Events may become available after a few days
-            from datetime import datetime, timedelta
             match_dt = datetime.fromisoformat(match_date.replace('Z', '+00:00'))
             is_recent = (datetime.now(match_dt.tzinfo) - match_dt) < timedelta(days=7)
 
