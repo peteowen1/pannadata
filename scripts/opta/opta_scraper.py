@@ -658,10 +658,26 @@ class OptaScraper:
             }
             data = self._fetch(endpoint, params)
             if data is None:
-                # _fetch exhausted retries. Any return here would be a
-                # truncated-but-looks-complete list — the exact silent-drop
-                # regression we're preventing. Raise so the caller can
-                # decide (retry the whole season later, skip, fail the run).
+                if page == 1:
+                    # Page-1 None: no data was ever returned for this window.
+                    # Distinct from mid-pagination None — there is no partial
+                    # list to lose. Real-world causes: 404 for a legitimately
+                    # empty window (cup tournament gap between rounds, future
+                    # fixtures not yet published in Opta, off-season subset
+                    # of a season's date span) OR a transient API error after
+                    # retry-exhaustion. Either way, return empty so the
+                    # season continues to the next window. The manifest tracks
+                    # what's been scraped, so a real "should have data here"
+                    # case will be picked up by a later run once Opta has it.
+                    print(
+                        f"  Empty window {start_date}..{end_date} for season "
+                        f"{season_id} (page-1 None) — moving on"
+                    )
+                    return []
+                # Later-page None: previous page(s) returned data, this page
+                # didn't. That IS the silent-truncation regression #38 was
+                # designed to prevent. Raise loud so the caller can decide
+                # (retry the whole season later, skip, fail the run).
                 raise RuntimeError(
                     f"get_season_matches: _fetch returned None at page {page} "
                     f"for season {season_id} {start_date}..{end_date}. "
