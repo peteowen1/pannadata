@@ -357,6 +357,12 @@ TOURNAMENT_DATE_EXCEPTIONS = {
     "2020": [
         ("2021-06-01", "2021-07-31"),
     ],
+    # World Cup 2026 — played Jun 11 – Jul 19, 2026 across USA/Canada/Mexico.
+    # Default Aug 2025 – Jul 2026 windowing tries pre-tournament months that
+    # have no data and Opta returns 404, tripping the strict pagination guard.
+    "2026 Canada-Mexico-USA": [
+        ("2026-06-01", "2026-07-31"),
+    ],
 }
 
 
