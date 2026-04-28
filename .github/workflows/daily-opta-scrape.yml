@@ -98,6 +98,7 @@ jobs:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Run Opta scraper
+      id: scrape
       # Normal daily runs are 10-18 min. Cap at 35 to catch hangs (Opta
       # rate-limiting backoff, reconcile-bug over-scraping) without waiting
       # for the overall 120-min job timeout to fire. Override via dispatch
@@ -301,6 +302,124 @@ jobs:
         echo "Consolidated by table:"
         ls -lh data/opta/opta_*.parquet 2>/dev/null || echo "  None"
         echo "Events by league: $(ls data/opta/events_consolidated/events_*.parquet 2>/dev/null | wc -l) files"
+
+    # Recovery: if the scraper timed out or crashed mid-run, the happy-path
+    # consolidate+upload steps are skipped — leaving the local runner with
+    # newly-scraped per-match parquets and an updated manifest that will be
+    # destroyed when the runner ends. This step salvages partial progress.
+    #
+    # Why this matters: scrape_opta.py writes the manifest incrementally
+    # after each season (line ~920), so on a 35-min kill the local manifest
+    # reflects all *completed* leagues. Without this step, the next day's
+    # run downloads the SAME pre-failure manifest and re-scrapes everything
+    # from there — creating a runaway backlog (one missed upload → tomorrow
+    # has 1 more day of work → more likely to time out → 2 more days of
+    # work, etc). Observed in the wild: 2026-04-22 → 2026-04-27, 6-day cascade.
+    #
+    # Safety: consolidate_opta.py dedups per-table (keyed on match_id plus
+    # table-specific columns; see _get_dedup_cols), so re-scraping any
+    # partially-handled match later is harmless — re-scraped rows replace
+    # prior rows for the same match. The manifest is uploaded LAST and only
+    # if every consolidated upload succeeded — otherwise the next run would
+    # skip matches whose data isn't in the release, permanently losing them.
+    - name: Recovery — consolidate and upload partial progress
+      if: always() && steps.scrape.outcome == 'failure'
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        set +e
+        cd data || { echo "::error::data dir missing — cannot recover"; exit 1; }
+        PARQUET_COUNT=$(find opta/player_stats opta/shots opta/lineups opta/events opta/shot_events opta/match_events opta/fixtures -name "*.parquet" 2>/dev/null | wc -l)
+        if [ "$PARQUET_COUNT" -eq 0 ]; then
+          echo "::notice::No partial parquets to recover — nothing to do"
+          exit 0
+        fi
+        echo "::warning::Scraper failed mid-run. Recovering $PARQUET_COUNT per-match parquet files."
+
+        # Snapshot pre-consolidate mtimes for the events skip-unchanged check
+        mkdir -p /tmp/scrape-state
+        if [ -d "opta/events_consolidated" ]; then
+          find opta/events_consolidated -name "events_*.parquet" \
+            -printf "%f %T@\n" 2>/dev/null | sort > /tmp/scrape-state/pre_mtimes.txt
+        else
+          touch /tmp/scrape-state/pre_mtimes.txt
+        fi
+
+        # Best-effort consolidate. A non-zero exit doesn't block the upload
+        # attempt — partial consolidated output is still better than nothing.
+        python ../scripts/opta/consolidate_opta.py
+        consolidate_status=$?
+        if [ "$consolidate_status" -ne 0 ]; then
+          echo "::warning::Consolidator exited $consolidate_status — uploading whatever was produced"
+        fi
+
+        # Track failures across ALL consolidated uploads. Manifest is
+        # uploaded last, gated on zero failures, to preserve the atomicity
+        # invariant: the release's manifest must never claim matches whose
+        # data isn't in the consolidated parquets.
+        upload_failures=0
+
+        # Consolidated table-level parquets
+        for f in opta/opta_*.parquet; do
+          [ -f "$f" ] || continue
+          if gh release upload opta-latest "$f" --clobber; then
+            echo "Recovered $(basename "$f")"
+          else
+            echo "::error::Failed to upload $(basename "$f")"
+            upload_failures=$((upload_failures + 1))
+          fi
+        done
+
+        # Per-league events files — only those modified during recovery
+        PRE_MTIMES=/tmp/scrape-state/pre_mtimes.txt
+        if [ -d "opta/events_consolidated" ]; then
+          for f in opta/events_consolidated/events_*.parquet; do
+            [ -f "$f" ] || continue
+            base=$(basename "$f")
+            post_mtime=$(stat --printf "%Y" "$f")
+            pre_mtime=$(awk -v name="$base" '$1 == name {printf "%d", $2}' "$PRE_MTIMES")
+            if [ -z "$pre_mtime" ] || [ "$pre_mtime" != "$post_mtime" ]; then
+              if gh release upload opta-latest "$f" --clobber; then
+                echo "Recovered $base"
+              else
+                echo "::error::Failed to upload $base"
+                upload_failures=$((upload_failures + 1))
+              fi
+            fi
+          done
+        fi
+
+        # Catalog (if produced) — non-critical for atomicity
+        if [ -f "opta/opta-catalog.json" ]; then
+          if gh release upload opta-latest opta/opta-catalog.json --clobber; then
+            echo "Recovered opta-catalog.json"
+          else
+            echo "::warning::Failed to upload opta-catalog.json (non-critical)"
+          fi
+        fi
+
+        # Manifest upload — gated on every consolidated upload having
+        # succeeded. If we uploaded a fresh manifest while a consolidated
+        # upload failed, the release would advertise matches whose rows
+        # aren't there, and the next run would skip them — silent data loss.
+        # Failing here means the next run sees the OLD manifest and the
+        # mix of new/old consolidated parquets, then re-scrapes whatever
+        # the old manifest doesn't claim. That's safe; data is recoverable.
+        if [ "$upload_failures" -gt 0 ]; then
+          echo "::error::$upload_failures consolidated upload(s) failed — refusing to update manifest to preserve release atomicity. Next run will re-scrape; no data lost."
+          exit 1
+        fi
+
+        if [ -f "opta-manifest.parquet" ]; then
+          if gh release upload opta-latest opta-manifest.parquet --clobber; then
+            echo "Recovered opta-manifest.parquet"
+          else
+            echo "::error::Manifest upload failed AFTER consolidated succeeded — release inconsistent until reconciled"
+            exit 1
+          fi
+        fi
+
+        echo "::notice::Recovery complete — next run will resume from this checkpoint"
 
     # panna's predictions-pipeline.yml listens for this event and regenerates
     # match_predictions.parquet + season_standings.parquet on blog-latest.
