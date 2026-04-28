@@ -316,17 +316,19 @@ jobs:
     # has 1 more day of work → more likely to time out → 2 more days of
     # work, etc). Observed in the wild: 2026-04-22 → 2026-04-27, 6-day cascade.
     #
-    # Safety: consolidate_opta.py dedups by match_id, so re-scraping any
-    # partially-handled match later is harmless. Manifest + consolidated
-    # parquets are uploaded *together* — never manifest alone, otherwise
-    # the next run would skip matches whose data isn't in the release.
+    # Safety: consolidate_opta.py dedups per-table (keyed on match_id plus
+    # table-specific columns; see _get_dedup_cols), so re-scraping any
+    # partially-handled match later is harmless — re-scraped rows replace
+    # prior rows for the same match. The manifest is uploaded LAST and only
+    # if every consolidated upload succeeded — otherwise the next run would
+    # skip matches whose data isn't in the release, permanently losing them.
     - name: Recovery — consolidate and upload partial progress
       if: always() && steps.scrape.outcome == 'failure'
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         set +e
-        cd data
+        cd data || { echo "::error::data dir missing — cannot recover"; exit 1; }
         PARQUET_COUNT=$(find opta/player_stats opta/shots opta/lineups opta/events opta/shot_events opta/match_events opta/fixtures -name "*.parquet" 2>/dev/null | wc -l)
         if [ "$PARQUET_COUNT" -eq 0 ]; then
           echo "::notice::No partial parquets to recover — nothing to do"
@@ -343,29 +345,29 @@ jobs:
           touch /tmp/scrape-state/pre_mtimes.txt
         fi
 
-        # Best-effort consolidate. Failure here is non-fatal — we still want
-        # to upload the manifest so completed seasons aren't re-scraped.
+        # Best-effort consolidate. A non-zero exit doesn't block the upload
+        # attempt — partial consolidated output is still better than nothing.
         python ../scripts/opta/consolidate_opta.py
         consolidate_status=$?
         if [ "$consolidate_status" -ne 0 ]; then
           echo "::warning::Consolidator exited $consolidate_status — uploading whatever was produced"
         fi
 
-        # Upload manifest first (most critical — tracks completed seasons)
-        if [ -f "opta-manifest.parquet" ]; then
-          if gh release upload opta-latest opta-manifest.parquet --clobber; then
-            echo "✅ Recovered opta-manifest.parquet"
-          else
-            echo "::error::Failed to upload recovery manifest — completed seasons will be re-scraped"
-          fi
-        fi
+        # Track failures across ALL consolidated uploads. Manifest is
+        # uploaded last, gated on zero failures, to preserve the atomicity
+        # invariant: the release's manifest must never claim matches whose
+        # data isn't in the consolidated parquets.
+        upload_failures=0
 
-        # Upload any consolidated table-level parquets that exist
+        # Consolidated table-level parquets
         for f in opta/opta_*.parquet; do
           [ -f "$f" ] || continue
-          gh release upload opta-latest "$f" --clobber \
-            && echo "✅ Recovered $(basename $f)" \
-            || echo "::warning::Failed to upload $(basename $f)"
+          if gh release upload opta-latest "$f" --clobber; then
+            echo "Recovered $(basename "$f")"
+          else
+            echo "::error::Failed to upload $(basename "$f")"
+            upload_failures=$((upload_failures + 1))
+          fi
         done
 
         # Per-league events files — only those modified during recovery
@@ -377,18 +379,44 @@ jobs:
             post_mtime=$(stat --printf "%Y" "$f")
             pre_mtime=$(awk -v name="$base" '$1 == name {printf "%d", $2}' "$PRE_MTIMES")
             if [ -z "$pre_mtime" ] || [ "$pre_mtime" != "$post_mtime" ]; then
-              gh release upload opta-latest "$f" --clobber \
-                && echo "✅ Recovered $base" \
-                || echo "::warning::Failed to upload $base"
+              if gh release upload opta-latest "$f" --clobber; then
+                echo "Recovered $base"
+              else
+                echo "::error::Failed to upload $base"
+                upload_failures=$((upload_failures + 1))
+              fi
             fi
           done
         fi
 
-        # Catalog (if produced)
+        # Catalog (if produced) — non-critical for atomicity
         if [ -f "opta/opta-catalog.json" ]; then
-          gh release upload opta-latest opta/opta-catalog.json --clobber \
-            && echo "✅ Recovered opta-catalog.json" \
-            || echo "::warning::Failed to upload opta-catalog.json"
+          if gh release upload opta-latest opta/opta-catalog.json --clobber; then
+            echo "Recovered opta-catalog.json"
+          else
+            echo "::warning::Failed to upload opta-catalog.json (non-critical)"
+          fi
+        fi
+
+        # Manifest upload — gated on every consolidated upload having
+        # succeeded. If we uploaded a fresh manifest while a consolidated
+        # upload failed, the release would advertise matches whose rows
+        # aren't there, and the next run would skip them — silent data loss.
+        # Failing here means the next run sees the OLD manifest and the
+        # mix of new/old consolidated parquets, then re-scrapes whatever
+        # the old manifest doesn't claim. That's safe; data is recoverable.
+        if [ "$upload_failures" -gt 0 ]; then
+          echo "::error::$upload_failures consolidated upload(s) failed — refusing to update manifest to preserve release atomicity. Next run will re-scrape; no data lost."
+          exit 1
+        fi
+
+        if [ -f "opta-manifest.parquet" ]; then
+          if gh release upload opta-latest opta-manifest.parquet --clobber; then
+            echo "Recovered opta-manifest.parquet"
+          else
+            echo "::error::Manifest upload failed AFTER consolidated succeeded — release inconsistent until reconciled"
+            exit 1
+          fi
         fi
 
         echo "::notice::Recovery complete — next run will resume from this checkpoint"
