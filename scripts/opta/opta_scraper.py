@@ -508,12 +508,18 @@ class OptaScraper:
         if self._request_count % 10 == 0:
             self._set_random_headers()
 
-    def _fetch(self, endpoint: str, params: Dict[str, str],
-               max_retries: int = 3) -> Optional[Dict]:
-        """Fetch from API with JSON format and exponential backoff retry.
+    def _fetch_raw(self, endpoint: str, params: Dict[str, str],
+                   max_retries: int = 3) -> Tuple[Optional[Dict], int]:
+        """Fetch from API and return (data, last_http_status).
+
+        Status is the HTTP code last observed (or 0 for network/JSON errors
+        that never produced a response). Useful for callers that need to
+        distinguish 404 ("resource doesn't exist") from other None causes
+        — e.g., paginated endpoints where 404-on-page-N means "no more
+        pages" but None after a 5xx retry-exhaustion means real failure.
 
         Retries on transient failures (429, 5xx, connection/JSON errors).
-        Returns None on permanent failures (400, 403, 404).
+        Returns (None, status) on permanent failures (400, 403, 404).
         """
         url = f"{self.BASE_URL}/{endpoint}"
         default_params = {"_rt": "c", "_fmt": "json"}
@@ -528,7 +534,7 @@ class OptaScraper:
                 if resp.status_code in (400, 403, 404):
                     if resp.status_code != 404:
                         print(f"Request failed for {endpoint}: HTTP {resp.status_code}")
-                    return None
+                    return None, resp.status_code
 
                 # Rate limited or server error - retry with backoff
                 if resp.status_code == 429 or resp.status_code >= 500:
@@ -541,10 +547,10 @@ class OptaScraper:
                     else:
                         print(f"Request failed for {endpoint}: HTTP {resp.status_code} "
                               f"after {max_retries} attempts")
-                        return None
+                        return None, resp.status_code
 
                 resp.raise_for_status()
-                return resp.json()
+                return resp.json(), resp.status_code
 
             except (requests.ConnectionError, requests.Timeout) as e:
                 if attempt < max_retries:
@@ -554,7 +560,7 @@ class OptaScraper:
                     time.sleep(wait)
                 else:
                     print(f"Request failed for {endpoint} after {max_retries} attempts: {e}")
-                    return None
+                    return None, 0
             except requests.RequestException as e:
                 if attempt < max_retries:
                     wait = 2 ** attempt + random.uniform(0, 1)
@@ -563,7 +569,7 @@ class OptaScraper:
                     time.sleep(wait)
                 else:
                     print(f"Request failed for {endpoint} after {max_retries} attempts: {e}")
-                    return None
+                    return None, 0
             except json.JSONDecodeError as e:
                 if attempt < max_retries:
                     wait = 2 ** attempt + random.uniform(0, 1)
@@ -572,9 +578,19 @@ class OptaScraper:
                     time.sleep(wait)
                 else:
                     print(f"JSON parse failed for {endpoint} after {max_retries} attempts: {e}")
-                    return None
+                    return None, 0
 
-        return None  # Safety fallback (all paths return inside the loop)
+        return None, 0  # Safety fallback (all paths return inside the loop)
+
+    def _fetch(self, endpoint: str, params: Dict[str, str],
+               max_retries: int = 3) -> Optional[Dict]:
+        """Fetch from API with JSON format and exponential backoff retry.
+
+        Thin wrapper over _fetch_raw — drops the status code for callers
+        that don't need to distinguish 404 from other None causes.
+        """
+        data, _ = self._fetch_raw(endpoint, params, max_retries)
+        return data
 
     def discover_seasons(self, competition: str) -> Dict[str, str]:
         """
@@ -656,7 +672,7 @@ class OptaScraper:
                 "_pgNm": str(page),
                 "mt.mDt": f"[{start_date}T00:00:00Z TO {end_date}T23:59:59Z]",
             }
-            data = self._fetch(endpoint, params)
+            data, status = self._fetch_raw(endpoint, params)
             if data is None:
                 if page == 1:
                     # Page-1 None: no data was ever returned for this window.
@@ -674,13 +690,25 @@ class OptaScraper:
                         f"{season_id} (page-1 None) — moving on"
                     )
                     return []
-                # Later-page None: previous page(s) returned data, this page
-                # didn't. That IS the silent-truncation regression #38 was
-                # designed to prevent. Raise loud so the caller can decide
-                # (retry the whole season later, skip, fail the run).
+                # Later-page None: distinguish 404 (legitimate end-of-pagination)
+                # from other failures (real truncation we must not silently
+                # accept). Opta returns 404 for "page N doesn't exist" once
+                # the result set is exhausted — observed in the wild on
+                # Brazilian_Serie_A 2026-04-01..2026-05-31 where page 1
+                # returned 100 matches and page 2 was a clean 404. Treating
+                # that as truncation crashed daily runs unnecessarily. A 5xx
+                # after retry-exhaustion or a network error (status==0)
+                # remains a real truncation risk and still raises — that's
+                # what fix #38 was for.
+                if status == 404:
+                    print(
+                        f"  End of pagination at page {page} for season "
+                        f"{season_id} {start_date}..{end_date} (404)"
+                    )
+                    break
                 raise RuntimeError(
-                    f"get_season_matches: _fetch returned None at page {page} "
-                    f"for season {season_id} {start_date}..{end_date}. "
+                    f"get_season_matches: _fetch returned None (status={status}) "
+                    f"at page {page} for season {season_id} {start_date}..{end_date}. "
                     f"Refusing to return a potentially truncated list."
                 )
             if "match" not in data:
