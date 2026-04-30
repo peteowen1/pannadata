@@ -64,6 +64,19 @@ jobs:
             echo "::warning::action_equity.parquet not available — chains will lack equity"
           fi
 
+          # Action WPA (per-action win-probability-added — optional, used by
+          # chain builder for blog match-page WPA without worker calls).
+          # Sharded per league-season as action_wpa_<league>_<season>.parquet
+          # by panna's 06_calculate_wpa.R. Glob-style download — no failure
+          # if absent (chain builder falls back gracefully).
+          WPA_COUNT=0
+          if gh release download opta-latest -p "action_wpa_*.parquet" -D source/ 2>/dev/null; then
+            WPA_COUNT=$(ls source/action_wpa_*.parquet 2>/dev/null | wc -l)
+            echo "Downloaded $WPA_COUNT action_wpa_*.parquet shard(s)"
+          else
+            echo "::warning::No action_wpa_*.parquet shards on opta-latest — chains will lack per-action WPA"
+          fi
+
           # Opta shot events (optional — doesn't fail build)
           if gh release download opta-latest -p "opta_shot_events.parquet" -D source/; then
             echo "Downloaded opta_shot_events.parquet"
