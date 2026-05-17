@@ -2954,5 +2954,39 @@
     "1968 Italy": "c4ypwj4rsgwlns6rvllk32aj9",
     "1964 Spain": "c4c5gydslxwm4chwwqt405n85",
     "1960 France": "c3olmoa836th1pk1udy49zj6d"
+  },
+  "AFC_Asian_Cup": {
+    "2027 Saudi Arabia": "dp6ffrjd9vghzrbai8bxk0il0",
+    "2023 Qatar":        "dxgoo5g7fx8rp5vu8kkzhcxnu",
+    "2019 UAE":          "a9kn206szttbg2hrcumlt8lpl",
+    "2015 Australia":    "5anm5zivcrs1vrw50o5qg4x3b"
+  },
+  "AFC_WC_Qualifiers": {
+    "2026 Canada-Mexico-USA": "8rlm9tgxmr9acaidre79xsjdg",
+    "2022 Qatar":             "2frzbxa1eha1ca8a7u9mxot4a",
+    "2018 Russia":            "ceopewzeyevplvh4pvart8el1"
+  },
+  "CAF_WC_Qualifiers": {
+    "2026 Canada-Mexico-USA": "9ghm6cuz03lcz4fg8jl3n1uz8",
+    "2022 Qatar":             "9mfeyhdrzoazvd8m6h0qhqnhm",
+    "2018 Russia":            "179akp03f2s0q483rai409f4l"
+  },
+  "AFCON_Qualifiers": {
+    "2027 Kenya-Tanzania-Uganda": "2vj8sd86i396edjnxg4uojyms",
+    "2025 Morocco":               "a91rgnnp9krmr754qerzib0no",
+    "2023 Cote d'Ivoire":         "3vcpljrsyrrc01qvequcz0zdg"
+  },
+  "Asian_Cup_Qualifiers": {
+    "2027 Saudi Arabia": "bnedozeloq04yhsasxzc9p9n8",
+    "2023 Qatar":        "7hd8fbugte90ehj33tjn7cmzu"
+  },
+  "Gulf_Cup_of_Nations": {
+    "2024 Kuwait": "9txai0fmtxxuwen9so0q6iqs4",
+    "2023 Iraq":   "97vt1tkzvrl7qw61vaiz9ma96"
+  },
+  "Intl_Friendlies": {
+    "Intl_Friendlies_2026": "dezv8l0fzgcxtejl0dwmy1gyc",
+    "Intl_Friendlies_2025": "8pw8cm9fuczk7lmxm1oxjdyc4",
+    "Intl_Friendlies_2024": "6g6a8weru6ytaa0mr0hpwn9xw"
   }
 }

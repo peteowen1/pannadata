@@ -357,12 +357,61 @@ TOURNAMENT_DATE_EXCEPTIONS = {
     "2020": [
         ("2021-06-01", "2021-07-31"),
     ],
-    # World Cup 2026 — played Jun 11 – Jul 19, 2026 across USA/Canada/Mexico.
-    # Default Aug 2025 – Jul 2026 windowing tries pre-tournament months that
-    # have no data and Opta returns 404, tripping the strict pagination guard.
+    # World Cup 2026 — main tournament Jun 11 – Jul 19, 2026 across
+    # USA/Canada/Mexico. The same season-name is reused by AFC and CAF
+    # World Cup qualifiers whose actual play window spans Oct 2023 –
+    # Nov 2025. Window covers both periods. With the 404-as-end-of-
+    # pagination fix (pannadata#45) the empty pre-tournament months for
+    # the main WC scrape are no longer fatal — they just iterate quickly.
     "2026 Canada-Mexico-USA": [
-        ("2026-06-01", "2026-07-31"),
+        ("2023-10-01", "2026-07-31"),
     ],
+    # AFCON 2023 in Côte d'Ivoire — postponed to Jan 13 – Feb 11, 2024. The
+    # "2023" name implies Aug 2022 – Jul 2023 default, which misses the
+    # entire tournament played in early 2024.
+    "2023 Côte d'Ivoire": [
+        ("2024-01-01", "2024-02-29"),
+    ],
+    # AFCON 2025 in Morocco — played Dec 21, 2025 – Jan 18, 2026. Same
+    # season-name is also used by AFCON Qualifiers 2025 cycle (Mar–Nov 2024).
+    # Wide window covers both.
+    "2025 Morocco": [
+        ("2024-03-01", "2026-02-15"),
+    ],
+    # AFC Asian Cup 2023 in Qatar — postponed (originally China 2023) and
+    # played Jan 12 – Feb 10, 2024 in Qatar. Default window misses it.
+    # Also applies to AFC Asian Cup *Qualifiers* 2023 Qatar cycle
+    # (Oct 2021 – Jun 2022) — same season-name, totally different window;
+    # we set the wider span so both scrapes get their data.
+    "2023 Qatar": [
+        ("2021-10-01", "2024-02-29"),
+    ],
+    # AFC Asian Cup Qualifiers 2027 Saudi Arabia — qualifying matches
+    # spread across Sep 2024 – Mar 2026. Default ("2027" → Aug 2026 onwards)
+    # would miss almost everything. The same season-name is reused by the
+    # main AFC Asian Cup 2027 tournament (Jan 2027) — windowing covers both.
+    "2027 Saudi Arabia": [
+        ("2024-09-01", "2027-02-28"),
+    ],
+    # AFCON Qualifiers 2027 Kenya/Tanzania/Uganda — Mar 2026 – Nov 2026.
+    # Default ("2027" → Aug 2026 onwards) misses the early-2026 matches.
+    "2027 Kenya-Tanzania-Uganda": [
+        ("2026-03-01", "2026-12-31"),
+    ],
+    # Gulf Cup of Nations 2024 Kuwait — played Dec 21, 2024 – Jan 4, 2025.
+    # Straddles year boundary; default ("2024" → Aug 2023-Jul 2024) misses
+    # the actual tournament entirely.
+    "2024 Kuwait": [
+        ("2024-12-01", "2025-02-15"),
+    ],
+    # International Friendlies — Opta's "Friendlies" competition publishes
+    # one tournament-calendar per actual calendar year. Default name-based
+    # date inference (Aug-Jul) misses the second-half-of-year matches.
+    # Distinct season name keeps these exceptions from polluting other comps
+    # that reuse bare-year names (UEFA Nations League etc.).
+    "Intl_Friendlies_2024": [("2024-01-01", "2024-12-31")],
+    "Intl_Friendlies_2025": [("2025-01-01", "2025-12-31")],
+    "Intl_Friendlies_2026": [("2026-01-01", "2026-12-31")],
 }
 
 

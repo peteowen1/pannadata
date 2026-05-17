@@ -138,6 +138,13 @@ COMPETITION_METADATA = {
     "UEFA_Nations_League": {"name": "UEFA Nations League", "country": "Europe", "type": "international", "tier": 3},
     "UEFA_Euro_Qualifiers": {"name": "UEFA Euro Qualifiers", "country": "Europe", "type": "international", "tier": 3},
     "UEFA_WC_Qualifiers": {"name": "UEFA World Cup Qualifiers", "country": "Europe", "type": "international", "tier": 3},
+    "AFC_Asian_Cup":            {"name": "AFC Asian Cup",            "country": "Asia",   "type": "international", "tier": 2},
+    "AFC_WC_Qualifiers":        {"name": "AFC World Cup Qualifiers", "country": "Asia",   "type": "international", "tier": 3},
+    "CAF_WC_Qualifiers":        {"name": "CAF World Cup Qualifiers", "country": "Africa", "type": "international", "tier": 3},
+    "AFCON_Qualifiers":         {"name": "AFCON Qualifiers",         "country": "Africa", "type": "international", "tier": 3},
+    "Asian_Cup_Qualifiers":     {"name": "Asian Cup Qualifiers",     "country": "Asia",   "type": "international", "tier": 3},
+    "Gulf_Cup_of_Nations":      {"name": "Gulf Cup of Nations",      "country": "Asia",          "type": "international", "tier": 3},
+    "Intl_Friendlies":          {"name": "International Friendlies", "country": "International", "type": "international", "tier": 3},
 }
 
 # Panna league code → Opta competition code (mirrors OPTA_LEAGUES in R)
