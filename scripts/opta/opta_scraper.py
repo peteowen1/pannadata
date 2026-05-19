@@ -270,6 +270,7 @@ class OptaScraper:
         "AFC_Asian_Cup":            "93i7thp7zi0ympyt6l8aa1r2i",
         "AFC_WC_Qualifiers":        "40yjcbx2sq6oq736iqqqczwt1",
         "CAF_WC_Qualifiers":        "3aa4mumjl6zyetg6o9hwd5hhx",
+        "CONMEBOL_WC_Qualifiers":   "2db0aw1duj2my9l5iey5gm6nq",
         "AFCON_Qualifiers":         "ax1yf4nlzqpcji4j8epdgx3zl",
         "Asian_Cup_Qualifiers":     "emy1ibc8fu2l0fukh4vlu5xl5",
         "Gulf_Cup_of_Nations":      "6yeu4m8ey7hcaa5wuf6oe81iw",
