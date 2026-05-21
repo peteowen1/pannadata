@@ -64,6 +64,16 @@ jobs:
             echo "::warning::action_equity.parquet not available — chains will lack equity"
           fi
 
+          # World Cup 2026 blog data (panna step 12 → blog-latest). Optional —
+          # passed straight through to R2 football/ for the blog's WC section.
+          for wcf in wc2026_predictions wc2026_simulation wc2026_groups wc2026_team_strength; do
+            if gh release download blog-latest -p "${wcf}.parquet" -D blog/; then
+              echo "Downloaded ${wcf}.parquet"
+            else
+              echo "::warning::${wcf}.parquet not available — WC section will be stale"
+            fi
+          done
+
           # Action WPA (per-action win-probability-added — optional, used by
           # chain builder for blog match-page WPA without worker calls).
           # Sharded per league-season as action_wpa_<league>_<season>.parquet
