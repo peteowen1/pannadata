@@ -113,7 +113,8 @@
     "1904-1905": "cb9i85q5ki983ecqpibhtq3f9",
     "1903-1904": "cbc28f73sdhapg8p5cigzajmd",
     "1902-1903": "cbea3fk191b589u1rl5rje5zp",
-    "1901-1902": "cbghwlzfyosyvmhoarpnsmt3p"
+    "1901-1902": "cbghwlzfyosyvmhoarpnsmt3p",
+    "2026-2027": "6pdwluctev9iebv00r4qqukno"
   },
   "La_Liga": {
     "2025-2026": "80zg2v1cuqcfhphn56u4qpyqc",
@@ -148,7 +149,8 @@
     "1996-1997": "395v6ppgvb00tjix9ectj1kgl",
     "1995-1996": "39gmgt31a9xxgcvk1h6w7mzmd",
     "1994-1995": "39rejgwge7gbx2842xh138i51",
-    "1993-1994": "3a1lkys5lgtfj6tpha4q869cl"
+    "1993-1994": "3a1lkys5lgtfj6tpha4q869cl",
+    "2026-2027": "830epggffy1nfkfyrtpqdwhlg"
   },
   "Bundesliga": {
     "2025-2026": "2bchmrj23l9u42d68ntcekob8",
@@ -213,7 +215,8 @@
     "1966-1967": "3ixcnvwj81ha4l5i58t2vpplh",
     "1965-1966": "3ivz3q6cvbz3msatogzoa9w45",
     "1964-1965": "bzgdxs3ip3yxpophruparspud",
-    "1963-1964": "3iutdifhmo9bhf2jpanzohh3p"
+    "1963-1964": "3iutdifhmo9bhf2jpanzohh3p",
+    "2026-2027": "8h5xijv2u4mlf5028gso6kw7o"
   },
   "Serie_A": {
     "2025-2026": "emdmtfr1v8rey2qru3xzfwges",
@@ -249,7 +252,8 @@
     "1995-1996": "ags9aux0qs9341bwbqdkhgyqd",
     "1994-1995": "ahaa16nwrqy4b26t24cm1k991",
     "1993-1994": "ahs8ij58hwjldfmr6ztbm4udx",
-    "1992-1993": "7v87iwrtdosnwz0leo61danf8"
+    "1992-1993": "7v87iwrtdosnwz0leo61danf8",
+    "2026-2027": "60cryos85i4bp5ul34tt0brx0"
   },
   "Ligue_1": {
     "2025-2026": "dbxs75cag7zyip5re0ppsanmc",
@@ -354,7 +358,7 @@
   "AFCON": {
     "2027 Kenya-Tanzania-Uganda": "cgc45sx9qfn6kj6fv7qv1xl3o",
     "2025 Morocco": "1z35p4iuhfxxdfaqjwzkqn2fo",
-    "2023 C\u00f4te d'Ivoire": "d8grid5nhzleybw2n5cpccxsk",
+    "2023 Côte d'Ivoire": "d8grid5nhzleybw2n5cpccxsk",
     "2021 Cameroon": "3ny27xml9skko03pycmbrv52i",
     "2019 Egypt": "2ip4f1aefabczfkw80hj7uz8p",
     "2017 Gabon": "myycohvvibz2uugf7m915uy1",
@@ -395,7 +399,15 @@
     "2003-2004": "ca5zl4lf4hmqrwsp8m2e9vsut",
     "2002-2003": "5xab7z87sxnnahfns6wf6i9xx",
     "2001-2002": "5ybvizooja5it34b97jvp6579",
-    "2000-2001": "4nx48q7lnkumngsbhv2u1xyad"
+    "2000-2001": "4nx48q7lnkumngsbhv2u1xyad",
+    "1999-2000": "7vc6qkc268pog7wx417yoo6c4",
+    "1998-1999": "cp94qqsctw9rekzsshd2q03ys",
+    "1997-1998": "b1kkm8usq4f8xn4nrtu767klw",
+    "1996-1997": "awzdjwanr4ip1qe7yl0vzj6dw",
+    "1995-1996": "a4o32y951k1qoxhl2bhk453pw",
+    "1994-1995": "229r5xyjnfuv4g9sf7624cfmc",
+    "1993-1994": "9yeuczm63k1smpujwxxpm0utw",
+    "1992-1993": "65kqaavguecmomvp6hkq6dtsk"
   },
   "UEL": {
     "2025-2026": "7ttpe5jzya3vjhjadiemjy7mc",
@@ -423,14 +435,16 @@
     "2003-2004": "emkgxbymss02jjfy5yc1p60gl",
     "2002-2003": "48g72ray6fjohavm1ces7otzp",
     "2001-2002": "dtgyqb8id3ezbb0ms64bfez85",
-    "2000-2001": "4nzaojwujcz4z4skbu4gmtkut"
+    "2000-2001": "4nzaojwujcz4z4skbu4gmtkut",
+    "2026-2027": "1rpi0q64a7kut2wiuvecmgbv8"
   },
   "Conference_League": {
     "2025-2026": "7x2zp2hm4p6wuijwdw3h7a8t0",
     "2024-2025": "cc4kfcd13e029cj3nawmm0hec",
     "2023-2024": "3cbstblezc952hfrj9ov2gq38",
     "2022-2023": "brfw50hvjpzsemavlgark8t90",
-    "2021-2022": "kq8506uuyn3065k4fp8ni2vo"
+    "2021-2022": "kq8506uuyn3065k4fp8ni2vo",
+    "2026-2027": "acatl9aedc5l4im3r8l890y6s"
   },
   "Club_World_Cup": {
     "2029": "7qaku5b98w2oypank4kyxs2s4",
@@ -458,7 +472,8 @@
     "2007-2008": "5fgxr2w71c2gmuvjs1odot3v9",
     "2006-2007": "e8plk28dxrlshu3c6ofzwln85",
     "2005-2006": "6w9tn1adqcee5nwlbl46jyk0l",
-    "2004-2005": "7hjls9r9naxm5h3u11agy8yxh"
+    "2004-2005": "7hjls9r9naxm5h3u11agy8yxh",
+    "2026-2027": "75p5723yryew2ywn0isvf7cic"
   },
   "League_Cup": {
     "2025-2026": "6lhltebj0dx79xptn0hyph5as",
@@ -482,7 +497,8 @@
     "2007-2008": "8rjcbwcip0xsmdkdwc77k3d1x",
     "2006-2007": "8glfv7ik750b4zvyf9dwm3i6t",
     "2005-2006": "rpt9b7f9wb8q0eu7nl4o1nf9",
-    "2004-2005": "9lijxmkl5p44aunuayprlipxx"
+    "2004-2005": "9lijxmkl5p44aunuayprlipxx",
+    "2026-2027": "dap7q17azs3j8a5sv36enfr4k"
   },
   "Copa_del_Rey": {
     "2025-2026": "3lmujqli8r9m12i28wgjxnnys",
@@ -506,7 +522,8 @@
     "2007-2008": "ae50g6yf031r0lmtxbobbgel1",
     "2006-2007": "3zx9ud0yvvsq7plbxf56onqad",
     "2005-2006": "17fysuna8rckjwiha6nduhxat",
-    "2004-2005": "89nhq5u672k72yy7ptywyx785"
+    "2004-2005": "89nhq5u672k72yy7ptywyx785",
+    "2026-2027": "91f4ozdnz1v8a9hyinceelrtg"
   },
   "Supercopa": {
     "2026-2027": "1t5lwa7e8l9qul7x7vtodgdn8",
@@ -555,7 +572,8 @@
     "2007-2008": "60s7a80af0uvanlr6gixqwp1x",
     "2006-2007": "14a61hoa7iuvkvtke0mjf2or9",
     "2005-2006": "a1tlcjhaf8ytz4ew7eujll9lh",
-    "2004-2005": "999nd03051phksc1h2yefkvrp"
+    "2004-2005": "999nd03051phksc1h2yefkvrp",
+    "2026-2027": "9ttli02frp7wzmw4bns57nevo"
   },
   "Coppa_Italia": {
     "2025-2026": "cy716yhfis4buz0510i21kpas",
@@ -579,7 +597,8 @@
     "2007-2008": "b021lqgk9uap5jikdbjwcurx1",
     "2006-2007": "d4trpihqnczvb6gidkdt4707p",
     "2005-2006": "64r92mdzkcpsbqwy33j8qpyhh",
-    "2004-2005": "cukdk9nhc5u31uy1nl090maxh"
+    "2004-2005": "cukdk9nhc5u31uy1nl090maxh",
+    "2026-2027": "1yitgp84dw3yneci2qf9a4lxw"
   },
   "Coupe_de_France": {
     "2025-2026": "av9aqjwk6jljkwcs7nqmnrv9w",
@@ -607,7 +626,8 @@
     "2003-2004": "27fephq6jj8hi23hpv2vjgzdg",
     "2002-2003": "1ljjtrd9o7480hezixullmgic",
     "2001-2002": "61swmr6g6nlmt9m30ppxllxjo",
-    "2000-2001": "82m36s0tqb09zbzcsbmquxvys"
+    "2000-2001": "82m36s0tqb09zbzcsbmquxvys",
+    "2026-2027": "9xwynin0hkmzls233rcuqrod0"
   },
   "Trophee_Champions": {
     "2026-2027": "2ya5l6zamx22inj7xk50b3klw",
@@ -666,7 +686,8 @@
     "1996-1997": "7d6vpmxrhnw8hza49apweesb9",
     "1995-1996": "7d9lu45b8qfdtg3p1r44pc3bp",
     "1994-1995": "7dcpheg7hk86548iverwry11x",
-    "1993-1994": "9i757k9xoibvh9dpz4y95upcl"
+    "1993-1994": "9i757k9xoibvh9dpz4y95upcl",
+    "2026-2027": "al48ooi8acoibema226051250"
   },
   "League_One": {
     "2025-2026": "5as0oqxeagsuzyf75xm7p5jbo",
@@ -701,7 +722,8 @@
     "1996-1997": "1ncned5rdhi7lddwcbh3gqtp1",
     "1995-1996": "1nv2blcgxgr7zro0zr284bro5",
     "1994-1995": "1ockf5fwr3kdd4z9tvcx75eqd",
-    "1993-1994": "1ovm1lulshztv6vzppl3ycogl"
+    "1993-1994": "1ovm1lulshztv6vzppl3ycogl",
+    "2026-2027": "b7amy99ea2lpnx81o6q94pst0"
   },
   "League_Two": {
     "2025-2026": "1fupi48urd1qk7t1rj12eyxw4",
@@ -736,7 +758,8 @@
     "1996-1997": "2mzmiwoq50niysnveslln5591",
     "1995-1996": "2o4qaqynt9t7394gbdxonrqad",
     "1994-1995": "2oeh3lvitaexmh2h9pxs0djo5",
-    "1993-1994": "2omxz1ckvodus6f8wyhx52vh1"
+    "1993-1994": "2omxz1ckvodus6f8wyhx52vh1",
+    "2026-2027": "7kjvvls20hnhjguys4t73yjh0"
   },
   "WSL": {
     "2025-2026": "221phckhkd7y6rg3uyava3ifo",
@@ -754,7 +777,8 @@
     "2014": "6cxbi4jiboe66ecac0ks8docl",
     "2013": "8c5t0njtsz4sex631rpqwvrrx",
     "2012": "9rq98mkpdi7sm7tt0a4xaxb6d",
-    "2011": "4bqvgn71rs6h5ujnalu1ggy51"
+    "2011": "4bqvgn71rs6h5ujnalu1ggy51",
+    "2026-2027": "b98jgqlofjpbpvjb8hk20z3tg"
   },
   "Primeira_Liga": {
     "2025-2026": "7l4z25o4hc0fmj9rdspcisdn8",
@@ -788,7 +812,8 @@
     "1997-1998": "4kramtqvdj6lmwod1sz8evzrp",
     "1996-1997": "4kugcad79pt84g0re8hrudkut",
     "1995-1996": "4kxcxwgkre8o29invwuu5lzo5",
-    "1994-1995": "5dk5f1hlige12t68xriamvzrp"
+    "1994-1995": "5dk5f1hlige12t68xriamvzrp",
+    "2026-2027": "a8xa8yfi2tlljxrwyxcst51xw"
   },
   "Eredivisie": {
     "2025-2026": "aouykkl1rt7zo06sg0kbzkbh0",
@@ -823,7 +848,8 @@
     "1996-1997": "datyscon42aw06xrr5m9987h1",
     "1995-1996": "dargwx4ci627ciaig8eukzff9",
     "1994-1995": "b6vbkl385r1rbfnz7cntng15h",
-    "1993-1994": "b6qa2xqnm0qw9lirlvdtqy9xx"
+    "1993-1994": "b6qa2xqnm0qw9lirlvdtqy9xx",
+    "2026-2027": "56cvval3nf96u0bf9rzs9h6vo"
   },
   "Scottish_Premiership": {
     "2025-2026": "87b2o38m190egljltsudvz7ys",
@@ -857,7 +883,8 @@
     "1997-1998": "9f6gn7o67o3daqqk4kyyl13h1",
     "1996-1997": "9fyr2kllbe9wyagmxxtr7l979",
     "1995-1996": "9gj63czqynfsco5pyly20lej9",
-    "1994-1995": "ai2fzzucn2uu2minfsqoyiz85"
+    "1994-1995": "ai2fzzucn2uu2minfsqoyiz85",
+    "2026-2027": "7qmc7ue3f8yzv8yqmsxc9irro"
   },
   "Super_Lig": {
     "2025-2026": "97zghcaoec1isvvdkh9ud50d0",
@@ -927,7 +954,8 @@
     "1961-1962": "abwtf8ve6pz3c5c4ynn2tffft",
     "1960-1961": "bs6eyiv8h2w128x5lm4ne1yw9",
     "1959-1960": "d7muxlv7z2lum8x79rxyfez8p",
-    "1959": "1gzh4ry8sy37vgf1kfy4f3yll"
+    "1959": "1gzh4ry8sy37vgf1kfy4f3yll",
+    "2026-2027": "e00dq6lfzgc7vo631cz8ktc0k"
   },
   "Belgian_First_Division": {
     "2025-2026": "16lkdpoccbh056r0v0bordo2c",
@@ -1030,7 +1058,8 @@
     "1997-1998": "592do8ef0aw8hrmgijnfqnis5",
     "1996-1997": "594vh77aica1wziye1sy874yd",
     "1995-1996": "6of2j701f3ovrimg8yay6ldcl",
-    "1994-1995": "6ohke3d0mhnruunaypnnpxcyd"
+    "1994-1995": "6ohke3d0mhnruunaypnnpxcyd",
+    "2026-2027": "cx0b7yl7kqmgay9wn2c3zyjh0"
   },
   "Austrian_Bundesliga": {
     "2025-2026": "4jr49qim3gv5bjx3wjkf6n0us",
@@ -1065,7 +1094,8 @@
     "1996-1997": "6y70ogmr499yle3188175jy6t",
     "1995-1996": "6y9728xmtdymxo8uawphnnufp",
     "1994-1995": "6zpz2c75ckzndxzsi3eacy5lh",
-    "1993-1994": "92bwhbkgmn95xw19ncqf2u28l"
+    "1993-1994": "92bwhbkgmn95xw19ncqf2u28l",
+    "2026-2027": "1ypt1hmmrdjdek7yieatpskyc"
   },
   "Greek_Super_League": {
     "2025-2026": "bfxnqtcsy92klp10rbwikb47o",
@@ -1099,7 +1129,8 @@
     "1997-1998": "dhgawqa869rjapqucpcta5nmd",
     "1996-1997": "dhezw0ugsswe5wxew4yg6nis5",
     "1995-1996": "dhdbshk4wyikwxb3dwm4aklp1",
-    "1994-1995": "be2h8vpaz69jle4j4iafrfpat"
+    "1994-1995": "be2h8vpaz69jle4j4iafrfpat",
+    "2026-2027": "13prgjp0qzce661j00a3jy3o4"
   },
   "Taca_de_Portugal": {
     "2025-2026": "dd4ti9vvpd7e4oy7wr63zdn9w",
@@ -1123,7 +1154,8 @@
     "2007-2008": "77h53yecf9vkl8q0bydz5joph",
     "2006-2007": "30e5su0rg24hgzi0zg6bfl4gl",
     "2005-2006": "2od4b7s87pc83yf0k6sf6iml1",
-    "2004-2005": "756139q4mx9q4zcr8us2sjbh1"
+    "2004-2005": "756139q4mx9q4zcr8us2sjbh1",
+    "2026-2027": "83tlbxth73mzsm79u2fpgimfo"
   },
   "Taca_da_Liga": {
     "2026-2027": "d1i8pzudf2yaqog0hv1ta4cgk",
@@ -1168,7 +1200,8 @@
     "2007-2008": "e4ian718tqcexyjnfm65a2579",
     "2006-2007": "7494qzgy425er9r5knvp43r9x",
     "2005-2006": "8y726npmyigwad98gywnudr6d",
-    "2004-2005": "4ouiyvmxcy0l6z8krngspwzit"
+    "2004-2005": "4ouiyvmxcy0l6z8krngspwzit",
+    "2026-2027": "ew6d0ff41wa2ixzj9124xbcpg"
   },
   "Scottish_Cup": {
     "2025-2026": "6mgbqlqypiuuneq2m5394z6z8",
@@ -1192,7 +1225,8 @@
     "2007-2008": "6449eq75yk2v7eqa9dkiebbh1",
     "2006-2007": "3bnnn42jr52i2m2b2ygqew7o5",
     "2005-2006": "90zmjhuroz1ro22ywqnldsjx1",
-    "2004-2005": "4h45chb7kgrtcz80ihckh65zp"
+    "2004-2005": "4h45chb7kgrtcz80ihckh65zp",
+    "2026-2027": "eqa3hwe0yzh9suurglei76mfo"
   },
   "Scottish_League_Cup": {
     "2026-2027": "9agusyitd19wb3g10tbjhi80k",
@@ -1283,7 +1317,8 @@
     "1965-1966": "4pifal22qflmuwjrlf6f7afze",
     "1964-1965": "tgirm5rab3tt3325tv7frcdm",
     "1963-1964": "cw3voyccg95yn1ang4crgyd0q",
-    "1962-1963": "dy4u6mz3c6lsldhs9m61vkh6"
+    "1962-1963": "dy4u6mz3c6lsldhs9m61vkh6",
+    "2026-2027": "97dlecwglyglcukbl0gus44yc"
   },
   "Belgian_Cup": {
     "2025-2026": "81abh4umtz640xpnasjc1tvkk",
@@ -1307,7 +1342,8 @@
     "2007-2008": "16qwazw49xf0orpg48iois72t",
     "2006-2007": "acz1rwbebfndicguwgzib1rkl",
     "2005-2006": "6w6s9j20w33ut64bz6qs68ic5",
-    "2004-2005": "8m3azggnkkjqtazukyjp5ibpx"
+    "2004-2005": "8m3azggnkkjqtazukyjp5ibpx",
+    "2026-2027": "2pd2nowpzn3i4lrziswbmdw5w"
   },
   "Schweizer_Pokal": {
     "2025-2026": "4nz4bg6erv8jsdzj5q8uylb84",
@@ -1354,7 +1390,8 @@
     "2008-2009": "bp2tl6da25129p9e8tvo9qh2t",
     "2006-2007": "7vo0m41nv0uzgnophn0bqdot1",
     "2005-2006": "90ya7jv2is3cx3hfm3yqbeo5x",
-    "2004-2005": "455vrhkwn2xmigtub3o3bt80l"
+    "2004-2005": "455vrhkwn2xmigtub3o3bt80l",
+    "2026-2027": "eo5snp7elk2w8i80n3nhq8wt0"
   },
   "Greek_Cup": {
     "2025-2026": "bd7mwbg9dlz7lu9q8afv1jg9g",
@@ -1378,7 +1415,8 @@
     "2007-2008": "c47pn19mo79vk5ugm912g1ql1",
     "2006-2007": "63uve54hc53zuon9im7cevjyt",
     "2005-2006": "90vvfysj9lhqyvv923y26uuol",
-    "2004-2005": "dmc9e6qb7duvj3xcv3cruwmol"
+    "2004-2005": "dmc9e6qb7duvj3xcv3cruwmol",
+    "2026-2027": "3vh605n6bsoqfy4bkbkce1st0"
   },
   "Brazilian_Serie_A": {
     "2026": "752zalnunu0zkdfbbm915kys4",
@@ -1433,7 +1471,8 @@
     "2008": "7zm6xxoa68tdel6kmju4k2zmd",
     "2007": "3fwkdawqz633l67a6qj6uvljp",
     "2006": "70sdedqgmv7nzugi8c93n8clx",
-    "2005": "24clhnhv42o1t0mpa4fp1d2vp"
+    "2005": "24clhnhv42o1t0mpa4fp1d2vp",
+    "2026-2027": "2j3t7upe71i0kwa1u3b6gu3o4"
   },
   "CAF_Confederation_Cup": {
     "2025-2026": "41hzi8yof723pfmndp50e3dp0",
@@ -1455,7 +1494,8 @@
     "2010": "2wr89il7vpbqtrut14nro9xat",
     "2009": "7qf47abdplegahbx3juku9979",
     "2008": "9s8ksynzenaw075jenphlhj9x",
-    "2007": "e0zojjr7isvl446qn2bpo51w5"
+    "2007": "e0zojjr7isvl446qn2bpo51w5",
+    "2026-2027": "8ip14n6r0qw4tqkbscp63zsic"
   },
   "Botola_Pro": {
     "2025-2026": "3m3hltejq5dp7tvessefe7pck",
@@ -1573,7 +1613,8 @@
     "2008-2009": "a3k10aaw97dkm3clc22sqwa1h",
     "2007-2008": "2v0qkyivjgs70xysnsj7en26t",
     "2006-2007": "d1m0u0ua8abkhko1fk32kqh1x",
-    "2005-2006": "c4ly6l8ety00hbzk04r3lgyqd"
+    "2005-2006": "c4ly6l8ety00hbzk04r3lgyqd",
+    "2026-2027": "b6a9x42zsbxzbc2n5t79kdono"
   },
   "UAE_League_Cup": {
     "2025-2026": "364u1c16ug85c3jsrbdhmixw4",
@@ -1593,7 +1634,8 @@
     "2011-2012": "398knenzpdn154e85783m18t1",
     "2010-2011": "2fq2fsln8z86f9olrk3xwd9ed",
     "2009-2010": "4wequd3xekuvfkq2uq1ja5fpx",
-    "2008-2009": "dn4hwijo6j1mf64gukwn5s445"
+    "2008-2009": "dn4hwijo6j1mf64gukwn5s445",
+    "2026-2027": "33stgaxksz3fs70xyh9l37w9g"
   },
   "UAE_Presidents_Cup": {
     "2025-2026": "eqvw4oscubye64p3jb2fncic",
@@ -1613,7 +1655,8 @@
     "2011-2012": "8bf15ews5yxq57gha5ayd4atx",
     "2010-2011": "ehh9g3gixy5o699lafrz753o5",
     "2009-2010": "2s5q1xrzdo3xk7etrq7x0glhx",
-    "2008-2009": "dn7bxh1bruf4yvwzfinfa02xh"
+    "2008-2009": "dn7bxh1bruf4yvwzfinfa02xh",
+    "2026-2027": "8ep1zvbrjzy9c89jldpmr18us"
   },
   "Gulf_Champions_League": {
     "2025-2026": "9weifyd4s2jx77sazxs33jm6s",
@@ -1623,7 +1666,8 @@
     "2013": "7baqckj8gcykup4z5pumwkfrp",
     "2012": "2r4e04at76og0ronb8uh4j4d1",
     "2011": "6setxby20lu77tjo3uorox0id",
-    "2010": "60lx2b6t5m8vvnhkli1dbidp1"
+    "2010": "60lx2b6t5m8vvnhkli1dbidp1",
+    "2026-2027": "eihfkqr42i6tunr24iqwo2vx0"
   },
   "A_League": {
     "2025-2026": "f2s3v11z1occwbp69h73coqvo",
@@ -1646,7 +1690,8 @@
     "2008-2009": "7f38waqfqj9gc17v8gdmnq0np",
     "2007-2008": "dd3w8i0h2a4nbv5xmi7g5amdx",
     "2006-2007": "akaf39cga88nl8k01e2z0f8id",
-    "2005-2006": "cd2yiiidkl8axh5ub9qeauket"
+    "2005-2006": "cd2yiiidkl8axh5ub9qeauket",
+    "2026-2027": "1ztoqmkrzy1d4ejf5jokthiqc"
   },
   "NZ_National_League": {
     "2026": "5covk71othb712xpvk7qwlul0",
@@ -1758,7 +1803,8 @@
     "1996-1997": "bslwy775d2ywrfob9mutcg05x",
     "1995-1996": "bt2s3szqeey8fi44a0sd7btg5",
     "1994-1995": "w9ijw9hbza7tgt007j5mfc2d",
-    "1993-1994": "e0e0s3lhcbzbzyce3dekfddjp"
+    "1993-1994": "e0e0s3lhcbzbzyce3dekfddjp",
+    "2026-2027": "aa2sqzvq68621ok3nca8csrh0"
   },
   "Eliteserien": {
     "2026": "beev3xu6oz7vc6l4rcxygw4d0",
@@ -1887,7 +1933,8 @@
     "2007-2008": "ci67av34zqba452nkk8wjtf4l",
     "2006-2007": "1vrwyaryzd9slexb6gfcnnlqt",
     "2005-2006": "dlwutw2ob0jp40bch4bq2k2qd",
-    "2004-2005": "20le1h5fiigykyf75efwtm2tx"
+    "2004-2005": "20le1h5fiigykyf75efwtm2tx",
+    "2026-2027": "8didcuewjbk0vsyrc1l5tqd5g"
   },
   "Svenska_Cupen": {
     "2025-2026": "6lrp6u4vn6z6ssrnim3ho1jpw",
@@ -1911,7 +1958,8 @@
     "2007": "70i2kgy0zmkujk99e4ceanpw5",
     "2006": "242h5lmdgpi03h0jx0ffrr7bp",
     "2005": "6d6vkj3s1tm4uusydmjwdx1w5",
-    "2004": "f1tnkjanvb1nt0xmteom4lgwl"
+    "2004": "f1tnkjanvb1nt0xmteom4lgwl",
+    "2026-2027": "2q1ovnv964jtzr2grrot6jwno"
   },
   "Suomen_Cup": {
     "2026": "6yvw0cejwz42lxtj65dpl0opg",
@@ -1961,7 +2009,8 @@
     "2006-2007": "1rt7kaqj4lh02hztvmbx71mtx",
     "2005-2006": "c1kbgxosjmtvzoebn8u0rcp1x",
     "2004-2005": "5suotve1c7ylygh6up8e6sno5",
-    "2003-2004": "28l6l5x86e9ga0urdx9w6nlxx"
+    "2003-2004": "28l6l5x86e9ga0urdx9w6nlxx",
+    "2026-2027": "5vqx2miccjg04lp2pqs1hbmc"
   },
   "Ekstraklasa": {
     "2025-2026": "3ghh5adz62ws55se0snozmej8",
@@ -1995,7 +2044,8 @@
     "1997-1998": "9ef5dhun7dvljmzcqi8qkj6qd",
     "1996-1997": "bh5knhlv8p2c2i1cmpm8ff1lh",
     "1995-1996": "bh95tzbjyvknmhk4f2vkp2p5h",
-    "1994-1995": "bhboyqiq914ns3hh7bdb4kqtx"
+    "1994-1995": "bhboyqiq914ns3hh7bdb4kqtx",
+    "2026-2027": "1objvzhwen02wc4i4a1nnux3o"
   },
   "Czech_Liga": {
     "2025-2026": "editpgeuef9yi9a8akjrl4bv8",
@@ -2030,7 +2080,8 @@
     "1996-1997": "25iuf96ib0lz3j5xn46st8wr9",
     "1995-1996": "d46diz6fryt0q7vcjdvisdfpx",
     "1994-1995": "d2k0kpssgif03cdt61s3nerbp",
-    "1993-1994": "81v2sqf1pxvlqbruj6fuezk0k"
+    "1993-1994": "81v2sqf1pxvlqbruj6fuezk0k",
+    "2026-2027": "ei2lksxq5fb6mh8yzxqatwnx0"
   },
   "Romanian_Liga_I": {
     "2025-2026": "dbws7z8ce2ym9ur9y4fqufw2c",
@@ -2085,7 +2136,8 @@
     "2009-2010": "29xdipdmw5crhbhn9ntetbetx",
     "2008-2009": "7754b6nq3z4htw7uu5ghf39at",
     "2007-2008": "e4be21fcsvctqz71ilwzvrphx",
-    "2006-2007": "1rvz09obbq0w91tth1tbh75jp"
+    "2006-2007": "1rvz09obbq0w91tth1tbh75jp",
+    "2026-2027": "akqbhzm3iofv030i63sb5js44"
   },
   "Croatian_HNL": {
     "2025-2026": "am7k8a17kn4fzf3ty08y3hpg4",
@@ -2119,7 +2171,8 @@
     "1997-1998": "3tcv44wpfxrqnrp5h66ulx51x",
     "1996-1997": "3tf3fs71coa8i3rp2ndl56ndh",
     "1995-1996": "3tgisu3qjia8x9sw8d7lq1yvp",
-    "1994-1995": "5x1m5ajnkrlx9iaufxawrdec5"
+    "1994-1995": "5x1m5ajnkrlx9iaufxawrdec5",
+    "2026-2027": "ddv8l7gdb84ask7lsxf8x9f6c"
   },
   "NB_I": {
     "2025-2026": "1k92nlldzlroj6jv0hydepno4",
@@ -2152,7 +2205,8 @@
     "1998-1999": "e2g9yjls8nhly23je155rzbo5",
     "1997-1998": "e2hw7df448uoy37ylrki7xnmd",
     "1996-1997": "e2k4gfgpuxufot7bdac6pcr11",
-    "1995-1996": "e2mnhbrd9cu00tfemuhvbc0k5"
+    "1995-1996": "e2mnhbrd9cu00tfemuhvbc0k5",
+    "2026-2027": "1qah382h96g7zu8m6op3ftams"
   },
   "Bulgarian_First_League": {
     "2025-2026": "45qbrg5zii9a6pj11cd916exg",
@@ -2211,7 +2265,8 @@
     "2005-2006": "e7emkhme223pb9azyl842vcut",
     "2004-2005": "6xalb6u6j2gu88hi4poq41d5h",
     "2003-2004": "28ek12clnm7jkwd3hyjcscij9",
-    "2002-2003": "91j7akdaqz5yefgtkqvlkbu1h"
+    "2002-2003": "91j7akdaqz5yefgtkqvlkbu1h",
+    "2026-2027": "5sqcuu8cql6utpiiunzurorv8"
   },
   "Slovenian_Liga": {
     "2025-2026": "8e29vwxca2j3dc5kbpi0ehous",
@@ -2244,7 +2299,8 @@
     "1998-1999": "1scezpwpv2vecfxg5kcuzky51",
     "1997-1998": "ev10146shi9l6wmsaam5nlk9h",
     "1996-1997": "euyj0a9189fitvafu75sz2n6d",
-    "1995-1996": "euwatuxxcc6ht56f1h9khvpp1"
+    "1995-1996": "euwatuxxcc6ht56f1h9khvpp1",
+    "2026-2027": "8pj9wygfe1cepoagkwe0x785w"
   },
   "Ukrainian_Cup": {
     "2025-2026": "dhv12xodb0i5lys1dn685d6ac",
@@ -2267,7 +2323,8 @@
     "2007-2008": "6ro7gv8i1ngoe3ogvt5gnvro5",
     "2006-2007": "b0k1lquho7o6o0wu9zaxug639",
     "2005-2006": "2o7g25h9tvcd1fajx4vi49ped",
-    "2004-2005": "69a9lzy3y9h9ox22mqm9gmqqd"
+    "2004-2005": "69a9lzy3y9h9ox22mqm9gmqqd",
+    "2026-2027": "d5dqp6jn0c6gccljruft92y38"
   },
   "Polish_Cup": {
     "2025-2026": "ko9flg9bwxy47c971hxyp72s",
@@ -2291,7 +2348,8 @@
     "2007-2008": "1jna917wh66spghloe2poqwut",
     "2006-2007": "ewo7y72d2o7pkkutyznht98lx",
     "2005-2006": "4ru83x4luek1j0a9588b650ph",
-    "2004-2005": "69fctpwwml8ke383rmyiekz4l"
+    "2004-2005": "69fctpwwml8ke383rmyiekz4l",
+    "2026-2027": "6sfvzrwz83aohdge6xeihwwlw"
   },
   "Czech_Cup": {
     "2025-2026": "6ggcb7ofcnupyzg3qgw6xbhg4",
@@ -2315,7 +2373,8 @@
     "2007-2008": "9zocljcag4p7na5ceegvyjvmd",
     "2006-2007": "a0gsylq8os65g6usfomv2bsut",
     "2005-2006": "4rpbvhlg6tr57zko6l1npmndh",
-    "2004-2005": "aj3vo95irjm5g9xbxgbvcp045"
+    "2004-2005": "aj3vo95irjm5g9xbxgbvcp045",
+    "2026-2027": "cl29ql2572a53142calhuijo4"
   },
   "Cupa_Romaniei": {
     "2025-2026": "499uueftxca2vpdmhc4yuw4r8",
@@ -2339,7 +2398,8 @@
     "2007-2008": "7v4x0r3lzqdcuxjjpqb7snc2d",
     "2006-2007": "7w0painy9zbhq41z3zcxx3idx",
     "2005-2006": "donk56kzwi1glsra8smek8dzp",
-    "2004-2005": "8dqaww943t33xsv69z7oblnf9"
+    "2004-2005": "8dqaww943t33xsv69z7oblnf9",
+    "2026-2027": "37z4a0uq35epbydd6vsx0zaxg"
   },
   "Serbian_Cup": {
     "2025-2026": "2ckdz9j2q7ms58lw2xeztffo4",
@@ -2361,7 +2421,8 @@
     "2009-2010": "cfxh08idhvvq3u0jfjcyb2s5",
     "2008-2009": "8b6oyld9b7cfgecfoymeyufo5",
     "2007-2008": "1jsk6vr1w8mnwsw0ef18bs5at",
-    "2006-2007": "85ijinh013jm4dpep6rglsfyt"
+    "2006-2007": "85ijinh013jm4dpep6rglsfyt",
+    "2026-2027": "5bn0uczuj9llfncq1eg13yrdg"
   },
   "Croatian_Cup": {
     "2025-2026": "37fkndi4o8hnyvzta2se8lt04",
@@ -2385,7 +2446,8 @@
     "2007-2008": "7vexvfkmftp7ms1flu7x69w45",
     "2006-2007": "a0k5oejstuhmwpa3n6tdewxqt",
     "2005-2006": "3bunsuatebj1le9lzxxmimpjp",
-    "2004-2005": "cxj9oc7bte5f12k1fsupic72t"
+    "2004-2005": "cxj9oc7bte5f12k1fsupic72t",
+    "2026-2027": "8jt2ls4av2cqduwch3qf9bf2s"
   },
   "Magyar_Kupa": {
     "2025-2026": "9ff3nkjbeluf6vh9sopj3h2j8",
@@ -2409,7 +2471,8 @@
     "2007-2008": "7vbmoxp8xo6oyko8u0u4wtyol",
     "2006-2007": "c4nxgznvn0xwde5026tnmnw7p",
     "2005-2006": "4rrzomtyjhsc08i20z455deqd",
-    "2004-2005": "8tv09o5if3qqjx0lfm3rgqh1x"
+    "2004-2005": "8tv09o5if3qqjx0lfm3rgqh1x",
+    "2026-2027": "c45yngznfzez6xhz715na09hw"
   },
   "Bulgarian_Cup": {
     "2025-2026": "72p0jeqzivwedb2ur2t0lr1n8",
@@ -2433,7 +2496,8 @@
     "2007-2008": "5feky6ohqbpwmcsyfr9wp1wph",
     "2006-2007": "cga0uca6t3cfnufschyc5asph",
     "2005-2006": "7ynkfn03j53613bbmltcntg5",
-    "2004-2005": "cma87q9svlxjrxbhecfhformd"
+    "2004-2005": "cma87q9svlxjrxbhecfhformd",
+    "2026-2027": "1372mqzseul03f3v54geunsic"
   },
   "Slovak_Cup": {
     "2025-2026": "1vhhn5b8ol45o4fn29hso3evo",
@@ -2457,7 +2521,8 @@
     "2007-2008": "3n9cchyl3sps1obnyk8vr6ead",
     "2006-2007": "a0ilznn3rdoq41gim6p82oic5",
     "2005-2006": "e92lbkxjpr3vyvhxfsdtffjrp",
-    "2004-2005": "20zajnz4ld6nqs6tcy94ltl1x"
+    "2004-2005": "20zajnz4ld6nqs6tcy94ltl1x",
+    "2026-2027": "9i3yxwrq9werxlkqun7jamnf8"
   },
   "Slovenian_Cup": {
     "2025-2026": "8psfzvy8508oejcf28z7kx1jo",
@@ -2481,7 +2546,8 @@
     "2007-2008": "1jhhmoioj56d308zkedwqgh5h",
     "2006-2007": "3zvk52vrd45x0gbx7f7lmyaqd",
     "2005-2006": "bt94t0nbvhm55pnt6qohcwy51",
-    "2004-2005": "451082w6po3cmx1pof1j1o9ud"
+    "2004-2005": "451082w6po3cmx1pof1j1o9ud",
+    "2026-2027": "1idtdtdm7zy2r4k9xi7jctnv8"
   },
   "Ligat_Haal": {
     "2025-2026": "1j1hu287fsmud31lkia4vj384",
@@ -2538,7 +2604,8 @@
     "2007-2008": "y97d2vra2qlcqxw1eezcq21h",
     "2006-2007": "18ep5895xgr6ssxwvcjbqk3it",
     "2005-2006": "18caw1p22sjgcosplgfqtfjdh",
-    "2004-2005": "8gj30ajj7h4n8etynhbkdi7rp"
+    "2004-2005": "8gj30ajj7h4n8etynhbkdi7rp",
+    "2026-2027": "3zhj68rce7dx7v2irutcd28t0"
   },
   "Irish_Premier": {
     "2026": "6zkfyunc0lfteytfj6slonuhg",
@@ -2711,7 +2778,8 @@
     "2000-2001": "bl4haxl0cqsqa3vbre9jsxs5x",
     "1999-2000": "dq02rtxk4xolapsb3shldfqhh",
     "1998-1999": "dq3fze7ysp9edpc437kcrjzdh",
-    "1997-1998": "dqay1axdy6ch5yaexqh0g0dlh"
+    "1997-1998": "dqay1axdy6ch5yaexqh0g0dlh",
+    "2026-2027": "3jedmdrdnamejeki9uh7jrs44"
   },
   "Gibraltar_Premier": {
     "2025-2026": "984y9ksjk8lz3srnjhbowws2c",
@@ -2726,7 +2794,8 @@
     "2016-2017": "an8vqj5kx2gueof1s0cq6byeh",
     "2015-2016": "13958uzq3zf5cryv4s0ui07op",
     "2014-2015": "8zu0y1hpee6odm3k7h2jda2mt",
-    "2013-2014": "97ucg1t2wd8ocs2pf71dfy764"
+    "2013-2014": "97ucg1t2wd8ocs2pf71dfy764",
+    "2026-2027": "7uvvhp31jz5znxp8l21x872tw"
   },
   "Armenian_Premier": {
     "2025-2026": "3qrisf3ioc40zhqszkh8j7x1w",
@@ -2807,7 +2876,8 @@
     "2006-2007": "fdr887ei062w24wemkwbqaxh",
     "2005-2006": "64t06vxprbju4ve72yuw9slhx",
     "2004-2005": "196euov07zc38veuusezjq6z9",
-    "2003-2004": "be188yv8j3q32kn2f4lcy3iz9"
+    "2003-2004": "be188yv8j3q32kn2f4lcy3iz9",
+    "2026-2027": "cjfv1fu1qsr0jyk785saolgd0"
   },
   "Kazakhstan_Premier": {
     "2026": "5dlquxczyamt372efk9kgws2c",
@@ -2858,13 +2928,15 @@
     "2007-2008": "5fj5nlnut3o23c8dq8wngtmtx",
     "2006-2007": "e8y5a8oevfkr5x71rwdav8ogl",
     "2005-2006": "b5pqlj9g7di032sqpsbnqo1qt",
-    "2004-2005": "2shnbx4a6ml7yq66w7x0hu1n9"
+    "2004-2005": "2shnbx4a6ml7yq66w7x0hu1n9",
+    "2026-2027": "15xkcj526gu4wsdeetuo12b6c"
   },
   "UEFA_Nations_League": {
     "2024-2025": "3r70u3fqh4hthsa2j4hsefis",
     "2022-2023": "1nbpokgvv3q57wwkp64kuod1w",
     "2020-2021": "e95esqw0zl15lhtf06bxusmei",
-    "2018-2019": "50fns4q22osy22govjbgow0h6"
+    "2018-2019": "50fns4q22osy22govjbgow0h6",
+    "2026-2027": "7wshhtqrzmwrkkygjqf9l0idw"
   },
   "UEFA_Super_Cup": {
     "2026-2027": "94e2tqj0lcfsmhmbk75knn310",
@@ -2933,7 +3005,8 @@
     "1958 Sweden": "bbuhn6mdte3hfx1bxmv0il9ed",
     "1954 Switzerland": "bbx6b1jdiyzrcpj5ppx1937bp",
     "1938 France": "dg79eujaxrt9f5f9imb7rpmfp",
-    "1934 Italy": "dga11wvllg6lx5xn4pmwd6g9h"
+    "1934 Italy": "dga11wvllg6lx5xn4pmwd6g9h",
+    "2030 Morocco-Portugal-Spain": "b77gs0k4xtbas0k2bag6tbi8k"
   },
   "UEFA_Euro_Qualifiers": {
     "2028": "f3mgxdk57j14pptb1ci43qyvo",
@@ -2957,45 +3030,198 @@
   },
   "AFC_Asian_Cup": {
     "2027 Saudi Arabia": "dp6ffrjd9vghzrbai8bxk0il0",
-    "2023 Qatar":        "dxgoo5g7fx8rp5vu8kkzhcxnu",
-    "2019 UAE":          "a9kn206szttbg2hrcumlt8lpl",
-    "2015 Australia":    "5anm5zivcrs1vrw50o5qg4x3b"
+    "2023 Qatar": "dxgoo5g7fx8rp5vu8kkzhcxnu",
+    "2019 UAE": "a9kn206szttbg2hrcumlt8lpl",
+    "2015 Australia": "5anm5zivcrs1vrw50o5qg4x3b",
+    "2011 Qatar": "7votvj1chuakk9qg7s2zov9at",
+    "2007 Indonesia - Malaysia - Thailand - Vietnam": "e1yif5rhppkkaqm3fr8r533dh",
+    "2004 China": "6ojsko7u7el8buszz58rgjd1x"
   },
   "AFC_WC_Qualifiers": {
     "2026 Canada-Mexico-USA": "8rlm9tgxmr9acaidre79xsjdg",
-    "2022 Qatar":             "2frzbxa1eha1ca8a7u9mxot4a",
-    "2018 Russia":            "ceopewzeyevplvh4pvart8el1"
+    "2022 Qatar": "2frzbxa1eha1ca8a7u9mxot4a",
+    "2018 Russia": "ceopewzeyevplvh4pvart8el1",
+    "2030 Morocco-Portugal-Spain": "acmwnuh0encf00wvk14b5pedw",
+    "2014 Brazil": "4fk2y8iasnzu38ll48tipw2c5",
+    "2010 South Africa": "2j1zyyfd3lijcaqy3kwbhqwnp",
+    "2006 Germany": "7pcd2lxbof24k5rvsnxd4sfdh",
+    "2002 Korea Rep-Japan": "efsb99o8kcndstt5cpul7fbv9"
   },
   "CAF_WC_Qualifiers": {
     "2026 Canada-Mexico-USA": "9ghm6cuz03lcz4fg8jl3n1uz8",
-    "2022 Qatar":             "9mfeyhdrzoazvd8m6h0qhqnhm",
-    "2018 Russia":            "179akp03f2s0q483rai409f4l"
+    "2022 Qatar": "9mfeyhdrzoazvd8m6h0qhqnhm",
+    "2018 Russia": "179akp03f2s0q483rai409f4l",
+    "2030 Morocco-Portugal-Spain": "wq39xfupd88zs177xdosauqc",
+    "2014 Brazil": "c0vj1m3jnkap7sh91006l9m1h",
+    "2010 South Africa": "crwhezug84g75s6q7pm2bxt5h",
+    "2006 Germany": "7pa5bftvilzlb29g7lf3k1p05",
+    "2002 Korea Rep-Japan": "efpr09p1zokijvlfzvsudfg7p",
+    "1934 Italy": "768a9q8ok9nob3c7c1gmh17f9"
   },
   "CONMEBOL_WC_Qualifiers": {
     "2026 Canada-Mexico-USA": "8r3378w0vwgdwl8hypx4tt0r8",
-    "2022 Qatar":             "8q78f7kpnhfzakm62u6uccjmy",
-    "2018 Russia":            "7uqsjsm1nj49vnexjwn2aw5at",
-    "2014 Brazil":            "e48vtlaxzj6rnto4ffhvhrfmd",
-    "2010 South Africa":      "bc48385kaa4bssqvvcse46bbk",
-    "2006 Germany":           "7p7yv7matguvstiocty9zghqt",
-    "2002 Korea Rep-Japan":   "eflze2b1xkw0jt23eq6j4k4ph"
+    "2022 Qatar": "8q78f7kpnhfzakm62u6uccjmy",
+    "2018 Russia": "7uqsjsm1nj49vnexjwn2aw5at",
+    "2014 Brazil": "e48vtlaxzj6rnto4ffhvhrfmd",
+    "2010 South Africa": "bc48385kaa4bssqvvcse46bbk",
+    "2006 Germany": "7p7yv7matguvstiocty9zghqt",
+    "2002 Korea Rep-Japan": "eflze2b1xkw0jt23eq6j4k4ph",
+    "2030 Morocco-Portugal-Spain": "dt4285u3t606hng7q9omvivbo"
   },
   "AFCON_Qualifiers": {
     "2027 Kenya-Tanzania-Uganda": "2vj8sd86i396edjnxg4uojyms",
-    "2025 Morocco":               "a91rgnnp9krmr754qerzib0no",
-    "2023 Cote d'Ivoire":         "3vcpljrsyrrc01qvequcz0zdg"
+    "2025 Morocco": "a91rgnnp9krmr754qerzib0no",
+    "2023 Cote d'Ivoire": "3vcpljrsyrrc01qvequcz0zdg",
+    "2023 Cote d’Ivoire": "3vcpljrsyrrc01qvequcz0zdg",
+    "2021": "1u0rkpe0v4j9fxlaz5aqwdxey",
+    "2019 Cameroon": "9cynbwf2ojdhccu4cy0fe6pk9",
+    "2017 Gabon": "7b4ip5nrtaqoso5rbsyc4zwt1",
+    "2015 Equatorial Guinea": "2wesgze9r199vdt7lwavpm4wt",
+    "2013 South Africa": "7nfm1s7yslgcudxrv0kb7trrp",
+    "2012 Equatorial Guinea-Gabon": "19xoucl70m6met5ftphoe3dg5",
+    "2008 Ghana": "7n9i7iec94g2xzrfi924exxat"
   },
   "Asian_Cup_Qualifiers": {
     "2027 Saudi Arabia": "bnedozeloq04yhsasxzc9p9n8",
-    "2023 Qatar":        "7hd8fbugte90ehj33tjn7cmzu"
+    "2023 Qatar": "7hd8fbugte90ehj33tjn7cmzu",
+    "2019 UAE": "8ma1hp269ewv4yqlyo0xsignp",
+    "2015 Australia": "72n1qhmypy0vuj4v2p4zqn29w",
+    "2011 Qatar": "ajztfvey73adfi0yfrek2qytx",
+    "2007 Indonesia - Malaysia - Thailand - Vietnam": "aigy9hkb8m2ojhedlf7z6lsd1",
+    "2004 China": "aie0tbc630gkxedpdrk8u19lh"
   },
   "Gulf_Cup_of_Nations": {
     "2024 Kuwait": "9txai0fmtxxuwen9so0q6iqs4",
-    "2023 Iraq":   "97vt1tkzvrl7qw61vaiz9ma96"
+    "2023 Iraq": "97vt1tkzvrl7qw61vaiz9ma96",
+    "2026 Saudi Arabia": "8p3dr5wspoh3bszl610ikzp5g",
+    "2019 Qatar": "5sugi9zptzf6jk8xfusoc66i2",
+    "2017 Kuwait": "btlvevoixgr6wrqkhp3hrn0fd",
+    "2014 Saudi Arabia": "qe6hbkq812dyuvxcmxja180l",
+    "2013 Bahrain": "8ybvffe8kvpd776cam98p2mfg",
+    "2010 Yemen": "c19i05mc62dbokz0b9qhsn7bp",
+    "2009 Oman": "f3cpesugaot2etsctcxygz3kl",
+    "2007 UAE": "20cyzbxv7glgf3f77n604eehh"
   },
   "Intl_Friendlies": {
     "Intl_Friendlies_2026": "dezv8l0fzgcxtejl0dwmy1gyc",
     "Intl_Friendlies_2025": "8pw8cm9fuczk7lmxm1oxjdyc4",
-    "Intl_Friendlies_2024": "6g6a8weru6ytaa0mr0hpwn9xw"
+    "Intl_Friendlies_2024": "6g6a8weru6ytaa0mr0hpwn9xw",
+    "2026": "dezv8l0fzgcxtejl0dwmy1gyc",
+    "2025": "8pw8cm9fuczk7lmxm1oxjdyc4",
+    "2024": "6g6a8weru6ytaa0mr0hpwn9xw",
+    "2023": "61td1uqzh0f4wtrnh2bv3gmqc",
+    "2022": "40sncpbsyexdrmedcwjz1j0gk",
+    "2021": "m1cpiectqfks4egahjhqbdas",
+    "2020": "5tkoiyney28iphncnfe1n5e96",
+    "2019": "3ca0bog1zcprq8t8ovjxpgj8q",
+    "2018": "8a3l1brjs02abctzbey737tyi",
+    "2017": "2bt8l2pz2uhfcfc67d8eggq95",
+    "2016": "bagji1lh2c8xg8gwvjz9uju21",
+    "2015": "3qp49rmrut0oznbw3jav18wqf",
+    "2014": "evgp64rnjrtgw60r2rh3jpjau",
+    "2013": "3fcrwbjlleuor1168f17qed4z",
+    "2012": "27ihtz689yc9uydenxic8t7th",
+    "2011": "dskwty1lmgm5mutguhr844no5",
+    "2010": "alsqujfd8cxeb1gf1ns7q97md",
+    "2009": "2227q0555gxk6ntz5icl34n2t",
+    "2008": "aj4ghak14sy765nr5srq23v14",
+    "2007": "8oow5mvr84njjj10bz3j69uj9",
+    "2006": "aelifap7x7jez8blq56raeiy9",
+    "2005": "6oyb356xyw9dcl1wcpgxsxk9h",
+    "2004": "d42kfht9k4yr6vsby5swkun6d",
+    "2003": "d4428oqjawikr1uti8paj5l1x",
+    "2002": "d45mrhfeqmn6q4qkbeirw16tx",
+    "2001": "d47311vpektrk6koop40o8ul1",
+    "2000": "2v4vob4ibe5f9o2wkzw3mx91",
+    "1999": "9e2yj5f8hldbxdmkt82ub1vqg",
+    "1998": "2wybjn8bwgrkew6axmzcegut",
+    "1997": "2zi9qv399u64krwc579azbv9",
+    "1996": "31h0v7amp8vhaqlys8osg0yd",
+    "1995": "2602qec0wg3omu1prtvyph51x",
+    "1994": "e46gzgmogwjx8mggoud4q35d0",
+    "1993": "261q6k3bhc5xaexe09r12cq1h",
+    "1992": "264hp3ms9mfg0p87y5ggk6rit",
+    "1991": "2670aaabdwsxqv95ir7wrikt1",
+    "1990": "4aeiwjey71dqyvcq2pq5fel05",
+    "1989": "19orkjthie8bbbha5kvneiuhh",
+    "1988": "19mlct5j1ommpodeeqj9s2klx",
+    "1987": "19knrkhdc26f93sy36zzs5v4l",
+    "1986": "19irdayaq28ueikt28zyxwjpx",
+    "1985": "ebifl95s1kyca91rrwx0jkwk5",
+    "1984": "ebg6wd7fhjacl62a2qga2f2l1",
+    "1983": "ebe71zamq6uqieyamal49gno5",
+    "1982": "ebbz3wesfmnpz9ie1g9513idx",
+    "1981": "eba9rk9j840yrg5hbechyk6ol",
+    "1980": "c7f2ahasez7zjm7log8rlrxsl",
+    "1979": "c7cucbfeqyl1rp7etx00gnahh",
+    "1978": "c7bcpuoet5gqg6bh8pwri9vbp",
+    "1977": "c78m0txhikutukzuno4b686hh",
+    "1976": "c779vvppulgtmfw2mi5xo87o5",
+    "1975": "a3cchcrlsq5usvhq0w13z8a8l",
+    "1974": "a39p1upfwqad1y7taznth3f85",
+    "1973": "a373ey5qisr9d33z6a22znufp",
+    "1972": "a34hxbq2faipo3d5goe9cuhn9",
+    "1971": "a31gwu1u7tgqijys28tway4et",
+    "1970": "7z7h0ijkfn44q55ybf7mgluc5",
+    "1969": "7z3shkb724rtoxms9o9xtz1sl",
+    "1968": "7z13z81hpfagh23xe3rh49wid",
+    "1967": "7yypyuz5l0dfwlurawffsc9ud",
+    "1966": "7ywwaq7bjioqinityd4v7ig2d",
+    "1965": "5v4msesy596ez1cyzwovcgu6t",
+    "1964": "5v1vig0bhthjwqsrlh2zzl6tx",
+    "1963": "5v01boehibwbu9xcn9c1b7hsl",
+    "1962": "5uxcvrtsmo9a9qg0dxjrdxot1",
+    "1961": "5uve2b7h7knljp2yqetlkx2vp",
+    "1960": "3r9isdaj4gcc6f1iwwj58u5sl",
+    "1959": "3r7036m4hcxe7mcjxkvgiof6d",
+    "1958": "3r5mpscb3dgz27x4ep98lhwph",
+    "1957": "3qxm8gckbhn8i2sehn8uhdo7p",
+    "1956": "3qvl1k0cirgykjqscl3unt6fp",
+    "1955": "1m3dz8sqpni7dx1ikw0jvikt1",
+    "1954": "1m0wtmghvrfeyz6f600liwh5h",
+    "1953": "1lxbhfp2zvex7ah7m29gut3h1",
+    "1952": "1lt23xnbidwcq943t8a06eqqd",
+    "1951": "1lqivsm4he0m54peh4ni9r26t",
+    "1950": "enklb4eyu117h9n37p1efeaqd",
+    "1949": "eni1kh12x7wu2s1bogboabzyt",
+    "1948": "enf2gramjgbyqpoj4zdc5lrrp",
+    "1947": "encm4nbk5cpdf7pqr95oeo3bp",
+    "1946": "enb1cl4tha1vrifalrp2ii8d1",
+    "1945": "8brk0c7azc285q1h90pl7ixg5",
+    "1943": "8boe2w69mf5tqszcknllkjdud",
+    "1942": "8bls4czuumi0xhwofeen41s5x",
+    "1941": "8biqpmdsgfs1yrr1daiamz5jp",
+    "1940": "8bgec1q8o48ses7z0u7jm9rdh",
+    "1939": "66a7iwdbsvh49p4d07g09vkyd",
+    "1938": "667loxp745qtd4kttue15ghcl",
+    "1937": "66619ushx3pmsmfknbcewsij9",
+    "1936": "663pqpd1olhq0hzyamuhi61ud",
+    "1935": "662g2wv15vdfx1uojh55ezkk5",
+    "1934": "42bz7at3p5gnfgcncnbqe70lx",
+    "1933": "42adf5ub0a7lekkgko0wfw91x",
+    "1932": "428gryrinrituf6ra60upeok5",
+    "1931": "425s5f03clw7a035bnc7oyuvp",
+    "1930": "424b0lvog76g9olmlbz2r56tx",
+    "1929": "1yfcakh906j767qxk6wl4n2l1",
+    "1928": "1yctsvpomzxwpggvmbidpi7rp",
+    "1927": "1yajhhsxjyfwcl8a4b72lsedx",
+    "1926": "1y7jxmf9dz0slq5nq8yx4be8l",
+    "1925": "1y5q3dvoug80avdbfip0vaaxh",
+    "1924": "f0d53yx5lv4g0cj3zgp0wv6xh",
+    "1923": "f0an25k3qrfd4c1c43g9futp1",
+    "1922": "f07v8rc6kj101mjhe2oak434l",
+    "1921": "f05xa9cympm66ffqhbnzs55ud",
+    "1920": "f0335ib9y8b0hzvw5wawx00r9",
+    "1919": "cvcutu5ouowjrddyw6zezr07p",
+    "1918": "cv8qp3x8r9ns86xtkk7pt8pn9",
+    "1917": "cv6jsuc2t4r0noa73wrwh00r9",
+    "1916": "cv2mpe0i6gh3ue9w9ay2c7n4l",
+    "1915": "cv0a5x9qupja01qksq09p9p79",
+    "1914": "ar8lkt9zj1crorfs7hqv0fob9",
+    "1913": "ar6n1hiorkx5pdwfq27ysq2tx",
+    "1912": "ar3j7ijaeiwtrgd72d7fokded",
+    "1911": "ar030ii096cawtqbxdbpjcmol",
+    "1910": "aqxl1x7kwyothf4s8bgi00uz9",
+    "1908": "8ndroi8s2s0r9067f0hx5g7v9"
   }
 }
