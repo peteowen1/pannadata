@@ -347,22 +347,147 @@ def is_future_season(season_name: str) -> bool:
 # "year - 1 → year" misses their actual fixture windows entirely, so the scrape
 # returns "no new matches" even though the season exists in seasons.json.
 TOURNAMENT_DATE_EXCEPTIONS = {
-    # Winter World Cup — played Nov 20 – Dec 18, 2022. Not in the default
-    # Aug 2021 – Jul 2022 window.
+    # Winter World Cup — played Nov 20 – Dec 18, 2022. Wide window covers
+    # BOTH the main tournament AND the multi-confederation qualifying cycles
+    # that share the same "2022 Qatar" season-name (CONMEBOL Mar 2020 – Mar
+    # 2022; CAF Sep 2019 – Mar 2022; AFC Sep 2019 – Mar 2022; UEFA Mar 2021
+    # – Nov 2021). Without this width, qualifier scrapes returned `Found 0`
+    # because the narrow Nov-Dec 2022 window didn't intersect the qualifying
+    # period at all.
     "2022 Qatar": [
-        ("2022-11-01", "2022-12-31"),
+        ("2019-09-01", "2022-12-31"),
     ],
     # EURO 2020 — COVID-delayed to Jun 11 – Jul 11, 2021. Labelled "2020" in
     # Opta (no host country) because it was pan-European.
     "2020": [
         ("2021-06-01", "2021-07-31"),
     ],
-    # World Cup 2026 — played Jun 11 – Jul 19, 2026 across USA/Canada/Mexico.
-    # Default Aug 2025 – Jul 2026 windowing tries pre-tournament months that
-    # have no data and Opta returns 404, tripping the strict pagination guard.
-    "2026 Canada-Mexico-USA": [
-        ("2026-06-01", "2026-07-31"),
+    # AFCON 2021 Cameroon — COVID-delayed to Jan 9 – Feb 6, 2022. The default
+    # ("2021" → Aug 2020 – Jul 2021) misses the entire tournament. AFCON
+    # Qualifiers 2021 cycle was Nov 2019 – Mar 2021, also outside default,
+    # so the wide window catches both.
+    "2021 Cameroon": [
+        ("2019-11-01", "2022-02-28"),
     ],
+    # NOTE: bare "2021" was previously here for AFCONQ 2021 cycle but removed
+    # because the key collides with other comps that legitimately use the bare
+    # year (Intl_Friendlies historical years). AFCONQ 2021 cycle is captured
+    # under "2021 Cameroon" via the same season_id in seasons.json (the
+    # qualifier rounds were registered under the Cameroon host before the
+    # tournament was moved). If we ever see a real bare-"2021" key in
+    # seasons.json that needs the AFCONQ window, gate it by competition.
+    # WC 2018 Russia — main tournament Jun 14 – Jul 15, 2018, but the same
+    # season-name spans qualifier cycles across all 6 confederations
+    # (CONMEBOL Oct 2015 – Oct 2017; CAF Oct 2015 – Nov 2017; AFC Mar 2015
+    # – Oct 2017; UEFA Sep 2016 – Nov 2017; CONCACAF Mar 2015 – Oct 2017).
+    # Default Aug 2017 – Jul 2018 catches only ~1/3 of qualifier matches.
+    "2018 Russia": [
+        ("2015-03-01", "2018-07-31"),
+    ],
+    # WC 2014 Brazil — same pattern. Qualifiers Jun 2011 – Nov 2013.
+    "2014 Brazil": [
+        ("2011-06-01", "2014-07-31"),
+    ],
+    # WC 2010 South Africa — Qualifiers Aug 2007 – Nov 2009; main Jun 11 –
+    # Jul 11, 2010.
+    "2010 South Africa": [
+        ("2007-08-01", "2010-07-31"),
+    ],
+    # WC 2006 Germany — Qualifiers Sep 2003 – Nov 2005; main Jun 9 – Jul 9 2006.
+    "2006 Germany": [
+        ("2003-09-01", "2006-07-31"),
+    ],
+    # WC 2002 Korea Rep-Japan — Qualifiers Mar 2000 – Nov 2001; main Jun 2002.
+    "2002 Korea Rep-Japan": [
+        ("2000-03-01", "2002-07-31"),
+    ],
+    # AFCON 2023 Côte d'Ivoire main was Jan-Feb 2024 — wide window covers
+    # both the main tournament AND AFCONQ 2023 cycle (Jun 2022 – Sep 2023).
+    # Single ASCII apostrophe match — seasons.json was normalized to ASCII.
+    "2023 Cote d'Ivoire": [
+        ("2022-06-01", "2024-02-29"),
+    ],
+    # AFCON 2019 Egypt — main Jun-Jul 2019, AFCONQ 2019 cycle Jun 2017–Mar 2019.
+    # Default Aug 2018–Jul 2019 catches main but misses 80% of qualifiers.
+    "2019 Egypt": [
+        ("2017-06-01", "2019-07-31"),
+    ],
+    # AFCON 2017 Gabon — main Jan-Feb 2017, AFCONQ Jun 2015–Sept 2016. Default
+    # Aug 2016–Jul 2017 catches main + last 3 mo of qualifiers, misses ~80%.
+    "2017 Gabon": [
+        ("2015-06-01", "2017-02-28"),
+    ],
+    # AFCON 2015 Equatorial Guinea — main Jan-Feb 2015, AFCONQ Sep 2013–Nov 2014.
+    "2015 Equatorial Guinea": [
+        ("2013-09-01", "2015-02-28"),
+    ],
+    # AFCON 2013 South Africa — main Jan-Feb 2013, AFCONQ Sep 2011–Oct 2012.
+    "2013 South Africa": [
+        ("2011-09-01", "2013-02-28"),
+    ],
+    # AFCON 2012 Equatorial Guinea-Gabon — main Jan-Feb 2012, AFCONQ 2010-2011.
+    "2012 Equatorial Guinea-Gabon": [
+        ("2010-09-01", "2012-02-28"),
+    ],
+    # AFC Asian Cup 2019 UAE — main Jan-Feb 2019, ACUPQ Mar 2015–Mar 2018.
+    # Default Aug 2018–Jul 2019 catches main but misses entire qualifying.
+    "2019 UAE": [
+        ("2015-03-01", "2019-02-28"),
+    ],
+    # AFC Asian Cup 2015 Australia — main Jan 2015, ACUPQ Feb 2011–Mar 2014.
+    "2015 Australia": [
+        ("2011-02-01", "2015-02-28"),
+    ],
+    # AFC Asian Cup 2011 Qatar — main Jan 2011, ACUPQ 2008-2010.
+    "2011 Qatar": [
+        ("2008-01-01", "2011-02-28"),
+    ],
+    # World Cup 2026 — main tournament Jun 11 – Jul 19, 2026 across
+    # USA/Canada/Mexico. The same season-name is reused by AFC and CAF
+    # World Cup qualifiers whose actual play window spans Oct 2023 –
+    # Nov 2025. Window covers both periods. With the 404-as-end-of-
+    # pagination fix (pannadata#45) the empty pre-tournament months for
+    # the main WC scrape are no longer fatal — they just iterate quickly.
+    "2026 Canada-Mexico-USA": [
+        ("2023-10-01", "2026-07-31"),
+    ],
+    # AFCON 2025 in Morocco — played Dec 21, 2025 – Jan 18, 2026. Same
+    # season-name is also used by AFCON Qualifiers 2025 cycle (Mar–Nov 2024).
+    # Wide window covers both.
+    "2025 Morocco": [
+        ("2024-03-01", "2026-02-15"),
+    ],
+    # AFC Asian Cup 2023 in Qatar — postponed (originally China 2023) and
+    # played Jan 12 – Feb 10, 2024 in Qatar. Default window misses it.
+    # Also applies to AFC Asian Cup *Qualifiers* 2023 Qatar cycle
+    # (Oct 2021 – Jun 2022) — same season-name, totally different window;
+    # we set the wider span so both scrapes get their data.
+    "2023 Qatar": [
+        ("2021-10-01", "2024-02-29"),
+    ],
+    # AFC Asian Cup Qualifiers 2027 Saudi Arabia — qualifying matches
+    # spread across Sep 2024 – Mar 2026. Default ("2027" → Aug 2026 onwards)
+    # would miss almost everything. The same season-name is reused by the
+    # main AFC Asian Cup 2027 tournament (Jan 2027) — windowing covers both.
+    "2027 Saudi Arabia": [
+        ("2024-09-01", "2027-02-28"),
+    ],
+    # AFCON Qualifiers 2027 Kenya/Tanzania/Uganda — Mar 2026 – Nov 2026.
+    # Default ("2027" → Aug 2026 onwards) misses the early-2026 matches.
+    "2027 Kenya-Tanzania-Uganda": [
+        ("2026-03-01", "2026-12-31"),
+    ],
+    # Gulf Cup of Nations 2024 Kuwait — played Dec 21, 2024 – Jan 4, 2025.
+    # Straddles year boundary; default ("2024" → Aug 2023-Jul 2024) misses
+    # the actual tournament entirely.
+    "2024 Kuwait": [
+        ("2024-12-01", "2025-02-15"),
+    ],
+    # International Friendlies entries: handled programmatically in
+    # get_season_date_range() rather than enumerated here. seasons.json
+    # carries ~57 Intl_Friendlies_YYYY entries (1970-2026); the generic
+    # rule "Intl_Friendlies_YYYY -> Jan 1 YYYY .. Dec 31 YYYY" is uniform
+    # across all years and doesn't merit one explicit entry per year.
 }
 
 
@@ -379,6 +504,14 @@ def get_season_date_range(season_name: str) -> tuple:
     # Explicit exceptions override the name-based inference.
     if season_name in TOURNAMENT_DATE_EXCEPTIONS:
         return TOURNAMENT_DATE_EXCEPTIONS[season_name]
+
+    # Intl_Friendlies_YYYY -> full calendar year YYYY. Handled here
+    # rather than enumerated in TOURNAMENT_DATE_EXCEPTIONS because the
+    # rule is identical across all ~57 historical years (1970-2026).
+    m_friendly = re.match(r'^Intl_Friendlies_(\d{4})$', season_name)
+    if m_friendly:
+        yr = m_friendly.group(1)
+        return [(f"{yr}-01-01", f"{yr}-12-31")]
 
     # Extract year(s) from season name
     years = re.findall(r'20\d\d', season_name)

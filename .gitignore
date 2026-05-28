@@ -3,7 +3,6 @@ data/
 
 # Claude Code (local settings)
 .claude/
-CLAUDE.md
 
 # R artifacts
 .Rhistory
@@ -22,3 +21,6 @@ _ul*
 .wrangler/
 blog/
 source/
+
+# Local-only diagnostic scripts
+debug/

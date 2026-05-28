@@ -57,6 +57,17 @@ if ("season" %in% names(predictions)) {
   cat("Filtered to current season per league:", nrow(predictions), "matches\n")
 }
 
+# Capture leagues + season metadata before the status filter so the projection
+# still emits a row per league once every fixture is played (sim becomes
+# deterministic from standings — title_pct=1.0 for first place, etc.). Without
+# this snapshot the loop below would have nothing to iterate over post-season
+# and the blog's Projected tab would freeze on whatever the last sim run produced.
+leagues_with_predictions <- unique(predictions$league)
+league_season_meta <- predictions |>
+  distinct(league, season) |>
+  group_by(league) |>
+  summarise(season = max(season, na.rm = TRUE), .groups = "drop")
+
 # Status filter: status == "fixture" means unplayed. Older exports lack the
 # column — fall back to "matches after today" as a best-effort guard.
 # `match_date` can arrive as an ISO timestamp ("2026-04-19T15:30:00Z"); take
@@ -117,8 +128,10 @@ normalize_team_names <- function(fixture_teams, canonical_teams) {
   mapping
 }
 
-# Apply the mapping per league (standings are league-scoped).
-if (!is.null(standings)) {
+# Apply the mapping per league (standings are league-scoped). Skip when no
+# fixtures remain (group_modify on a zero-row grouped df hits an empty-key
+# filter that errors with "..1 must be of size 390 or 1, not size 0").
+if (!is.null(standings) && nrow(predictions) > 0) {
   predictions <- predictions |>
     group_by(league) |>
     group_modify(function(df, key) {
@@ -138,13 +151,25 @@ if (!is.null(standings)) {
     ungroup()
 }
 
-leagues <- unique(predictions$league)
+# Use pre-status-filter leagues so end-of-season leagues still emit a
+# deterministic-from-standings projection row (simulate_league handles
+# n_matches=0 — sweep on a 10000x0 matrix leaves total_points = cur_pts).
+leagues <- leagues_with_predictions
 cat("Leagues:", paste(leagues, collapse = ", "), "\n")
 cat("Matches after filtering:", nrow(predictions), "\n\n")
 
 # ── Simulate one season for a league (vectorized) ─────────────────────
 simulate_league <- function(preds, league_standings = NULL, n_sims = N_SIMS) {
-  teams <- sort(unique(c(preds$home_team, preds$away_team)))
+  # Source teams from fixtures when available; fall back to standings so the
+  # function still produces a result row per team at end-of-season (preds is
+  # 0-row but standings carry the final ladder).
+  teams <- if (nrow(preds) > 0) {
+    sort(unique(c(preds$home_team, preds$away_team)))
+  } else if (!is.null(league_standings) && nrow(league_standings) > 0) {
+    sort(unique(league_standings$team))
+  } else {
+    character(0)
+  }
   n_teams <- length(teams)
   n_matches <- nrow(preds)
   team_idx <- setNames(seq_along(teams), teams)
@@ -256,8 +281,15 @@ for (league in leagues) {
     if (nrow(league_standings) == 0) league_standings <- NULL
   }
 
-  # Determine season and current matchday
-  season <- unique(league_preds$season)[1]
+  # Determine season and current matchday. league_preds may be empty
+  # (end-of-season — all fixtures played); fall back to the pre-filter
+  # metadata snapshot so the output row still carries the right season.
+  season <- if (nrow(league_preds) > 0) {
+    unique(league_preds$season)[1]
+  } else {
+    s <- league_season_meta$season[league_season_meta$league == league]
+    if (length(s) > 0) s[1] else NA
+  }
   matchdays <- length(unique(league_preds$match_date))
 
   standings_label <- if (!is.null(league_standings)) {
@@ -267,9 +299,13 @@ for (league in leagues) {
   }
 
   t0 <- proc.time()["elapsed"]
+  teams_for_log <- if (nrow(league_preds) > 0) {
+    length(unique(c(league_preds$home_team, league_preds$away_team)))
+  } else if (!is.null(league_standings)) {
+    nrow(league_standings)
+  } else 0
   cat("Simulating", league, ":", nrow(league_preds), "remaining matches,",
-      length(unique(c(league_preds$home_team, league_preds$away_team))), "teams,",
-      standings_label)
+      teams_for_log, "teams,", standings_label)
 
   result <- simulate_league(league_preds, league_standings, N_SIMS)
   result$league <- league

@@ -11,7 +11,7 @@ cat("=== Uploading Individual Parquet Files ===\n\n")
 # Configuration
 repo <- "peteowen1/pannadata"
 tag <- "latest"
-source_dir <- "C:/Users/peteo/OneDrive/Documents/pannaverse/pannadata/data"
+source_dir <- "C:/dev/pannaverse/pannadata/data"
 
 cat("Source directory:", source_dir, "\n")
 cat("Repository:", repo, "\n")

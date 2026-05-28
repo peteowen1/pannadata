@@ -15,7 +15,7 @@ cat("=== Uploading CLEANED Individual Parquet Files ===\n\n")
 # Configuration
 repo <- "peteowen1/pannadata"
 tag <- "latest"
-source_dir <- "C:/Users/peteo/OneDrive/Documents/pannaverse/pannadata/data"
+source_dir <- "C:/dev/pannaverse/pannadata/data"
 
 # ============================================
 # Define column specifications for each table type

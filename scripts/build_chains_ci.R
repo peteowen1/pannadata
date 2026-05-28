@@ -25,6 +25,25 @@ if (has_equity) {
   cat("No equity file — chains will not include EPV credit\n")
 }
 
+# Load wpa lookup (optional — from panna's 06_calculate_wpa.R action_wpa
+# shards, one parquet per league-season). When present, we join per-event
+# wp/wpa/wpa_actor/wpa_receiver onto chains so the blog match page can
+# render per-event WPA without a worker call for finished matches. See
+# inthegame-blog memory followup_panna_chains_per_event_wp.md.
+wpa_files <- list.files(src_dir,
+                         pattern = "^action_wpa_.*\\.parquet$",
+                         full.names = TRUE)
+has_wpa <- length(wpa_files) > 0
+if (has_wpa) {
+  cat("Loading WPA from", length(wpa_files), "shard(s)...\n")
+  wpa_lookup <- data.table::rbindlist(lapply(wpa_files, read_parquet),
+                                       use.names = TRUE, fill = TRUE)
+  cat("WPA loaded:", nrow(wpa_lookup), "actions across",
+      data.table::uniqueN(wpa_lookup$match_id), "matches\n")
+} else {
+  cat("No action_wpa_*.parquet files — chains will not include per-action WPA\n")
+}
+
 # Load lineups once (shared across all leagues)
 lineup_file <- file.path(src_dir, "opta_lineups.parquet")
 if (!file.exists(lineup_file)) stop("Missing: ", lineup_file)
@@ -139,6 +158,20 @@ for (comp in blog_comps) {
     n_eq <- sum(!is.na(chains$equity))
     if (n_eq == 0) cat("  WARNING: equity join matched 0 actions (check event_id format)\n")
     else cat("  equity: ", n_eq, "/", nrow(chains), " actions\n", sep = "")
+  }
+
+  # Join per-action WPA if available (panna 06_calculate_wpa.R output).
+  # Same join key as equity (match_id, event_id); same partial-match
+  # warning behaviour. When wpa is present, the blog match page can
+  # skip the worker call for finished matches.
+  if (has_wpa) {
+    chains <- chains |>
+      left_join(wpa_lookup |> select(match_id, event_id,
+                                      wp, wpa, wpa_actor, wpa_receiver),
+                by = c("match_id", "event_id"))
+    n_wpa <- sum(!is.na(chains$wpa))
+    if (n_wpa == 0) cat("  WARNING: wpa join matched 0 actions (check event_id format)\n")
+    else cat("  wpa: ", n_wpa, "/", nrow(chains), " actions\n", sep = "")
   }
 
   league_code <- comp_to_code[comp]
