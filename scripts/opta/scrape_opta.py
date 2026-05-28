@@ -347,15 +347,57 @@ def is_future_season(season_name: str) -> bool:
 # "year - 1 → year" misses their actual fixture windows entirely, so the scrape
 # returns "no new matches" even though the season exists in seasons.json.
 TOURNAMENT_DATE_EXCEPTIONS = {
-    # Winter World Cup — played Nov 20 – Dec 18, 2022. Not in the default
-    # Aug 2021 – Jul 2022 window.
+    # Winter World Cup — played Nov 20 – Dec 18, 2022. Wide window covers
+    # BOTH the main tournament AND the multi-confederation qualifying cycles
+    # that share the same "2022 Qatar" season-name (CONMEBOL Mar 2020 – Mar
+    # 2022; CAF Sep 2019 – Mar 2022; AFC Sep 2019 – Mar 2022; UEFA Mar 2021
+    # – Nov 2021). Without this width, qualifier scrapes returned `Found 0`
+    # because the narrow Nov-Dec 2022 window didn't intersect the qualifying
+    # period at all.
     "2022 Qatar": [
-        ("2022-11-01", "2022-12-31"),
+        ("2019-09-01", "2022-12-31"),
     ],
     # EURO 2020 — COVID-delayed to Jun 11 – Jul 11, 2021. Labelled "2020" in
     # Opta (no host country) because it was pan-European.
     "2020": [
         ("2021-06-01", "2021-07-31"),
+    ],
+    # AFCON 2021 Cameroon — COVID-delayed to Jan 9 – Feb 6, 2022. The default
+    # ("2021" → Aug 2020 – Jul 2021) misses the entire tournament. AFCON
+    # Qualifiers 2021 cycle was Nov 2019 – Mar 2021, also outside default,
+    # so the wide window catches both.
+    "2021 Cameroon": [
+        ("2019-11-01", "2022-02-28"),
+    ],
+    # Bare "2021" (used by AFCON_Qualifiers 2021 cycle when the host wasn't
+    # finalized at registration time) — qualifying matches Nov 2019 – Mar 2021.
+    "2021": [
+        ("2019-11-01", "2022-02-28"),
+    ],
+    # WC 2018 Russia — main tournament Jun 14 – Jul 15, 2018, but the same
+    # season-name spans qualifier cycles across all 6 confederations
+    # (CONMEBOL Oct 2015 – Oct 2017; CAF Oct 2015 – Nov 2017; AFC Mar 2015
+    # – Oct 2017; UEFA Sep 2016 – Nov 2017; CONCACAF Mar 2015 – Oct 2017).
+    # Default Aug 2017 – Jul 2018 catches only ~1/3 of qualifier matches.
+    "2018 Russia": [
+        ("2015-03-01", "2018-07-31"),
+    ],
+    # WC 2014 Brazil — same pattern. Qualifiers Jun 2011 – Nov 2013.
+    "2014 Brazil": [
+        ("2011-06-01", "2014-07-31"),
+    ],
+    # WC 2010 South Africa — Qualifiers Aug 2007 – Nov 2009; main Jun 11 –
+    # Jul 11, 2010.
+    "2010 South Africa": [
+        ("2007-08-01", "2010-07-31"),
+    ],
+    # WC 2006 Germany — Qualifiers Sep 2003 – Nov 2005; main Jun 9 – Jul 9 2006.
+    "2006 Germany": [
+        ("2003-09-01", "2006-07-31"),
+    ],
+    # WC 2002 Korea Rep-Japan — Qualifiers Mar 2000 – Nov 2001; main Jun 2002.
+    "2002 Korea Rep-Japan": [
+        ("2000-03-01", "2002-07-31"),
     ],
     # World Cup 2026 — main tournament Jun 11 – Jul 19, 2026 across
     # USA/Canada/Mexico. The same season-name is reused by AFC and CAF
