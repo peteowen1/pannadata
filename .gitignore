@@ -21,3 +21,6 @@ _ul*
 .wrangler/
 blog/
 source/
+
+# Local-only diagnostic scripts
+debug/
