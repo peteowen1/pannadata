@@ -369,11 +369,13 @@ TOURNAMENT_DATE_EXCEPTIONS = {
     "2021 Cameroon": [
         ("2019-11-01", "2022-02-28"),
     ],
-    # Bare "2021" (used by AFCON_Qualifiers 2021 cycle when the host wasn't
-    # finalized at registration time) — qualifying matches Nov 2019 – Mar 2021.
-    "2021": [
-        ("2019-11-01", "2022-02-28"),
-    ],
+    # NOTE: bare "2021" was previously here for AFCONQ 2021 cycle but removed
+    # because the key collides with other comps that legitimately use the bare
+    # year (Intl_Friendlies historical years). AFCONQ 2021 cycle is captured
+    # under "2021 Cameroon" via the same season_id in seasons.json (the
+    # qualifier rounds were registered under the Cameroon host before the
+    # tournament was moved). If we ever see a real bare-"2021" key in
+    # seasons.json that needs the AFCONQ window, gate it by competition.
     # WC 2018 Russia — main tournament Jun 14 – Jul 15, 2018, but the same
     # season-name spans qualifier cycles across all 6 confederations
     # (CONMEBOL Oct 2015 – Oct 2017; CAF Oct 2015 – Nov 2017; AFC Mar 2015
@@ -399,9 +401,9 @@ TOURNAMENT_DATE_EXCEPTIONS = {
     "2002 Korea Rep-Japan": [
         ("2000-03-01", "2002-07-31"),
     ],
-    # AFCON 2023 Côte d'Ivoire main was Jan-Feb 2024 — already covered above.
-    # The string with proper apostrophe (smart quote) below catches the
-    # ASCII version after the seasons.json normalization.
+    # AFCON 2023 Côte d'Ivoire main was Jan-Feb 2024 — wide window covers
+    # both the main tournament AND AFCONQ 2023 cycle (Jun 2022 – Sep 2023).
+    # Single ASCII apostrophe match — seasons.json was normalized to ASCII.
     "2023 Cote d'Ivoire": [
         ("2022-06-01", "2024-02-29"),
     ],
@@ -449,12 +451,6 @@ TOURNAMENT_DATE_EXCEPTIONS = {
     "2026 Canada-Mexico-USA": [
         ("2023-10-01", "2026-07-31"),
     ],
-    # AFCON 2023 in Côte d'Ivoire — postponed to Jan 13 – Feb 11, 2024. The
-    # "2023" name implies Aug 2022 – Jul 2023 default, which misses the
-    # entire tournament played in early 2024.
-    "2023 Côte d'Ivoire": [
-        ("2024-01-01", "2024-02-29"),
-    ],
     # AFCON 2025 in Morocco — played Dec 21, 2025 – Jan 18, 2026. Same
     # season-name is also used by AFCON Qualifiers 2025 cycle (Mar–Nov 2024).
     # Wide window covers both.
@@ -487,14 +483,11 @@ TOURNAMENT_DATE_EXCEPTIONS = {
     "2024 Kuwait": [
         ("2024-12-01", "2025-02-15"),
     ],
-    # International Friendlies — Opta's "Friendlies" competition publishes
-    # one tournament-calendar per actual calendar year. Default name-based
-    # date inference (Aug-Jul) misses the second-half-of-year matches.
-    # Distinct season name keeps these exceptions from polluting other comps
-    # that reuse bare-year names (UEFA Nations League etc.).
-    "Intl_Friendlies_2024": [("2024-01-01", "2024-12-31")],
-    "Intl_Friendlies_2025": [("2025-01-01", "2025-12-31")],
-    "Intl_Friendlies_2026": [("2026-01-01", "2026-12-31")],
+    # International Friendlies entries: handled programmatically in
+    # get_season_date_range() rather than enumerated here. seasons.json
+    # carries ~57 Intl_Friendlies_YYYY entries (1970-2026); the generic
+    # rule "Intl_Friendlies_YYYY -> Jan 1 YYYY .. Dec 31 YYYY" is uniform
+    # across all years and doesn't merit one explicit entry per year.
 }
 
 
@@ -511,6 +504,14 @@ def get_season_date_range(season_name: str) -> tuple:
     # Explicit exceptions override the name-based inference.
     if season_name in TOURNAMENT_DATE_EXCEPTIONS:
         return TOURNAMENT_DATE_EXCEPTIONS[season_name]
+
+    # Intl_Friendlies_YYYY -> full calendar year YYYY. Handled here
+    # rather than enumerated in TOURNAMENT_DATE_EXCEPTIONS because the
+    # rule is identical across all ~57 historical years (1970-2026).
+    m_friendly = re.match(r'^Intl_Friendlies_(\d{4})$', season_name)
+    if m_friendly:
+        yr = m_friendly.group(1)
+        return [(f"{yr}-01-01", f"{yr}-12-31")]
 
     # Extract year(s) from season name
     years = re.findall(r'20\d\d', season_name)
