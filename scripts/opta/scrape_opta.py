@@ -399,6 +399,47 @@ TOURNAMENT_DATE_EXCEPTIONS = {
     "2002 Korea Rep-Japan": [
         ("2000-03-01", "2002-07-31"),
     ],
+    # AFCON 2023 Côte d'Ivoire main was Jan-Feb 2024 — already covered above.
+    # The string with proper apostrophe (smart quote) below catches the
+    # ASCII version after the seasons.json normalization.
+    "2023 Cote d'Ivoire": [
+        ("2022-06-01", "2024-02-29"),
+    ],
+    # AFCON 2019 Egypt — main Jun-Jul 2019, AFCONQ 2019 cycle Jun 2017–Mar 2019.
+    # Default Aug 2018–Jul 2019 catches main but misses 80% of qualifiers.
+    "2019 Egypt": [
+        ("2017-06-01", "2019-07-31"),
+    ],
+    # AFCON 2017 Gabon — main Jan-Feb 2017, AFCONQ Jun 2015–Sept 2016. Default
+    # Aug 2016–Jul 2017 catches main + last 3 mo of qualifiers, misses ~80%.
+    "2017 Gabon": [
+        ("2015-06-01", "2017-02-28"),
+    ],
+    # AFCON 2015 Equatorial Guinea — main Jan-Feb 2015, AFCONQ Sep 2013–Nov 2014.
+    "2015 Equatorial Guinea": [
+        ("2013-09-01", "2015-02-28"),
+    ],
+    # AFCON 2013 South Africa — main Jan-Feb 2013, AFCONQ Sep 2011–Oct 2012.
+    "2013 South Africa": [
+        ("2011-09-01", "2013-02-28"),
+    ],
+    # AFCON 2012 Equatorial Guinea-Gabon — main Jan-Feb 2012, AFCONQ 2010-2011.
+    "2012 Equatorial Guinea-Gabon": [
+        ("2010-09-01", "2012-02-28"),
+    ],
+    # AFC Asian Cup 2019 UAE — main Jan-Feb 2019, ACUPQ Mar 2015–Mar 2018.
+    # Default Aug 2018–Jul 2019 catches main but misses entire qualifying.
+    "2019 UAE": [
+        ("2015-03-01", "2019-02-28"),
+    ],
+    # AFC Asian Cup 2015 Australia — main Jan 2015, ACUPQ Feb 2011–Mar 2014.
+    "2015 Australia": [
+        ("2011-02-01", "2015-02-28"),
+    ],
+    # AFC Asian Cup 2011 Qatar — main Jan 2011, ACUPQ 2008-2010.
+    "2011 Qatar": [
+        ("2008-01-01", "2011-02-28"),
+    ],
     # World Cup 2026 — main tournament Jun 11 – Jul 19, 2026 across
     # USA/Canada/Mexico. The same season-name is reused by AFC and CAF
     # World Cup qualifiers whose actual play window spans Oct 2023 –
