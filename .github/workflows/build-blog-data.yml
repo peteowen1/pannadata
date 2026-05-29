@@ -364,6 +364,20 @@ jobs:
             echo "::notice::Skipping chains — lineups file not available"
           fi
 
+      # blog#257: derive detailed positions (LB/CB/RB/LM/CM/RM/LW/RW) from
+      # chain x/y averages. Runs AFTER build_chains_ci.R because it consumes
+      # blog/chains-{CODE}.parquet. Lightweight (<200k rows, few MB output)
+      # so it's cheap to add to every weekly build.
+      - name: Build player-positions parquet (detailed pos for blog filter)
+        continue-on-error: true
+        run: |
+          if ls blog/chains-*.parquet 1>/dev/null 2>&1 && \
+             [ -f source/opta_player_stats.parquet ]; then
+            Rscript scripts/build_player_positions.R
+          else
+            echo "::notice::Skipping player-positions — chains or player_stats not available"
+          fi
+
       - name: Simulate domestic seasons
         continue-on-error: true
         run: |
