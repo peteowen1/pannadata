@@ -366,17 +366,38 @@ jobs:
 
       # blog#257: derive detailed positions (LB/CB/RB/LM/CM/RM/LW/RW) from
       # chain x/y averages. Runs AFTER build_chains_ci.R because it consumes
-      # blog/chains-{CODE}.parquet. Lightweight (<200k rows, few MB output)
-      # so it's cheap to add to every weekly build.
+      # blog/chains-{CODE}.parquet. Self-downloads opta_player_stats.parquet
+      # because the earlier `Build match-stats per league` step deletes it
+      # for memory reasons (line 269) and we need it back for opta_position
+      # mode per (player, season). Lightweight final output (<200k rows,
+      # few MB) so it's cheap to add to every weekly build.
       - name: Build player-positions parquet (detailed pos for blog filter)
         continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if ls blog/chains-*.parquet 1>/dev/null 2>&1 && \
-             [ -f source/opta_player_stats.parquet ]; then
-            Rscript scripts/build_player_positions.R
-          else
-            echo "::notice::Skipping player-positions — chains or player_stats not available"
+          if ! ls blog/chains-*.parquet 1>/dev/null 2>&1; then
+            echo "::warning::Skipping player-positions — no chains-*.parquet built upstream"
+            exit 0
           fi
+          # Re-download opta_player_stats.parquet (deleted by Build match-stats
+          # step at L269 to free disk). Need it back for opta_position mode.
+          if [ ! -f source/opta_player_stats.parquet ]; then
+            if ! gh release download opta-latest -p "opta_player_stats.parquet" -D source/; then
+              echo "::warning::Skipping player-positions — opta_player_stats.parquet not available"
+              exit 0
+            fi
+          fi
+          Rscript scripts/build_player_positions.R
+          # Sanity check — verify the script actually produced the output.
+          # The R script has `quit(status = 0)` paths for missing inputs,
+          # which combined with continue-on-error would otherwise silently
+          # skip the upload.
+          if [ ! -f blog/player-positions.parquet ]; then
+            echo "::warning::player-positions.parquet not produced — script aborted silently"
+            exit 0
+          fi
+          echo "Built blog/player-positions.parquet ($(stat -c %s blog/player-positions.parquet) bytes)"
 
       - name: Simulate domestic seasons
         continue-on-error: true

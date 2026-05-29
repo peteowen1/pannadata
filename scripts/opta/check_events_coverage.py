@@ -47,8 +47,14 @@ def main() -> int:
                         help="Path to events_consolidated/ directory")
     parser.add_argument("--season", required=True,
                         help='Season label to check, e.g. "2025-2026"')
-    parser.add_argument("--gap-threshold", type=int, default=20,
-                        help="Per-league gap above which to fail (default 20)")
+    def _threshold_type(s):
+        """Accept positive int OR the literal 'Inf' (case-insensitive) to disable."""
+        if s.strip().lower() == "inf":
+            return float("inf")
+        return int(s)
+    parser.add_argument("--gap-threshold", type=_threshold_type, default=20,
+                        help="Per-league gap above which to fail. "
+                             "Use 'Inf' to disable (warn-only mode). Default 20.")
     args = parser.parse_args()
 
     if not args.player_stats.exists():
@@ -83,8 +89,18 @@ def main() -> int:
     offenders: list[tuple[str, int, int, int]] = []
     for comp in sorted(ps_by_comp.keys()):
         ev_path = args.events_dir / f"events_{comp}.parquet"
+        ps_n = len(ps_by_comp[comp])
         if not ev_path.exists():
-            print(f"{comp:<28} {len(ps_by_comp[comp]):>11} {'-':>11} {'-':>6} no-file")
+            # events_consolidated/events_<comp>.parquet missing entirely.
+            # Above gap_threshold = silent skip of a real coverage gap
+            # for an active competition. Count as an offender so the
+            # operator sees it as FAIL (not just printed in the table).
+            if ps_n > args.gap_threshold:
+                status = "FAIL-no-file"
+                offenders.append((comp, ps_n, 0, ps_n))
+            else:
+                status = "no-file"
+            print(f"{comp:<28} {ps_n:>11} {'-':>11} {ps_n if status == 'FAIL-no-file' else '-':>6} {status}")
             continue
         ev_ids = unique_match_ids(ev_path, filter_expr=[("season", "=", args.season)])
         ps_ids = ps_by_comp[comp]
@@ -95,8 +111,8 @@ def main() -> int:
             status = "warn"
         else:
             status = "FAIL"
-            offenders.append((comp, len(ps_ids), len(ev_ids), gap))
-        print(f"{comp:<28} {len(ps_ids):>11} {len(ev_ids):>11} {gap:>6} {status}")
+            offenders.append((comp, ps_n, len(ev_ids), gap))
+        print(f"{comp:<28} {ps_n:>11} {len(ev_ids):>11} {gap:>6} {status}")
 
     print("-" * 78)
     if offenders:
