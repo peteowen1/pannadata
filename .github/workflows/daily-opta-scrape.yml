@@ -150,14 +150,26 @@ jobs:
             # bugs like the TOURNAMENT_DATE_EXCEPTIONS miss that wasted 20 min
             # thinking WC 2022 Qatar had landed when the wrong date window had
             # silently returned nothing.
-            if [ -n "$INPUT_SEASONS" ]; then
+            #
+            # EXCEPTION: when force_rescrape=true the user is INTENTIONALLY
+            # re-pulling matches already in the manifest (e.g. to rebuild a
+            # short events_consolidated parquet — the 2026-05-29 Championship
+            # case). In that mode all per-match parquets are overwritten in
+            # place, so "0 NEW" per-match parquets is the expected outcome
+            # even though the scraper successfully fetched the matches. The
+            # subsequent consolidate + coverage check steps gate the actual
+            # data quality.
+            if [ -n "$INPUT_SEASONS" ] && [ "$INPUT_FORCE" != "true" ]; then
               echo "::error::--seasons='$INPUT_SEASONS' dispatched but scraper returned zero new matches."
               echo "Likely causes:"
               echo "  1. Wrong date window for this tournament — add to TOURNAMENT_DATE_EXCEPTIONS in scrape_opta.py"
-              echo "  2. All matches already in the manifest (try --force)"
+              echo "  2. All matches already in the manifest (try --force / set force_rescrape=true)"
               echo "  3. Season name mismatch with seasons.json"
               echo "  4. Upstream Opta API issue"
               exit 1
+            fi
+            if [ "$INPUT_FORCE" = "true" ]; then
+              echo "::notice::--seasons='$INPUT_SEASONS' force_rescrape=true returned 0 NEW per-match parquets — data was already in manifest. Per-match parquets overwritten in place; consolidate + upload steps will proceed."
             fi
             echo "No new parquet files, but scraper ran successfully (no new matches)"
             exit 0
