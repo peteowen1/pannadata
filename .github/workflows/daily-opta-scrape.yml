@@ -217,7 +217,9 @@ jobs:
           echo "::warning::No events_consolidated/ — skipping coverage check"
           exit 0
         fi
-        python ../scripts/opta/check_events_coverage.py \
+        # Step working dir is the repo root (not `data` like the consolidate
+        # step that cd's first), so scripts/ resolves directly with no `../`.
+        python scripts/opta/check_events_coverage.py \
             --player-stats data/opta/opta_player_stats.parquet \
             --events-dir data/opta/events_consolidated \
             --season "2025-2026" \
