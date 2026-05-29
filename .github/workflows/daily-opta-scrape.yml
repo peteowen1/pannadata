@@ -182,6 +182,36 @@ jobs:
 
         python ../scripts/opta/consolidate_opta.py
 
+    # Integrity check: events_consolidated must cover (within a tolerance)
+    # the same match_ids as opta_player_stats/lineups for each league-season.
+    # If a per-comp events_<league>.parquet was previously short and the
+    # current scrape didn't refresh it, the gap silently propagates to
+    # panna's predictions-pipeline (game_logs misses matches → blog Value
+    # tab caps). Refuse to upload incomplete events files.
+    #
+    # Configurable tolerance via env: EVENTS_COVERAGE_GAP_THRESHOLD (default 20).
+    # NOT a hard failure on individual misses (some leagues legitimately have
+    # events skipped for cup matches etc.); aborts only when ANY league has
+    # a gap > threshold for the current season.
+    - name: Verify events_consolidated coverage vs player_stats
+      env:
+        EVENTS_COVERAGE_GAP_THRESHOLD: ${{ vars.EVENTS_COVERAGE_GAP_THRESHOLD || '20' }}
+      run: |
+        if [ ! -f data/opta/opta_player_stats.parquet ]; then
+          echo "::warning::No opta_player_stats.parquet — skipping coverage check"
+          exit 0
+        fi
+        if [ ! -d data/opta/events_consolidated ]; then
+          echo "::warning::No events_consolidated/ — skipping coverage check"
+          exit 0
+        fi
+        python ../scripts/opta/check_events_coverage.py \
+            --player-stats data/opta/opta_player_stats.parquet \
+            --events-dir data/opta/events_consolidated \
+            --season "2025-2026" \
+            --gap-threshold "$EVENTS_COVERAGE_GAP_THRESHOLD"
+      continue-on-error: false
+
     - name: Setup R for xG enrichment
       uses: r-lib/actions/setup-r@v2
       with:
