@@ -1,107 +1,192 @@
-# `player-positions.parquet` — derived detailed positions from chain x/y
+# `player-positions.parquet` v2 — multi-feature position classifier
 
-> Filed from an inthegame-blog session 2026-05-29. The blog wants a Match-Pos
-> filter that distinguishes LB / CB / RB / LM / CM / RM / LW / RW, but Opta's
-> raw `position` field across `match-stats`, `chains`, `player-details`, and
-> `ratings` only emits **8 distinct values** (verified by `distinct()` across
-> all four sources):
+> **v1 SHIPPED** 2026-05-29 (commit on build-blog-data) — first version is
+> live on R2 and consumed by the blog (#257 wired up in inthegame-blog
+> b8e0d1b). Initial accuracy is good for clear cases but has known gaps at
+> edge cases and a major class of wide attackers misclassified.
 >
-> - Goalkeeper / Defender / Wing Back / Defensive Midfielder / Midfielder /
->   Attacking Midfielder / Striker / Substitute (+ null)
->
-> Even known fullbacks (L. Shaw / K. Trippier / Pedro Porro / A. Robertson)
-> are all just "Defender" with no left/right/centre split. Same for
-> wide midfielders / wingers.
->
-> Lifting the derivation upstream so the blog can consume a small parquet
-> instead of loading the full chains file (~615K rows for EPL alone) just to
-> bucket players.
+> This document specifies v2: a small multi-feature rule-based upgrade that
+> closes the gaps. Same parquet schema, just better detailed_position values
+> plus 2 extra columns the blog (and other consumers) can use for alternative
+> classifications.
 
-## Output schema
+---
 
-`player-positions.parquet` on the `inthegame-data` R2 bucket under `football/` (mirrors the existing `game_logs.parquet` / `match-stats-{CODE}.parquet` upload pattern in `build-blog-data.yml`).
+## v1 validation findings (EPL 2025-26, 677 players)
+
+### Distribution
+
+| Position | Count | Notes |
+|----------|-------|-------|
+| (null) | 214 | substitutes / low-touch — expected |
+| AM | **103** | over-inflated — see Issue 1 |
+| CB | 61 | |
+| ST | 53 | |
+| LB | 51 | |
+| DM | 48 | |
+| RB | 43 | |
+| CM | 40 | |
+| GK | 39 | |
+| LM / RM | 7 / 7 | low — most wide mids are coded AM by Opta |
+| LW / RW | 5 / 5 | **too low** — see Issue 1 |
+| WB | 1 | rare in 4-back leagues |
+
+### Known-player spot check (19 manually labelled)
+
+**Correct (16):** All true fullbacks (Shaw / Robertson / Kerkez / Spence / Truffert / Trippier / Porro / Castagne), true CBs (Van Dijk / Romero / Tarkowski / Dunk / Magalhães), Gravenberch DM, Saka RW (because Opta tags him as Striker), Haaland ST, Isak ST.
+
+**Misclassified (3 CB/FB boundary):**
+- W. Saliba (CB) → got RB (avg_y=32.7, just under the 33 threshold)
+- M. Guéhi (CB) → got LB (avg_y=69.2, just over the 67 threshold)
+- M. van de Ven (CB) → got LB (avg_y=68.3)
+
+**Wide attackers all collapsed to AM (5):**
+- Salah (RW) avg_y=20.2 → AM
+- Gakpo (LW) avg_y=73.1 → AM
+- Doku (LW) avg_y=78.5 → AM
+- Bowen (RW) avg_y=24.1 → AM
+- Mbeumo (RW) avg_y=35.6 → AM
+
+**Root cause:** v1 only splits `Striker` and `Midfielder` by avg_y, NOT `Attacking Midfielder`. Modern football tags wide attackers as AM (because they often invert to half-spaces), so they all fall into the same bucket.
+
+---
+
+## Why avg_y alone is too crude
+
+Histogram of EPL Defender avg_y (n=147, ≥200 touches):
+
+```
+y15-30: 31  (RBs — clean cluster)
+y30-65: 78  (CBs — clean cluster)
+y65-72: ~10 (BLUR ZONE — LCBs + inverted-LBs overlap)
+y72-85: 26  (LBs)
+```
+
+There's a real **shoulder around y65-72** where left-centre-backs and inverted fullbacks both register. Single-threshold bands can't resolve them.
+
+**Good news:** avg_x cleanly separates CBs from fullbacks:
+
+| Detailed pos | Mean avg_x | Median |
+|--------------|-----------|--------|
+| CB | **36.6** (sit deep) | 36.4 |
+| LB | **43.1** (push higher) | 43.6 |
+| RB | **44.5** (push highest) | 45.4 |
+
+Adding `avg_x > 38` as a fullback gate would catch Saliba, Guéhi, van de Ven staying as CB.
+
+---
+
+## v2 algorithm — multi-feature rule-based
+
+Keep it transparent. No training, no labels, no model. Just richer features + smarter rules. Easy to iterate visually in R.
+
+### New columns in `player-positions.parquet`
+
+Add 2 columns alongside the existing schema:
 
 | Column | Type | Notes |
 |--------|------|-------|
-| `player_id` | str (Opta) | join key with all other blog parquets |
-| `player_name` | str | for human-readable verification |
-| `league` | str | short code (ENG, ESP, ITA, GER, FRA, NED, POR, SCO, TUR, ENG2) |
-| `season` | str | e.g. `"2025-2026"` |
-| `opta_position` | str | mode of Opta-emitted `position` across the player's matches in this season |
-| `detailed_position` | str | derived: `GK` / `LB` / `CB` / `RB` / `WB` / `DM` / `CM` / `AM` / `LM` / `RM` / `LW` / `RW` / `ST` |
-| `avg_x` | float | per-player-season mean of chain touch x |
-| `avg_y` | float | per-player-season mean of chain touch y |
-| `n_touches` | int | sample size; nullable / drop `detailed_position` when too small to derive confidently (suggested threshold: 100) |
+| `sd_y` | float | per-player-season sd of chain touch y |
+| `sd_x` | float | per-player-season sd of chain touch x |
 
-Sizing: ~1k players × ~10 leagues × ~16 seasons ≈ <200k rows. Few MB parquet.
+(`avg_x`, `avg_y`, `n_touches`, `opta_position`, `detailed_position` already exist.)
 
-## Suggested v1 derivation algorithm
+These give downstream consumers (the blog, future player-profile features) the raw inputs to compute alternative classifications if v3 ever wants different bucketing without re-deriving from chains.
 
-Bands open to iteration — easier to validate visually in R with proper overlays than client-side in OJS.
+### Classifier (v2)
 
 ```r
-# Inputs:
-#   chains: chains-{CODE}.parquet rows (need `player_id`, `season`, `x`, `y`)
-#   match_stats: for opta_position mode per (player_id, season)
-#
-# Opta y-axis convention (verified per CLAUDE.md in inthegame-blog):
-#   y = 0    → attacker's right
-#   y = 100  → attacker's left
-#   y = 50   → centre
-#
-# So a left-footed attacker on the left wing has avg_y > 50.
+classify <- function(opta_pos, avg_x, avg_y, sd_y = NA, n_touches = NA) {
+  # Confidence guard — too few touches → don't assign
+  if (is.na(n_touches) || n_touches < 100) return(NA_character_)
+  if (is.na(opta_pos) || opta_pos %in% c("Substitute", "")) return(NA_character_)
 
-classify_detailed <- function(opta_pos, avg_y) {
-  if (is.na(opta_pos) || opta_pos == "Substitute") return(NA_character_)
+  # Opta already specific — pass through
+  if (opta_pos == "Goalkeeper") return("GK")
+  if (opta_pos == "Wing Back") return("WB")
+  if (opta_pos == "Defensive Midfielder") return("DM")
 
+  # ── Defender split: tighter avg_y bands + avg_x fullback gate ──
+  # Bands 30/70 (was 33/67) reduces edge cases like Saliba/Guéhi mislabel.
+  # avg_x > 38 ensures we don't reclassify deep-sitting CBs (low avg_x)
+  # to fullback just because they shaded one side.
   if (opta_pos == "Defender") {
-    if (avg_y > 67) return("LB")
-    if (avg_y < 33) return("RB")
+    is_high <- !is.na(avg_x) && avg_x > 38
+    if (avg_y > 70 && is_high) return("LB")
+    if (avg_y < 30 && is_high) return("RB")
     return("CB")
   }
+
+  # ── Midfielder split (unchanged from v1) ──
   if (opta_pos == "Midfielder") {
     if (avg_y > 67) return("LM")
     if (avg_y < 33) return("RM")
     return("CM")
   }
-  if (opta_pos == "Striker") {
+
+  # ── NEW: Attacking Midfielder split ──
+  # Opta categorises modern wingers as AM. Same bands as Midfielder.
+  # No avg_x guard — AMs are already advanced by definition.
+  if (opta_pos == "Attacking Midfielder") {
     if (avg_y > 67) return("LW")
     if (avg_y < 33) return("RW")
+    return("AM")
+  }
+
+  # ── Striker split: needs avg_x > 60 to avoid mis-labelling withdrawn
+  #     forwards (who can be wide but don't push high) as wingers ──
+  if (opta_pos == "Striker") {
+    is_advanced <- !is.na(avg_x) && avg_x > 60
+    if (avg_y > 70 && is_advanced) return("LW")
+    if (avg_y < 30 && is_advanced) return("RW")
     return("ST")
   }
-  # GK / WB / DM / AM pass through — Opta already distinguishes these
-  c("Goalkeeper"="GK", "Wing Back"="WB",
-    "Defensive Midfielder"="DM", "Attacking Midfielder"="AM")[opta_pos]
+
+  # Fallback for any future Opta value we don't know yet
+  return(NA_character_)
 }
 ```
 
-## Algorithm options to evaluate
+### Why these specific thresholds
 
-1. **Simple x/y banding (above)** — fast, transparent, but 33/67 cutoffs are arbitrary
-2. **Per-team relative** — subtract team mean y before bucketing (handles teams that play asymmetric formations)
-3. **K-means on (x, y)** — let the data find natural clusters per opta_position
-4. **Mode of per-match centroids** — compute one centroid per game played, take the mode across the season (more robust to occasional out-of-position appearances)
-5. **Two-stage: classify then re-train** — use simple bucketing as labels for a learned classifier on additional features (touches by zone, pass directions, etc.)
+- **avg_y 30/70 (was 33/67)**: validates against the histogram — the CB cluster runs 30-70 clearly, the LB cluster starts at 72. The 33/67 v1 thresholds were just inside the CB band.
+- **avg_x > 38 for fullbacks**: CB median avg_x is 36.6, fullback median 43-45. The 38 boundary leaves a margin.
+- **avg_x > 60 for wide strikers**: ensures we don't reclassify drifting #9s as wingers.
+- **n_touches < 100 → NA**: confidence guard. Substitutes / cup-only appearances don't have enough sample for stable bucketing.
 
-Worth visualising on a few known players (L. Shaw should be LB, T. Alexander-Arnold should be RB, V. van Dijk should be CB, M. Salah should be RW, etc.) before locking the algorithm in.
+### Optional v2.1 improvement (defer if time-constrained)
 
-## Pipeline placement
+**Mode of per-match centroids instead of season-wide mean.** For each match the player started, compute (avg_x, avg_y) over their touches in that match; take the mode of those per-match centroids across the season. Robust to occasional out-of-position appearances (e.g. a CB filling in at LB for 2 games).
 
-Suggested fold into existing `build-blog-data.yml` — runs after `build_chains_ci.R` (which already loads all chain shards), shares its in-memory chains data, writes a small additional parquet. New step around line 365 of the workflow.
+Trade-off: more complex to compute, marginally better accuracy. Skip unless v2 still has edge-case complaints.
 
-Trigger automatically with the rest of the blog data via `repository_dispatch: predictions-complete`.
+---
 
-## Blog consumer side (already prepped)
+## Expected impact
 
-Blog has been trimmed to only show pills for the 7 panna codes Opta actually emits (commits `611af0e` + `791ab08` on `dev`). Once this parquet lands, the blog will:
+Re-running v2 on EPL 2025-26 should:
 
-1. Lazy-load `player-positions.parquet` only when the Match Pos filter is touched
-2. Expand `detailedPosCodes` in `football/football-maps.js` from 7 → 13 (add LB/CB/RB/LM/CM/RM/LW/RW)
-3. Switch the Match Pos filter from `posToDetailed[d.position]` (one-shot Opta lookup) to a `player_id → detailed_position` lookup from this parquet
+- **Salah / Bowen / Mbeumo → RW** (currently AM)
+- **Gakpo / Doku → LW** (currently AM)
+- **Saliba → CB** (currently RB)
+- **Guéhi / van de Ven → CB** (currently LB)
+- LM / RM / LW / RW counts roughly triple (from ~5 each to ~15-20)
+- AM count drops by ~10 (from 103 to ~93)
+- CB count up slightly (~3 boundary cases)
+- ~20 EPL players reclassified to more accurate positions per league
 
-Tracked at inthegame-blog#257.
+Across all 10 domestic leagues × ~16 historic seasons that's ~3000+ improved classifications.
 
-## Out of scope
+## Blog integration
 
-- Detailed positions for cup competitions (UCL / UEL / UECL / WC) — players have too few games for stable derivation; pass through their domestic-league assignment if available
-- Multi-position players within a season — emit one row per player-season, take primary; could later split into multiple rows if useful
+**No blog-side change needed.** `inthegame-blog/football/player-stats.qmd` reads `detailed_position` column directly from the parquet — same column, just better values. The blog's matchPosFilter (#257) already includes all 13 detailed codes in its pill bar, so when LW gets populated with Salah/Doku/Gakpo etc., clicking LW will start returning them automatically.
+
+The 2 new columns (`sd_y`, `sd_x`) are forward-looking — not required for any current blog feature, but useful if we want to surface "movement profile" indicators on player profile pages later (e.g. "high lateral roaming = drifting winger").
+
+## Not in scope
+
+- Per-team formation detection (3-back vs 4-back) — would help with WB classification but rare enough to defer
+- Label-based classifier (XGBoost on FBRef/Transfermarkt position data) — escalate only if rules still have meaningful error
+- Mixture-of-Gaussians clustering — clusters might not match football positions; skip
+- Detailed positions for cup competitions (UCL/UEL/UECL/WC) — not enough games for stable derivation; pass through domestic-league assignment if available
+- L. Diaz / similar name-format misses in v1 — separate investigation (probably opta_lineups → blog-data name normalisation drift)
