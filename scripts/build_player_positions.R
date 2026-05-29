@@ -153,18 +153,21 @@ cat(sprintf("  With detailed_position: %d (%.0f%%)\n",
 cat("  detailed_position counts:\n")
 print(out[!is.na(detailed_position), .N, by = detailed_position][order(-N)])
 
-# Spot-check a few well-known players
-cat("\n=== Spot-check (well-known fullbacks/wingers/CBs) ===\n")
-spot <- c("L. Shaw", "T. Alexander-Arnold", "V. van Dijk", "M. Salah",
-          "P. Foden", "M. Saka", "K. De Bruyne", "R. Lewandowski",
-          "Pedro Porro", "K. Trippier", "A. Robertson")
-spot_dt <- out[player_name %in% spot &
-                 season == "2025-2026" & league == "ENG"]
+# Spot-check: highest-touch player in each detailed_position bucket for the
+# most-recent season. Picking dynamically (rather than a hardcoded name list)
+# means the audit stays meaningful as squads turn over and seasons advance —
+# the prior hand-curated list rotted within a season when players moved clubs.
+cat("\n=== Spot-check (top-touches player per detailed_position, latest season) ===\n")
+latest_season <- max(out[!is.na(detailed_position), season], na.rm = TRUE)
+spot_dt <- out[
+  season == latest_season & !is.na(detailed_position) & n_touches >= TOUCH_THRESHOLD
+][order(-n_touches), .SD[1L], by = detailed_position]
 if (nrow(spot_dt) > 0L) {
-  print(spot_dt[, .(player_name, opta_position, avg_x, avg_y, n_touches,
-                     detailed_position)])
+  setorder(spot_dt, detailed_position)
+  print(spot_dt[, .(detailed_position, player_name, league, opta_position,
+                     avg_x, avg_y, n_touches)])
 } else {
-  cat("  (no rows matched — spot-check inconclusive locally)\n")
+  cat("  (no rows met the touch threshold — spot-check inconclusive)\n")
 }
 
 # Write
