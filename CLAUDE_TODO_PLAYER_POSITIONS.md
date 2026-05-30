@@ -1,5 +1,18 @@
 # `player-positions.parquet` v2 — multi-feature position classifier
 
+> **SUPERSEDED 2026-05-30.** v2.1 shipped with a better approach than the
+> centroid-only plan below: `build_player_positions.R` now derives
+> `opta_detailed_position` from Opta `position` + `position_side` +
+> `team_formation` **per appearance** (position_side carries Left/Left-Centre/
+> Centre/Centre-Right/Right — it was in `opta_player_stats` all along, v1 just
+> read the coarse `position`). The chain x/y centroid is retained as an
+> independent `panna_detailed_position` column; `detailed_position` is the
+> hybrid (Opta when ≥3 sided starts, else centroid). The histogram/avg_x
+> analysis below is still useful background but no longer the implementation.
+
+---
+
+
 > **v1 SHIPPED** 2026-05-29 (commit on build-blog-data) — first version is
 > live on R2 and consumed by the blog (#257 wired up in inthegame-blog
 > b8e0d1b). Initial accuracy is good for clear cases but has known gaps at
