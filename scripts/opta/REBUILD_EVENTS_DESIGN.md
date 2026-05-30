@@ -1,8 +1,23 @@
 # `rebuild_events.py` — design doc
 
-> **Status:** Design only as of 2026-05-29. No implementation yet.
-> Files this would touch: `scripts/opta/rebuild_events.py` (new),
-> `.github/workflows/daily-opta-scrape.yml` (new optional input).
+> **Status:** Phase 1 IMPLEMENTED 2026-05-30. Script at
+> `scripts/opta/rebuild_events.py`; workflow at
+> `.github/workflows/rebuild-events.yml` (manual dispatch only).
+>
+> Dispatch usage:
+> ```
+> gh -R peteowen1/pannadata workflow run rebuild-events.yml \
+>     -f competition=Bulgarian_First_League \
+>     -f season=2025-2026 \
+>     -f dry_run=true
+> ```
+> Sets `dry_run=false` to actually fetch. Set `run_consolidate=true` (default)
+> to also rebuild events_consolidated/events_<comp>.parquet + upload after.
+>
+> Phase 4 batch backfill (clearing the 40-league backlog) is the next step
+> — dispatch this workflow per-league against the failing leagues from
+> `check_events_coverage.py` output until threshold can be restored from
+> 1000 to 20.
 
 ## The problem
 
