@@ -368,9 +368,9 @@ jobs:
       # chain x/y averages. Runs AFTER build_chains_ci.R because it consumes
       # blog/chains-{CODE}.parquet. Self-downloads opta_player_stats.parquet
       # because the earlier `Build match-stats per league` step deletes it
-      # for memory reasons (line 269) and we need it back for opta_position
-      # mode per (player, season). Lightweight final output (<200k rows,
-      # few MB) so it's cheap to add to every weekly build.
+      # for memory reasons, and we need it back for opta_position mode per
+      # (player, season). Lightweight final output (<200k rows, few MB)
+      # so it's cheap to add to every weekly build.
       - name: Build player-positions parquet (detailed pos for blog filter)
         continue-on-error: true
         env:
@@ -380,8 +380,9 @@ jobs:
             echo "::warning::Skipping player-positions — no chains-*.parquet built upstream"
             exit 0
           fi
-          # Re-download opta_player_stats.parquet (deleted by Build match-stats
-          # step at L269 to free disk). Need it back for opta_position mode.
+          # Re-download opta_player_stats.parquet (deleted by the earlier
+          # `Build match-stats per league` step to free disk). Need it
+          # back for opta_position mode.
           if [ ! -f source/opta_player_stats.parquet ]; then
             if ! gh release download opta-latest -p "opta_player_stats.parquet" -D source/; then
               echo "::warning::Skipping player-positions — opta_player_stats.parquet not available"

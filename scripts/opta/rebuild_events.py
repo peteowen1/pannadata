@@ -112,10 +112,9 @@ def _combine_and_save(new_rows: list, output_path: Path, dedup_cols: list) -> in
     return len(combined)
 
 
-def _missing_match_ids(player_stats_path: Path, comp: str, season: str,
-                       existing_match_ids_set: set) -> list:
-    """Return match_ids in player_stats for (comp, season) that are NOT in
-    the existing per-league match_events parquet."""
+def _player_stats_match_ids(player_stats_path: Path, comp: str, season: str) -> set:
+    """Return the set of distinct match_ids in player_stats for (comp, season).
+    Read once per invocation to avoid re-scanning a large parquet."""
     if not player_stats_path.exists():
         raise FileNotFoundError(f"player_stats parquet not found: {player_stats_path}")
     tbl = pq.read_table(
@@ -123,8 +122,7 @@ def _missing_match_ids(player_stats_path: Path, comp: str, season: str,
         columns=["match_id", "competition", "season"],
         filters=[("competition", "=", comp), ("season", "=", season)],
     )
-    ps_ids = set(tbl.column("match_id").to_pylist())
-    return sorted(ps_ids - existing_match_ids_set)
+    return set(tbl.column("match_id").to_pylist())
 
 
 def rebuild_events_for_league(
@@ -168,18 +166,16 @@ def rebuild_events_for_league(
     me_path = opta_dir / "match_events" / competition / f"{season}.parquet"
     se_path = opta_dir / "shot_events" / competition / f"{season}.parquet"
 
+    # Read player_stats once — used both for the universe count and for
+    # `to_fetch` derivation. Previous version called the helper twice which
+    # re-scanned the (potentially hundreds-of-MB) parquet a second time.
+    ps_ids = _player_stats_match_ids(player_stats_path, competition, season)
     existing = _existing_match_ids(me_path)
     if only_missing:
-        to_fetch = _missing_match_ids(player_stats_path, competition, season, existing)
+        to_fetch = sorted(ps_ids - existing)
     else:
-        tbl = pq.read_table(
-            player_stats_path,
-            columns=["match_id", "competition", "season"],
-            filters=[("competition", "=", competition), ("season", "=", season)],
-        )
-        to_fetch = sorted(set(tbl.column("match_id").to_pylist()))
-
-    n_in_ps = len(existing) + len(_missing_match_ids(player_stats_path, competition, season, set()))
+        to_fetch = sorted(ps_ids)
+    n_in_ps = len(ps_ids)
     if max_matches is not None and len(to_fetch) > max_matches:
         print(f"  Capping fetch list at --max-matches={max_matches} "
               f"(skipping {len(to_fetch) - max_matches} matches for next run)")
@@ -292,10 +288,14 @@ def main() -> int:
                         help="Competition code (e.g. Bulgarian_First_League)")
     parser.add_argument("--season", required=True,
                         help='Season label (e.g. "2025-2026")')
-    parser.add_argument("--only-missing", action="store_true", default=True,
-                        help="Only fetch match_ids absent from existing per-league parquet (default)")
-    parser.add_argument("--all", dest="only_missing", action="store_false",
-                        help="Fetch every match in player_stats (overrides --only-missing)")
+    # BooleanOptionalAction so `--only-missing` / `--no-only-missing` both
+    # toggle the flag intuitively (vs the older confusing pattern where
+    # `--only-missing` is a no-op and `--all` is the secret off-switch).
+    parser.add_argument("--only-missing", action=argparse.BooleanOptionalAction,
+                        default=True,
+                        help="Only fetch match_ids absent from existing per-league "
+                             "parquet (default). Use --no-only-missing to fetch "
+                             "every match in player_stats.")
     parser.add_argument("--dry-run", action="store_true",
                         help="Print what would be fetched without making API calls")
     parser.add_argument("--max-matches", type=int, default=None,

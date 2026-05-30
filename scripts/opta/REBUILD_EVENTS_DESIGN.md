@@ -66,8 +66,12 @@ def rebuild_events_for_league(
     only_missing: bool = True,    # default: skip matches already in
                                   # opta/match_events/{comp}/{season}/
     max_retries: int = 3,
-    rate_limit_min: float = 1.5,
-    rate_limit_max: float = 3.0,
+    # NOTE: rate limiting inherits from OptaScraper._rate_limit (1.0-2.0s
+    # default + exponential backoff on 429 inside _fetch_raw). Explicit
+    # rate-limit knobs intentionally NOT plumbed through — the scraper's
+    # defaults are battle-tested by the daily cron's ~10k+ calls/day.
+    # If you ever need to tune, change OptaScraper._rate_limit defaults
+    # (one place, applies to every caller including this script).
 ) -> RebuildSummary:
     """
     Re-fetch event-level data for every match in opta_player_stats.parquet

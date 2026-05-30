@@ -158,7 +158,14 @@ print(out[!is.na(detailed_position), .N, by = detailed_position][order(-N)])
 # means the audit stays meaningful as squads turn over and seasons advance —
 # the prior hand-curated list rotted within a season when players moved clubs.
 cat("\n=== Spot-check (top-touches player per detailed_position, latest season) ===\n")
-latest_season <- max(out[!is.na(detailed_position), season], na.rm = TRUE)
+# Pick latest season by START YEAR (first 4 digits) rather than lexical max
+# — "2025" < "2025-2026" lexically, so mixing single-year and range labels
+# (e.g. intl tournament "2024 Germany" alongside domestic "2024-2025") would
+# mis-rank. Lexical max happens to be correct for pure "YYYY-YYYY" labels
+# but breaks subtly the moment any single-year season appears.
+.classified <- out[!is.na(detailed_position)]
+.start_year <- suppressWarnings(as.integer(substr(.classified$season, 1, 4)))
+latest_season <- .classified$season[which.max(.start_year)]
 spot_dt <- out[
   season == latest_season & !is.na(detailed_position) & n_touches >= TOUCH_THRESHOLD
 ][order(-n_touches), .SD[1L], by = detailed_position]
