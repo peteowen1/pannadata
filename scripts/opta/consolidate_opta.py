@@ -62,24 +62,34 @@ def _parse_force_full_env():
 
 def _consolidated_is_fresh(existing_path, source_files):
     """Return True if the consolidated parquet at existing_path is usable
-    AND newer than every file in source_files.
+    AND newer than every file in source_files AND contains every per-league
+    competition present in source_files.
 
-    Two checks:
+    Three checks:
     - mtime comparison: newest source ≤ existing mtime. Standard freshness.
     - parquet metadata probe: pq.read_metadata() succeeds. Catches the
       edge case where a prior consolidation crashed mid-write and left
       a truncated file with a fresh mtime — without this check, the skip
       would lock that corrupt file in place forever because future runs
       would always see it as "fresh".
+    - COVERAGE check (pannadata#47): every competition (= parent dir name)
+      present in source_files MUST be present in the consolidated file's
+      `competition` column. Without this, the fast-skip silently misses
+      competitions that were added to per-league sources AFTER the
+      consolidated file was last written. 2026-05-29 incident: Intl_Friendlies
+      sat in per-season files for weeks but never made it to the consolidated
+      parquets because every cron run hit the mtime fast-skip; downstream
+      WC2026 sim showed NA EPR for every team that played only intl
+      friendlies (NZ, OFC nations, etc.) until the issue was traced.
 
     Args:
         existing_path: Path to the consolidated output parquet.
         source_files: iterable of Path — the per-league inputs whose
             aggregate latest mtime should be compared.
     Returns:
-        True iff the consolidated file is both fresh and structurally
-        readable; False otherwise (caller should fall through to full
-        re-consolidation).
+        True iff the consolidated file is fresh AND readable AND
+        coverage-complete; False otherwise (caller falls through to
+        full re-consolidation).
     """
     try:
         existing_mtime = existing_path.stat().st_mtime
@@ -93,6 +103,28 @@ def _consolidated_is_fresh(existing_path, source_files):
     except (OSError, pa.ArrowInvalid, pyarrow.lib.ArrowInvalid) as e:
         print(f"  WARNING: existing consolidated file {existing_path.name} "
               f"failed metadata probe ({e}); will re-consolidate.")
+        return False
+
+    # Coverage check: per-league sources are organised as
+    # <opta_dir>/<table_type>/<competition>/<season>.parquet. The parent
+    # directory name of each source file IS the competition. Compare that
+    # set against the `competition` column of the consolidated parquet.
+    source_comps = {Path(f).parent.name for f in source_files}
+    try:
+        cons_comps = set(pq.read_table(
+            existing_path, columns=["competition"]
+        ).column("competition").to_pylist())
+        cons_comps.discard(None)
+    except (OSError, pa.ArrowInvalid, pyarrow.lib.ArrowInvalid, KeyError) as e:
+        print(f"  WARNING: could not read competition column from "
+              f"{existing_path.name} ({e}); will re-consolidate.")
+        return False
+    missing = source_comps - cons_comps
+    if missing:
+        print(f"  Coverage gap in {existing_path.name}: per-league sources "
+              f"have {len(missing)} comp(s) absent from consolidated parquet "
+              f"({', '.join(sorted(missing)[:5])}"
+              f"{' ...' if len(missing) > 5 else ''}); will re-consolidate.")
         return False
     return True
 

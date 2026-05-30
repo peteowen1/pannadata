@@ -208,6 +208,11 @@ jobs:
     - name: Verify events_consolidated coverage vs player_stats
       env:
         EVENTS_COVERAGE_GAP_THRESHOLD: ${{ vars.EVENTS_COVERAGE_GAP_THRESHOLD || '20' }}
+        # For workflow_dispatch with `leagues` input: scope the check to those
+        # leagues only, so unrelated stale-coverage gaps elsewhere in opta-latest
+        # don't block the targeted upload. Empty (cron / no leagues input) =
+        # check the entire current-season catalog as the layer-2 safety net.
+        DISPATCH_LEAGUES: ${{ github.event.inputs.leagues || '' }}
       run: |
         if [ ! -f data/opta/opta_player_stats.parquet ]; then
           echo "::warning::No opta_player_stats.parquet — skipping coverage check"
@@ -223,7 +228,8 @@ jobs:
             --player-stats data/opta/opta_player_stats.parquet \
             --events-dir data/opta/events_consolidated \
             --season "2025-2026" \
-            --gap-threshold "$EVENTS_COVERAGE_GAP_THRESHOLD"
+            --gap-threshold "$EVENTS_COVERAGE_GAP_THRESHOLD" \
+            --leagues "$DISPATCH_LEAGUES"
       continue-on-error: false
 
     - name: Setup R for xG enrichment

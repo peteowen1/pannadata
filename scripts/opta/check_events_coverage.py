@@ -55,7 +55,20 @@ def main() -> int:
     parser.add_argument("--gap-threshold", type=_threshold_type, default=20,
                         help="Per-league gap above which to fail. "
                              "Use 'Inf' to disable (warn-only mode). Default 20.")
+    parser.add_argument("--leagues", default="",
+                        help="Space-separated list of competition codes to check "
+                             "(matches Opta competition names with spaces -> underscores, "
+                             "e.g. \"EPL La_Liga Championship\"). Empty = check all "
+                             "competitions in player_stats for the season. Use to scope "
+                             "a workflow_dispatch run's check to just the leagues it "
+                             "scraped, so unrelated stale-coverage gaps don't block "
+                             "the targeted upload.")
     args = parser.parse_args()
+
+    leagues_filter: set[str] = set(args.leagues.split()) if args.leagues.strip() else set()
+    if leagues_filter:
+        print(f"::notice::Scoping coverage check to {len(leagues_filter)} league(s): "
+              f"{', '.join(sorted(leagues_filter))}")
 
     if not args.player_stats.exists():
         print(f"ERROR: player_stats file not found: {args.player_stats}", file=sys.stderr)
@@ -74,13 +87,24 @@ def main() -> int:
         print(f"::warning::No player_stats rows for season={args.season} — nothing to check")
         return 0
 
-    # Group by competition
+    # Group by competition (filtered to --leagues if given)
     import collections
     ps_by_comp: dict[str, set[str]] = collections.defaultdict(set)
     comps = ps_table.column("competition").to_pylist()
     mids = ps_table.column("match_id").to_pylist()
     for comp, mid in zip(comps, mids):
+        if leagues_filter and comp not in leagues_filter:
+            continue
         ps_by_comp[comp].add(mid)
+
+    if leagues_filter and not ps_by_comp:
+        # No player_stats rows for any of the requested leagues this season.
+        # Common for dispatch runs targeting old tournament cycles that don't
+        # appear in the current season label. Pass; the daily cron-mode check
+        # still owns full-catalog health.
+        print(f"::notice::No player_stats rows for any of the requested leagues "
+              f"in season={args.season} — passing (nothing in scope to verify)")
+        return 0
 
     print(f"=== Events coverage check for season={args.season} ===")
     print(f"{'comp':<28} {'ps_matches':>11} {'ev_matches':>11} {'gap':>6} {'status':<8}")
