@@ -49,12 +49,39 @@ jobs:
             echo "::warning::season_standings.parquet not available — simulations will lack current standings"
           fi
 
-          # Game logs (per-match player value metrics — optional, pass through to R2)
+          # Game logs (per-match player value metrics — optional, pass through to R2).
+          #
+          # Two shapes ship to R2:
+          #   football/game-logs.parquet          → current-season alias, the
+          #     fast default the blog loads on EVERY player-stats page view.
+          #   football/game-logs-<season>.parquet → one file per historical
+          #     season, fetched on-demand only when a non-current season is
+          #     picked in the Value tab. Kept per-season (NOT concatenated) so
+          #     each fetch stays ~6MB; a merged ~60MB file would be a 10x
+          #     page-load regression on the default view.
           if gh release download blog-latest -p "game_logs.parquet" -D blog/; then
             mv blog/game_logs.parquet blog/game-logs.parquet
-            echo "Downloaded game-logs.parquet"
+            echo "Downloaded game-logs.parquet (current-season default)"
           else
             echo "::warning::game_logs.parquet not available — Value tab will be empty"
+          fi
+
+          # Per-season historical files (game_logs_<season>.parquet). The glob
+          # excludes the alias above (it has no _<season> suffix), so there's no
+          # double-download. Each is renamed game-logs-<season>.parquet so the
+          # R2 upload loop ships it to football/game-logs-<season>.parquet
+          # verbatim. Glob-style download mirrors action_wpa_*.parquet below.
+          GL_SEASONS=0
+          if gh release download blog-latest -p "game_logs_*.parquet" -D blog/; then
+            for f in blog/game_logs_*.parquet; do
+              [ -e "$f" ] || continue
+              season=${f#blog/game_logs_}        # -> 2024-2025.parquet
+              mv "$f" "blog/game-logs-${season}"
+              GL_SEASONS=$((GL_SEASONS + 1))
+            done
+            echo "Downloaded $GL_SEASONS per-season game-logs file(s)"
+          else
+            echo "::warning::No per-season game_logs_*.parquet on blog-latest — historical Value tab will be empty"
           fi
 
           # Action equity (per-action EPV credit — optional, used by chain builder)
