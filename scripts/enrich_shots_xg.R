@@ -72,6 +72,29 @@ if ("xg" %in% names(shots)) {
   cat("Added xG to all", nrow(shots), "rows\n")
 }
 
+# Own-goal guard. Opta logs an own goal as a goal (type_id == 16) at the
+# scoring player's location -- which is near their OWN goal, so the
+# attacking-right x-coordinate lands in their own half (x < 50). The xG model
+# reads that as a point-blank chance and returns ~0.97, which is meaningless:
+# an own goal has no shot xG by construction. Left in, these ~0.97 values are
+# the single largest xG entries (confirmed: every top-20 xG shot is an OG at
+# x = 0.6-7.4) and they pollute the blog shot map + inflate team/league xG
+# totals. Set them to NA (surface, never impute a fabricated number) so
+# downstream sum(xg, na.rm = TRUE) ignores them and the shot map can show
+# "OG -- no xG" rather than a fake 0.97. Mirrors panna's "own goals use EPV
+# not xG" convention (panna/CLAUDE.md).
+if ("type_id" %in% names(shots)) {
+  is_own_goal <- shots$type_id == 16L & !is.na(shots$x) & shots$x < 50
+  n_og <- sum(is_own_goal, na.rm = TRUE)
+  if (n_og > 0L) {
+    shots$xg[is_own_goal] <- NA_real_
+    cat("Own-goal guard: set xG = NA on", n_og,
+        "own-goal shot(s) (type_id == 16, x < 50)\n")
+  }
+} else {
+  cat("::warning:: no type_id column -- skipping own-goal xG guard\n")
+}
+
 cat("xG: mean =", round(mean(shots$xg, na.rm = TRUE), 4),
     ", total =", round(sum(shots$xg, na.rm = TRUE), 1),
     ", goals =", sum(shots$is_goal, na.rm = TRUE), "\n")
