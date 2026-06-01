@@ -84,6 +84,17 @@ jobs:
             echo "::warning::No per-season game_logs_*.parquet on blog-latest — historical Value tab will be empty"
           fi
 
+          # Shootout WPA (per-player penalty-shootout win-prob-added — optional).
+          # Pass straight through to R2 as football/shootout-wpa.parquet for the
+          # blog. Thin data (~1 kick/player) so it's a small file; absent for
+          # seasons with no shootouts in blog comps.
+          if gh release download blog-latest -p "shootout_wpa.parquet" -D blog/; then
+            mv blog/shootout_wpa.parquet blog/shootout-wpa.parquet
+            echo "Downloaded shootout-wpa.parquet"
+          else
+            echo "::notice::shootout_wpa.parquet not available — shootout WPA absent (no shootouts yet, or step 10d not run)"
+          fi
+
           # Action equity (per-action EPV credit — optional, used by chain builder)
           if gh release download blog-latest -p "action_equity.parquet" -D source/; then
             echo "Downloaded action_equity.parquet"
