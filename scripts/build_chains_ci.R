@@ -80,8 +80,15 @@ shot_types <- c(13L, 14L, 15L, 16L)
 # of chain actions (see pannadata/CLAUDE.md "Equity join in chains"). A sharp
 # drop below this means action_equity / action_wpa drifted out of sync with the
 # events snapshot used here (different scrape, different event_id scheme), which
-# would silently ship a misaligned column. Fail the build instead of warning.
+# would silently ship a misaligned column. A breach skips that comp (its prior
+# parquet is left intact, not overwritten with a bad one) and is recorded in
+# join_failures; the build fails after all healthy comps are built, so one
+# drifted comp doesn't block delivery of the others while CI still goes red.
 MIN_JOIN_MATCH_FRAC <- 0.80
+
+# Comps whose equity/wpa join breached a guard. Healthy comps still build and
+# upload; this list is raised as a hard error after the loop.
+join_failures <- character(0)
 
 for (comp in blog_comps) {
   event_file <- file.path(src_dir, paste0("events_", comp, ".parquet"))
@@ -170,18 +177,22 @@ for (comp in blog_comps) {
                 by = c("match_id", "event_id"))
     # (match_id, event_id) is unique within a match, so the left join must not
     # add rows. If it ever does, action_equity has duplicate keys and the join
-    # is scattering equity across rows (and corrupting display_order) — abort.
+    # is scattering equity across rows (and corrupting display_order) — skip
+    # this comp rather than write a corrupted parquet.
     if (nrow(chains) != n_before) {
-      stop(sprintf(
+      join_failures <- c(join_failures, sprintf(
         "%s: equity join inflated chains %d -> %d rows (duplicate (match_id, event_id) in action_equity)",
         comp, n_before, nrow(chains)))
+      cat("  SKIP ", comp, " — equity join inflated rows (recorded, continuing)\n", sep = "")
+      next
     }
-    # Coverage floor, scoped to matches action_equity actually covers. The
-    # equity alias is current-season only, while chains can span several seasons
-    # for low-volume comps — so measure the SPADL match rate only over covered
-    # matches (others legitimately have no equity). Healthy ~85%; a sharp drop
-    # there means the event_id scheme drifted between action_equity and
-    # events_<comp>.parquet.
+    # Coverage floor, scoped to matches present in action_equity (the
+    # `match_id %in% equity_match_ids` filter). Uncovered matches legitimately
+    # have no equity — e.g. older seasons the current-season equity alias omits
+    # (low-volume comps keep all seasons; see the 200k season filter above) — so
+    # measure the SPADL match rate only over covered matches. Healthy ~85%; a
+    # sharp drop there means the event_id scheme drifted between action_equity
+    # and events_<comp>.parquet.
     n_eq <- sum(!is.na(chains$equity))
     covered <- chains$match_id %in% equity_match_ids
     if (any(covered)) {
@@ -190,12 +201,20 @@ for (comp in blog_comps) {
           sprintf("%.1f%%", 100 * frac), " of ", sum(covered),
           " covered)\n", sep = "")
       if (frac < MIN_JOIN_MATCH_FRAC) {
-        stop(sprintf(
+        join_failures <- c(join_failures, sprintf(
           "%s: equity matched only %.1f%% of actions in covered matches (floor %.0f%%) — action_equity.parquet is likely stale or misaligned with events_%s.parquet",
           comp, 100 * frac, 100 * MIN_JOIN_MATCH_FRAC, comp))
+        cat("  SKIP ", comp, " — equity coverage ", sprintf("%.1f%%", 100 * frac),
+            " below floor (recorded, continuing)\n", sep = "")
+        next
       }
     } else {
-      cat("  equity: 0 covered matches — action_equity covers a different season/comp set (floor skipped)\n")
+      # No overlap at all. Legitimate for a comp out of the alias's season/comp
+      # set, but also the signature of a match_id scheme drift — warn loudly
+      # (not just cat) since we are shipping an all-NA equity column.
+      warning(sprintf(
+        "%s: equity join matched 0 of %d chain actions — no overlap with action_equity; shipping an all-NA equity column (season/comp mismatch or match_id drift?)",
+        comp, nrow(chains)), call. = FALSE, immediate. = TRUE)
     }
   }
 
@@ -210,9 +229,11 @@ for (comp in blog_comps) {
                                       wp, wpa, wpa_actor, wpa_receiver),
                 by = c("match_id", "event_id"))
     if (nrow(chains) != n_before) {
-      stop(sprintf(
+      join_failures <- c(join_failures, sprintf(
         "%s: wpa join inflated chains %d -> %d rows (duplicate (match_id, event_id) in action_wpa)",
         comp, n_before, nrow(chains)))
+      cat("  SKIP ", comp, " — wpa join inflated rows (recorded, continuing)\n", sep = "")
+      next
     }
     n_wpa <- sum(!is.na(chains$wpa))
     covered <- chains$match_id %in% wpa_match_ids
@@ -222,12 +243,17 @@ for (comp in blog_comps) {
           sprintf("%.1f%%", 100 * frac), " of ", sum(covered),
           " covered)\n", sep = "")
       if (frac < MIN_JOIN_MATCH_FRAC) {
-        stop(sprintf(
+        join_failures <- c(join_failures, sprintf(
           "%s: wpa matched only %.1f%% of actions in covered matches (floor %.0f%%) — action_wpa_*.parquet is likely stale or misaligned with events_%s.parquet",
           comp, 100 * frac, 100 * MIN_JOIN_MATCH_FRAC, comp))
+        cat("  SKIP ", comp, " — wpa coverage ", sprintf("%.1f%%", 100 * frac),
+            " below floor (recorded, continuing)\n", sep = "")
+        next
       }
     } else {
-      cat("  wpa: 0 covered matches — action_wpa covers a different season/comp set (floor skipped)\n")
+      warning(sprintf(
+        "%s: wpa join matched 0 of %d chain actions — no overlap with action_wpa; shipping an all-NA wpa column (season/comp mismatch or match_id drift?)",
+        comp, nrow(chains)), call. = FALSE, immediate. = TRUE)
     }
   }
 
@@ -241,6 +267,14 @@ for (comp in blog_comps) {
 
   # Delete event file to save disk space in CI
   unlink(event_file)
+}
+
+# Healthy comps are built and uploaded above; now fail the run if any comp's
+# equity/wpa join breached a guard, so CI goes red with the full offender list.
+if (length(join_failures) > 0) {
+  stop(sprintf("Chain build failed for %d comp(s):\n%s",
+               length(join_failures),
+               paste0("  - ", join_failures, collapse = "\n")))
 }
 
 cat("\nDone!\n")
