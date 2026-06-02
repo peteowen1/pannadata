@@ -71,6 +71,15 @@ dead_ball_types <- c(2L, 4L, 5L, 6L, 17L, 55L, 56L, 57L, 70L, 80L, 81L)
 non_play_types <- c(18L, 19L, 24L, 27L, 28L, 30L, 32L, 34L, 37L, 40L, 43L, 65L, 68L)
 shot_types <- c(13L, 14L, 15L, 16L)
 
+# Equity/WPA joins land on chain events by (match_id, event_id). Only chain
+# events that survive panna's SPADL conversion carry equity/wpa — SPADL drops
+# non-gameplay events and merges duel pairs, so a *healthy* join matches ~84-86%
+# of chain actions (see pannadata/CLAUDE.md "Equity join in chains"). A sharp
+# drop below this means action_equity / action_wpa drifted out of sync with the
+# events snapshot used here (different scrape, different event_id scheme), which
+# would silently ship a misaligned column. Fail the build instead of warning.
+MIN_JOIN_MATCH_FRAC <- 0.80
+
 for (comp in blog_comps) {
   event_file <- file.path(src_dir, paste0("events_", comp, ".parquet"))
 
@@ -152,26 +161,53 @@ for (comp in blog_comps) {
 
   # Join EPV equity if available
   if (has_equity) {
+    n_before <- nrow(chains)
     chains <- chains |>
       left_join(equity_lookup |> select(match_id, event_id, equity),
                 by = c("match_id", "event_id"))
+    # (match_id, event_id) is unique within a match, so the left join must not
+    # add rows. If it ever does, action_equity has duplicate keys and the join
+    # is scattering equity across rows (and corrupting display_order) — abort.
+    if (nrow(chains) != n_before) {
+      stop(sprintf(
+        "%s: equity join inflated chains %d -> %d rows (duplicate (match_id, event_id) in action_equity)",
+        comp, n_before, nrow(chains)))
+    }
     n_eq <- sum(!is.na(chains$equity))
-    if (n_eq == 0) cat("  WARNING: equity join matched 0 actions (check event_id format)\n")
-    else cat("  equity: ", n_eq, "/", nrow(chains), " actions\n", sep = "")
+    frac <- n_eq / nrow(chains)
+    cat("  equity: ", n_eq, "/", nrow(chains),
+        sprintf(" actions (%.1f%%)\n", 100 * frac), sep = "")
+    if (frac < MIN_JOIN_MATCH_FRAC) {
+      stop(sprintf(
+        "%s: equity join matched only %.1f%% of chain actions (floor %.0f%%) — action_equity.parquet is likely stale or misaligned with events_%s.parquet",
+        comp, 100 * frac, 100 * MIN_JOIN_MATCH_FRAC, comp))
+    }
   }
 
   # Join per-action WPA if available (panna 06_calculate_wpa.R output).
-  # Same join key as equity (match_id, event_id); same partial-match
-  # warning behaviour. When wpa is present, the blog match page can
-  # skip the worker call for finished matches.
+  # Same join key as equity (match_id, event_id) and the same fail-fast
+  # guards. When wpa is present, the blog match page can skip the worker
+  # call for finished matches.
   if (has_wpa) {
+    n_before <- nrow(chains)
     chains <- chains |>
       left_join(wpa_lookup |> select(match_id, event_id,
                                       wp, wpa, wpa_actor, wpa_receiver),
                 by = c("match_id", "event_id"))
+    if (nrow(chains) != n_before) {
+      stop(sprintf(
+        "%s: wpa join inflated chains %d -> %d rows (duplicate (match_id, event_id) in action_wpa)",
+        comp, n_before, nrow(chains)))
+    }
     n_wpa <- sum(!is.na(chains$wpa))
-    if (n_wpa == 0) cat("  WARNING: wpa join matched 0 actions (check event_id format)\n")
-    else cat("  wpa: ", n_wpa, "/", nrow(chains), " actions\n", sep = "")
+    frac <- n_wpa / nrow(chains)
+    cat("  wpa: ", n_wpa, "/", nrow(chains),
+        sprintf(" actions (%.1f%%)\n", 100 * frac), sep = "")
+    if (frac < MIN_JOIN_MATCH_FRAC) {
+      stop(sprintf(
+        "%s: wpa join matched only %.1f%% of chain actions (floor %.0f%%) — action_wpa_*.parquet is likely stale or misaligned with events_%s.parquet",
+        comp, 100 * frac, 100 * MIN_JOIN_MATCH_FRAC, comp))
+    }
   }
 
   league_code <- comp_to_code[comp]
