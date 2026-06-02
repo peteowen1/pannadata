@@ -20,6 +20,13 @@ equity_file <- file.path(src_dir, "action_equity.parquet")
 has_equity <- file.exists(equity_file)
 if (has_equity) {
   equity_lookup <- read_parquet(equity_file)
+  # Transition: action_equity.parquet carries `epv_credit` (panna 10c, from
+  # 2026-06-03) or the legacy `equity` name. Normalise to epv_credit so the
+  # join and the chains output column are name-stable regardless of which
+  # snapshot we downloaded. (The blog reads `epv_credit ?? equity`.)
+  if (!"epv_credit" %in% names(equity_lookup) && "equity" %in% names(equity_lookup)) {
+    equity_lookup <- equity_lookup |> rename(epv_credit = equity)
+  }
   equity_match_ids <- unique(equity_lookup$match_id)
   cat("Equity loaded:", nrow(equity_lookup), "actions across",
       length(equity_match_ids), "matches\n")
@@ -169,51 +176,54 @@ for (comp in blog_comps) {
     select(-any_of("team_name_lookup")) |>
     arrange(match_id, chain_number, display_order)
 
-  # Join EPV equity if available
+  # Join per-action EPV credit if available. Output column is `epv_credit`
+  # (per-action player credit — sum it, never diff it). Renamed from `equity`
+  # 2026-06-03 to end the collision with the worker's `equity` = EPV state; the
+  # blog reads `epv_credit ?? equity` so the rename is transparent.
   if (has_equity) {
     n_before <- nrow(chains)
     chains <- chains |>
-      left_join(equity_lookup |> select(match_id, event_id, equity),
+      left_join(equity_lookup |> select(match_id, event_id, epv_credit),
                 by = c("match_id", "event_id"))
     # (match_id, event_id) is unique within a match, so the left join must not
     # add rows. If it ever does, action_equity has duplicate keys and the join
-    # is scattering equity across rows (and corrupting display_order) — skip
+    # is scattering credit across rows (and corrupting display_order) — skip
     # this comp rather than write a corrupted parquet.
     if (nrow(chains) != n_before) {
       join_failures <- c(join_failures, sprintf(
-        "%s: equity join inflated chains %d -> %d rows (duplicate (match_id, event_id) in action_equity)",
+        "%s: epv_credit join inflated chains %d -> %d rows (duplicate (match_id, event_id) in action_equity)",
         comp, n_before, nrow(chains)))
-      cat("  SKIP ", comp, " — equity join inflated rows (recorded, continuing)\n", sep = "")
+      cat("  SKIP ", comp, " — epv_credit join inflated rows (recorded, continuing)\n", sep = "")
       next
     }
     # Coverage floor, scoped to matches present in action_equity (the
     # `match_id %in% equity_match_ids` filter). Uncovered matches legitimately
-    # have no equity — e.g. older seasons the current-season equity alias omits
+    # have no credit — e.g. older seasons the current-season equity alias omits
     # (low-volume comps keep all seasons; see the 200k season filter above) — so
     # measure the SPADL match rate only over covered matches. Healthy ~85%; a
     # sharp drop there means the event_id scheme drifted between action_equity
     # and events_<comp>.parquet.
-    n_eq <- sum(!is.na(chains$equity))
+    n_eq <- sum(!is.na(chains$epv_credit))
     covered <- chains$match_id %in% equity_match_ids
     if (any(covered)) {
-      frac <- mean(!is.na(chains$equity[covered]))
-      cat("  equity: ", n_eq, "/", nrow(chains), " actions (",
+      frac <- mean(!is.na(chains$epv_credit[covered]))
+      cat("  epv_credit: ", n_eq, "/", nrow(chains), " actions (",
           sprintf("%.1f%%", 100 * frac), " of ", sum(covered),
           " covered)\n", sep = "")
       if (frac < MIN_JOIN_MATCH_FRAC) {
         join_failures <- c(join_failures, sprintf(
-          "%s: equity matched only %.1f%% of actions in covered matches (floor %.0f%%) — action_equity.parquet is likely stale or misaligned with events_%s.parquet",
+          "%s: epv_credit matched only %.1f%% of actions in covered matches (floor %.0f%%) — action_equity.parquet is likely stale or misaligned with events_%s.parquet",
           comp, 100 * frac, 100 * MIN_JOIN_MATCH_FRAC, comp))
-        cat("  SKIP ", comp, " — equity coverage ", sprintf("%.1f%%", 100 * frac),
+        cat("  SKIP ", comp, " — epv_credit coverage ", sprintf("%.1f%%", 100 * frac),
             " below floor (recorded, continuing)\n", sep = "")
         next
       }
     } else {
       # No overlap at all. Legitimate for a comp out of the alias's season/comp
       # set, but also the signature of a match_id scheme drift — warn loudly
-      # (not just cat) since we are shipping an all-NA equity column.
+      # (not just cat) since we are shipping an all-NA epv_credit column.
       warning(sprintf(
-        "%s: equity join matched 0 of %d chain actions — no overlap with action_equity; shipping an all-NA equity column (season/comp mismatch or match_id drift?)",
+        "%s: epv_credit join matched 0 of %d chain actions — no overlap with action_equity; shipping an all-NA epv_credit column (season/comp mismatch or match_id drift?)",
         comp, nrow(chains)), call. = FALSE, immediate. = TRUE)
     }
   }
