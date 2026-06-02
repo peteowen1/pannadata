@@ -20,7 +20,9 @@ equity_file <- file.path(src_dir, "action_equity.parquet")
 has_equity <- file.exists(equity_file)
 if (has_equity) {
   equity_lookup <- read_parquet(equity_file)
-  cat("Equity loaded:", nrow(equity_lookup), "actions\n")
+  equity_match_ids <- unique(equity_lookup$match_id)
+  cat("Equity loaded:", nrow(equity_lookup), "actions across",
+      length(equity_match_ids), "matches\n")
 } else {
   cat("No equity file — chains will not include EPV credit\n")
 }
@@ -38,8 +40,9 @@ if (has_wpa) {
   cat("Loading WPA from", length(wpa_files), "shard(s)...\n")
   wpa_lookup <- data.table::rbindlist(lapply(wpa_files, read_parquet),
                                        use.names = TRUE, fill = TRUE)
+  wpa_match_ids <- unique(wpa_lookup$match_id)
   cat("WPA loaded:", nrow(wpa_lookup), "actions across",
-      data.table::uniqueN(wpa_lookup$match_id), "matches\n")
+      length(wpa_match_ids), "matches\n")
 } else {
   cat("No action_wpa_*.parquet files — chains will not include per-action WPA\n")
 }
@@ -173,14 +176,26 @@ for (comp in blog_comps) {
         "%s: equity join inflated chains %d -> %d rows (duplicate (match_id, event_id) in action_equity)",
         comp, n_before, nrow(chains)))
     }
+    # Coverage floor, scoped to matches action_equity actually covers. The
+    # equity alias is current-season only, while chains can span several seasons
+    # for low-volume comps — so measure the SPADL match rate only over covered
+    # matches (others legitimately have no equity). Healthy ~85%; a sharp drop
+    # there means the event_id scheme drifted between action_equity and
+    # events_<comp>.parquet.
     n_eq <- sum(!is.na(chains$equity))
-    frac <- n_eq / nrow(chains)
-    cat("  equity: ", n_eq, "/", nrow(chains),
-        sprintf(" actions (%.1f%%)\n", 100 * frac), sep = "")
-    if (frac < MIN_JOIN_MATCH_FRAC) {
-      stop(sprintf(
-        "%s: equity join matched only %.1f%% of chain actions (floor %.0f%%) — action_equity.parquet is likely stale or misaligned with events_%s.parquet",
-        comp, 100 * frac, 100 * MIN_JOIN_MATCH_FRAC, comp))
+    covered <- chains$match_id %in% equity_match_ids
+    if (any(covered)) {
+      frac <- mean(!is.na(chains$equity[covered]))
+      cat("  equity: ", n_eq, "/", nrow(chains), " actions (",
+          sprintf("%.1f%%", 100 * frac), " of ", sum(covered),
+          " covered)\n", sep = "")
+      if (frac < MIN_JOIN_MATCH_FRAC) {
+        stop(sprintf(
+          "%s: equity matched only %.1f%% of actions in covered matches (floor %.0f%%) — action_equity.parquet is likely stale or misaligned with events_%s.parquet",
+          comp, 100 * frac, 100 * MIN_JOIN_MATCH_FRAC, comp))
+      }
+    } else {
+      cat("  equity: 0 covered matches — action_equity covers a different season/comp set (floor skipped)\n")
     }
   }
 
@@ -200,13 +215,19 @@ for (comp in blog_comps) {
         comp, n_before, nrow(chains)))
     }
     n_wpa <- sum(!is.na(chains$wpa))
-    frac <- n_wpa / nrow(chains)
-    cat("  wpa: ", n_wpa, "/", nrow(chains),
-        sprintf(" actions (%.1f%%)\n", 100 * frac), sep = "")
-    if (frac < MIN_JOIN_MATCH_FRAC) {
-      stop(sprintf(
-        "%s: wpa join matched only %.1f%% of chain actions (floor %.0f%%) — action_wpa_*.parquet is likely stale or misaligned with events_%s.parquet",
-        comp, 100 * frac, 100 * MIN_JOIN_MATCH_FRAC, comp))
+    covered <- chains$match_id %in% wpa_match_ids
+    if (any(covered)) {
+      frac <- mean(!is.na(chains$wpa[covered]))
+      cat("  wpa: ", n_wpa, "/", nrow(chains), " actions (",
+          sprintf("%.1f%%", 100 * frac), " of ", sum(covered),
+          " covered)\n", sep = "")
+      if (frac < MIN_JOIN_MATCH_FRAC) {
+        stop(sprintf(
+          "%s: wpa matched only %.1f%% of actions in covered matches (floor %.0f%%) — action_wpa_*.parquet is likely stale or misaligned with events_%s.parquet",
+          comp, 100 * frac, 100 * MIN_JOIN_MATCH_FRAC, comp))
+      }
+    } else {
+      cat("  wpa: 0 covered matches — action_wpa covers a different season/comp set (floor skipped)\n")
     }
   }
 
