@@ -20,7 +20,9 @@ equity_file <- file.path(src_dir, "action_equity.parquet")
 has_equity <- file.exists(equity_file)
 if (has_equity) {
   equity_lookup <- read_parquet(equity_file)
-  cat("Equity loaded:", nrow(equity_lookup), "actions\n")
+  equity_match_ids <- unique(equity_lookup$match_id)
+  cat("Equity loaded:", nrow(equity_lookup), "actions across",
+      length(equity_match_ids), "matches\n")
 } else {
   cat("No equity file — chains will not include EPV credit\n")
 }
@@ -38,8 +40,9 @@ if (has_wpa) {
   cat("Loading WPA from", length(wpa_files), "shard(s)...\n")
   wpa_lookup <- data.table::rbindlist(lapply(wpa_files, read_parquet),
                                        use.names = TRUE, fill = TRUE)
+  wpa_match_ids <- unique(wpa_lookup$match_id)
   cat("WPA loaded:", nrow(wpa_lookup), "actions across",
-      data.table::uniqueN(wpa_lookup$match_id), "matches\n")
+      length(wpa_match_ids), "matches\n")
 } else {
   cat("No action_wpa_*.parquet files — chains will not include per-action WPA\n")
 }
@@ -70,6 +73,22 @@ comp_to_code <- BLOG_COMP_TO_CODE
 dead_ball_types <- c(2L, 4L, 5L, 6L, 17L, 55L, 56L, 57L, 70L, 80L, 81L)
 non_play_types <- c(18L, 19L, 24L, 27L, 28L, 30L, 32L, 34L, 37L, 40L, 43L, 65L, 68L)
 shot_types <- c(13L, 14L, 15L, 16L)
+
+# Equity/WPA joins land on chain events by (match_id, event_id). Only chain
+# events that survive panna's SPADL conversion carry equity/wpa — SPADL drops
+# non-gameplay events and merges duel pairs, so a *healthy* join matches ~84-86%
+# of chain actions (see pannadata/CLAUDE.md "Equity join in chains"). A sharp
+# drop below this means action_equity / action_wpa drifted out of sync with the
+# events snapshot used here (different scrape, different event_id scheme), which
+# would silently ship a misaligned column. A breach skips that comp (its prior
+# parquet is left intact, not overwritten with a bad one) and is recorded in
+# join_failures; the build fails after all healthy comps are built, so one
+# drifted comp doesn't block delivery of the others while CI still goes red.
+MIN_JOIN_MATCH_FRAC <- 0.80
+
+# Comps whose equity/wpa join breached a guard. Healthy comps still build and
+# upload; this list is raised as a hard error after the loop.
+join_failures <- character(0)
 
 for (comp in blog_comps) {
   event_file <- file.path(src_dir, paste0("events_", comp, ".parquet"))
@@ -152,26 +171,90 @@ for (comp in blog_comps) {
 
   # Join EPV equity if available
   if (has_equity) {
+    n_before <- nrow(chains)
     chains <- chains |>
       left_join(equity_lookup |> select(match_id, event_id, equity),
                 by = c("match_id", "event_id"))
+    # (match_id, event_id) is unique within a match, so the left join must not
+    # add rows. If it ever does, action_equity has duplicate keys and the join
+    # is scattering equity across rows (and corrupting display_order) — skip
+    # this comp rather than write a corrupted parquet.
+    if (nrow(chains) != n_before) {
+      join_failures <- c(join_failures, sprintf(
+        "%s: equity join inflated chains %d -> %d rows (duplicate (match_id, event_id) in action_equity)",
+        comp, n_before, nrow(chains)))
+      cat("  SKIP ", comp, " — equity join inflated rows (recorded, continuing)\n", sep = "")
+      next
+    }
+    # Coverage floor, scoped to matches present in action_equity (the
+    # `match_id %in% equity_match_ids` filter). Uncovered matches legitimately
+    # have no equity — e.g. older seasons the current-season equity alias omits
+    # (low-volume comps keep all seasons; see the 200k season filter above) — so
+    # measure the SPADL match rate only over covered matches. Healthy ~85%; a
+    # sharp drop there means the event_id scheme drifted between action_equity
+    # and events_<comp>.parquet.
     n_eq <- sum(!is.na(chains$equity))
-    if (n_eq == 0) cat("  WARNING: equity join matched 0 actions (check event_id format)\n")
-    else cat("  equity: ", n_eq, "/", nrow(chains), " actions\n", sep = "")
+    covered <- chains$match_id %in% equity_match_ids
+    if (any(covered)) {
+      frac <- mean(!is.na(chains$equity[covered]))
+      cat("  equity: ", n_eq, "/", nrow(chains), " actions (",
+          sprintf("%.1f%%", 100 * frac), " of ", sum(covered),
+          " covered)\n", sep = "")
+      if (frac < MIN_JOIN_MATCH_FRAC) {
+        join_failures <- c(join_failures, sprintf(
+          "%s: equity matched only %.1f%% of actions in covered matches (floor %.0f%%) — action_equity.parquet is likely stale or misaligned with events_%s.parquet",
+          comp, 100 * frac, 100 * MIN_JOIN_MATCH_FRAC, comp))
+        cat("  SKIP ", comp, " — equity coverage ", sprintf("%.1f%%", 100 * frac),
+            " below floor (recorded, continuing)\n", sep = "")
+        next
+      }
+    } else {
+      # No overlap at all. Legitimate for a comp out of the alias's season/comp
+      # set, but also the signature of a match_id scheme drift — warn loudly
+      # (not just cat) since we are shipping an all-NA equity column.
+      warning(sprintf(
+        "%s: equity join matched 0 of %d chain actions — no overlap with action_equity; shipping an all-NA equity column (season/comp mismatch or match_id drift?)",
+        comp, nrow(chains)), call. = FALSE, immediate. = TRUE)
+    }
   }
 
   # Join per-action WPA if available (panna 06_calculate_wpa.R output).
-  # Same join key as equity (match_id, event_id); same partial-match
-  # warning behaviour. When wpa is present, the blog match page can
-  # skip the worker call for finished matches.
+  # Same join key as equity (match_id, event_id) and the same fail-fast
+  # guards. When wpa is present, the blog match page can skip the worker
+  # call for finished matches.
   if (has_wpa) {
+    n_before <- nrow(chains)
     chains <- chains |>
       left_join(wpa_lookup |> select(match_id, event_id,
                                       wp, wpa, wpa_actor, wpa_receiver),
                 by = c("match_id", "event_id"))
+    if (nrow(chains) != n_before) {
+      join_failures <- c(join_failures, sprintf(
+        "%s: wpa join inflated chains %d -> %d rows (duplicate (match_id, event_id) in action_wpa)",
+        comp, n_before, nrow(chains)))
+      cat("  SKIP ", comp, " — wpa join inflated rows (recorded, continuing)\n", sep = "")
+      next
+    }
     n_wpa <- sum(!is.na(chains$wpa))
-    if (n_wpa == 0) cat("  WARNING: wpa join matched 0 actions (check event_id format)\n")
-    else cat("  wpa: ", n_wpa, "/", nrow(chains), " actions\n", sep = "")
+    covered <- chains$match_id %in% wpa_match_ids
+    if (any(covered)) {
+      frac <- mean(!is.na(chains$wpa[covered]))
+      cat("  wpa: ", n_wpa, "/", nrow(chains), " actions (",
+          sprintf("%.1f%%", 100 * frac), " of ", sum(covered),
+          " covered)\n", sep = "")
+      if (frac < MIN_JOIN_MATCH_FRAC) {
+        join_failures <- c(join_failures, sprintf(
+          "%s: wpa matched only %.1f%% of actions in covered matches (floor %.0f%%) — action_wpa_*.parquet is likely stale or misaligned with events_%s.parquet",
+          comp, 100 * frac, 100 * MIN_JOIN_MATCH_FRAC, comp))
+        cat("  SKIP ", comp, " — wpa coverage ", sprintf("%.1f%%", 100 * frac),
+            " below floor (recorded, continuing)\n", sep = "")
+        next
+      }
+    } else {
+      warning(sprintf(
+        "%s: wpa join matched 0 of %d chain actions — no overlap with action_wpa; shipping an all-NA wpa column (season/comp mismatch or match_id drift?)",
+        comp, nrow(chains)), call. = FALSE, immediate. = TRUE)
+    }
   }
 
   league_code <- comp_to_code[comp]
@@ -184,6 +267,14 @@ for (comp in blog_comps) {
 
   # Delete event file to save disk space in CI
   unlink(event_file)
+}
+
+# Healthy comps are built and uploaded above; now fail the run if any comp's
+# equity/wpa join breached a guard, so CI goes red with the full offender list.
+if (length(join_failures) > 0) {
+  stop(sprintf("Chain build failed for %d comp(s):\n%s",
+               length(join_failures),
+               paste0("  - ", join_failures, collapse = "\n")))
 }
 
 cat("\nDone!\n")
