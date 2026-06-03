@@ -433,6 +433,19 @@ jobs:
           fi
         done
 
+        # Event-less registry — the heal pass (end of scrape_opta.py) may have
+        # added confirmed-empty matches before the crash. Non-critical for
+        # manifest atomicity, but skipping it would let the next run's heal pass
+        # re-attempt those matches and burn the API cap. Not gated into
+        # upload_failures (a stale registry only wastes calls, never loses data).
+        if [ -f "opta/event_less_match_ids.parquet" ]; then
+          if gh release upload opta-latest opta/event_less_match_ids.parquet --clobber; then
+            echo "Recovered event_less_match_ids.parquet"
+          else
+            echo "::warning::Failed to upload event_less_match_ids.parquet (non-critical)"
+          fi
+        fi
+
         # Per-league events files — only those modified during recovery
         PRE_MTIMES=/tmp/scrape-state/pre_mtimes.txt
         if [ -d "opta/events_consolidated" ]; then
