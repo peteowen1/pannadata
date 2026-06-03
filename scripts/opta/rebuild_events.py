@@ -48,7 +48,8 @@ import argparse
 import json
 import sys
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
+from datetime import date
 from pathlib import Path
 from typing import Optional
 
@@ -72,6 +73,12 @@ class RebuildSummary:
     match_events_rows_written: int
     shot_events_rows_written: int
     elapsed_seconds: float
+    # Matches that returned an empty event response — Opta has player_stats but
+    # no event feed (e.g. cup qualifiers). These are a DATA FACT, not a run
+    # failure: recorded to the eventless registry and excluded from the exit
+    # code so a comp that is genuinely event-less still consolidates + uploads.
+    matches_eventless: int = 0
+    eventless_match_ids: list = field(default_factory=list)
 
     def to_dict(self):
         return asdict(self)
@@ -109,6 +116,42 @@ def _combine_and_save(new_rows: list, output_path: Path, dedup_cols: list) -> in
         combined = new_df
     output_path.parent.mkdir(parents=True, exist_ok=True)
     combined.to_parquet(output_path, index=False)
+    return len(combined)
+
+
+def _update_eventless_registry(opta_dir: Path, competition: str, season: str,
+                                eventless_ids: list) -> int:
+    """Record match_ids whose event fetch returned an empty response into a
+    persistent registry (`event_less_match_ids.parquet` at the opta-dir root).
+
+    These are matches Opta has player_stats for but provides NO event feed for
+    (confirmed event-less under an explicit, non-throttled fetch — e.g. cup
+    qualifier rounds). The downstream coverage check subtracts them from the
+    'expected events' denominator so they stop tripping an unsatisfiable gate.
+    Dedups on match_id, preserving the first-seen detected_at. Returns the
+    registry's total row count (0 if nothing to record)."""
+    if not eventless_ids:
+        return 0
+    registry_path = opta_dir / "event_less_match_ids.parquet"
+    new_df = pd.DataFrame({
+        "match_id": list(eventless_ids),
+        "competition": competition,
+        "season": season,
+        "reason": "empty_response",
+        "detected_at": date.today().isoformat(),
+    })
+    if registry_path.exists():
+        try:
+            existing_df = pd.read_parquet(registry_path)
+            combined = pd.concat([existing_df, new_df], ignore_index=True)
+            combined = combined.drop_duplicates(subset=["match_id"], keep="first")
+        except Exception as e:
+            print(f"  WARNING: could not read {registry_path} ({e}); writing new rows only")
+            combined = new_df
+    else:
+        combined = new_df
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    combined.to_parquet(registry_path, index=False)
     return len(combined)
 
 
@@ -213,8 +256,11 @@ def rebuild_events_for_league(
         )
 
     n_succeeded = 0
-    n_failed = 0
-    failed_ids: list = []
+    # Two distinct buckets: genuine errors (API/parse — operational problems
+    # that should fail the run) vs empty responses (Opta has no event feed for
+    # this match — a data fact recorded to the registry, NOT a run failure).
+    error_ids: list = []
+    eventless_ids: list = []
     accumulated_match_events: list = []
     accumulated_shot_events: list = []
 
@@ -224,13 +270,13 @@ def rebuild_events_for_league(
             event_data = scraper.get_match_events(mid)
         except Exception as e:
             print(f"FAILED (API error: {e})")
-            n_failed += 1
-            failed_ids.append(mid)
+            error_ids.append(mid)
             continue
         if not event_data:
-            print("FAILED (empty response)")
-            n_failed += 1
-            failed_ids.append(mid)
+            # Empty response = Opta provides no events for this match. Not an
+            # error — record it as event-less so coverage stops expecting it.
+            print("EVENTLESS (empty response)")
+            eventless_ids.append(mid)
             continue
 
         try:
@@ -238,8 +284,7 @@ def rebuild_events_for_league(
             shot_events = scraper.extract_shot_events(event_data)
         except Exception as e:
             print(f"FAILED (parse error: {e})")
-            n_failed += 1
-            failed_ids.append(mid)
+            error_ids.append(mid)
             continue
 
         accumulated_match_events.extend([asdict(e) for e in match_events])
@@ -260,17 +305,26 @@ def rebuild_events_for_league(
     if se_rows:
         print(f"  Wrote {se_path}: {se_rows} total rows")
 
+    # Persist the event-less match_ids so the coverage check can exclude them.
+    registry_rows = _update_eventless_registry(opta_dir, competition, season,
+                                                eventless_ids)
+    if eventless_ids:
+        print(f"  Recorded {len(eventless_ids)} event-less match_id(s) "
+              f"→ event_less_match_ids.parquet ({registry_rows} total)")
+
     summary = RebuildSummary(
         competition=competition, season=season,
         matches_in_player_stats=n_in_ps,
         matches_already_present=len(existing),
         matches_attempted=len(to_fetch),
         matches_succeeded=n_succeeded,
-        matches_failed=n_failed,
-        failed_match_ids=failed_ids,
+        matches_failed=len(error_ids),
+        failed_match_ids=error_ids,
         match_events_rows_written=me_rows,
         shot_events_rows_written=se_rows,
         elapsed_seconds=time.time() - t0,
+        matches_eventless=len(eventless_ids),
+        eventless_match_ids=eventless_ids,
     )
     print(f"\n=== Summary ===")
     print(json.dumps(summary.to_dict(), indent=2))

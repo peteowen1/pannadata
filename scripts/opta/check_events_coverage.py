@@ -63,6 +63,13 @@ def main() -> int:
                              "a workflow_dispatch run's check to just the leagues it "
                              "scraped, so unrelated stale-coverage gaps don't block "
                              "the targeted upload.")
+    parser.add_argument("--eventless-registry", type=Path, default=None,
+                        help="Optional path to event_less_match_ids.parquet. Match_ids "
+                             "listed there (Opta has player_stats but NO event feed -- "
+                             "e.g. cup qualifier rounds) are subtracted from each comp's "
+                             "expected-events set, so genuinely event-less matches don't "
+                             "count as a coverage gap. Mirrors panna's "
+                             "check_events_coverage(). Absent/missing => no exclusion.")
     args = parser.parse_args()
 
     leagues_filter: set[str] = set(args.leagues.split()) if args.leagues.strip() else set()
@@ -106,29 +113,56 @@ def main() -> int:
               f"in season={args.season} — passing (nothing in scope to verify)")
         return 0
 
+    # Event-less registry: match_ids Opta has stats but no event feed for
+    # (cup qualifiers). Subtracted per-comp from the expected-events set so
+    # they don't read as a gap. Mirrors panna's check_events_coverage().
+    eventless_by_comp: dict[str, set[str]] = collections.defaultdict(set)
+    if args.eventless_registry and args.eventless_registry.exists():
+        try:
+            el_table = pq.read_table(
+                args.eventless_registry,
+                columns=["match_id", "competition", "season"],
+                filters=[("season", "=", args.season)],
+            )
+            for c, m in zip(el_table.column("competition").to_pylist(),
+                            el_table.column("match_id").to_pylist()):
+                eventless_by_comp[c].add(m)
+            total_el = sum(len(v) for v in eventless_by_comp.values())
+            if total_el:
+                print(f"::notice::Event-less registry: excluding {total_el} match(es) "
+                      f"across {len(eventless_by_comp)} comp(s)")
+        except Exception as exc:
+            print(f"::warning::Could not read eventless registry "
+                  f"{args.eventless_registry.name}: {exc}")
+
     print(f"=== Events coverage check for season={args.season} ===")
-    print(f"{'comp':<28} {'ps_matches':>11} {'ev_matches':>11} {'gap':>6} {'status':<8}")
-    print("-" * 78)
+    print(f"{'comp':<28} {'ps_matches':>11} {'ev_matches':>11} {'eventless':>10} {'gap':>6} {'status':<8}")
+    print("-" * 88)
 
     offenders: list[tuple[str, int, int, int]] = []
     for comp in sorted(ps_by_comp.keys()):
         ev_path = args.events_dir / f"events_{comp}.parquet"
-        ps_n = len(ps_by_comp[comp])
+        ps_ids = ps_by_comp[comp]
+        eventless = eventless_by_comp.get(comp, set())
+        # Expected-events universe = matches Opta covers minus the event-less.
+        expected_ids = ps_ids - eventless
+        ps_n = len(ps_ids)
+        el_n = len(eventless)
         if not ev_path.exists():
             # events_consolidated/events_<comp>.parquet missing entirely.
             # Above gap_threshold = silent skip of a real coverage gap
             # for an active competition. Count as an offender so the
             # operator sees it as FAIL (not just printed in the table).
-            if ps_n > args.gap_threshold:
+            exp_n = len(expected_ids)
+            if exp_n > args.gap_threshold:
                 status = "FAIL-no-file"
-                offenders.append((comp, ps_n, 0, ps_n))
+                offenders.append((comp, ps_n, 0, exp_n))
             else:
                 status = "no-file"
-            print(f"{comp:<28} {ps_n:>11} {'-':>11} {ps_n if status == 'FAIL-no-file' else '-':>6} {status}")
+            print(f"{comp:<28} {ps_n:>11} {'-':>11} {el_n:>10} {exp_n if status == 'FAIL-no-file' else '-':>6} {status}")
             continue
         ev_ids = unique_match_ids(ev_path, filter_expr=[("season", "=", args.season)])
-        ps_ids = ps_by_comp[comp]
-        gap = len(ps_ids - ev_ids)
+        gap = len(expected_ids - ev_ids)
         if gap == 0:
             status = "OK"
         elif gap <= args.gap_threshold:
@@ -136,16 +170,16 @@ def main() -> int:
         else:
             status = "FAIL"
             offenders.append((comp, ps_n, len(ev_ids), gap))
-        print(f"{comp:<28} {ps_n:>11} {len(ev_ids):>11} {gap:>6} {status}")
+        print(f"{comp:<28} {ps_n:>11} {len(ev_ids):>11} {el_n:>10} {gap:>6} {status}")
 
-    print("-" * 78)
+    print("-" * 88)
     if offenders:
         print(f"\n::error::events_consolidated coverage FAILED for {len(offenders)} league(s) "
               f"(gap > {args.gap_threshold}):")
         for comp, ps_n, ev_n, gap in offenders:
-            print(f"  - {comp}: {ev_n}/{ps_n} matches covered ({gap} missing)")
-        print("\nNext step: re-scrape the affected leagues with force_rescrape=true to "
-              "rebuild the events_consolidated parquet.")
+            print(f"  - {comp}: {ev_n}/{ps_n} matches covered ({gap} expected-but-missing)")
+        print("\nNext step: backfill the affected comps with rebuild-events.yml (records "
+              "event-less matches to the registry); force_rescrape will NOT close the gap.")
         return 1
 
     print(f"\nAll leagues within tolerance (gap_threshold={args.gap_threshold}).")

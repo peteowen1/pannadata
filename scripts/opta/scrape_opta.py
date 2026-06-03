@@ -279,6 +279,166 @@ def update_manifest(manifest_path: Path, new_matches: list) -> bool:
     return True
 
 
+def load_eventless_registry(opta_dir: Path) -> set:
+    """Return the set of match_ids confirmed event-less (Opta has player_stats
+    but no event feed -- e.g. cup qualifiers) from event_less_match_ids.parquet,
+    or an empty set if the registry doesn't exist yet."""
+    reg_path = opta_dir / "event_less_match_ids.parquet"
+    if not reg_path.exists():
+        return set()
+    try:
+        return set(pd.read_parquet(reg_path, columns=["match_id"])["match_id"].tolist())
+    except (pd.errors.ParserError, OSError, ValueError, pyarrow.lib.ArrowInvalid) as e:
+        logger.warning("Could not read eventless registry %s: %s", reg_path, e)
+        return set()
+
+
+def append_eventless_registry(opta_dir: Path, entries: list) -> int:
+    """Merge confirmed-event-less rows into event_less_match_ids.parquet, deduping
+    on match_id (keep first-seen detected_at). `entries`: list of dicts with
+    match_id/competition/season/reason/detected_at. Returns total registry rows."""
+    reg_path = opta_dir / "event_less_match_ids.parquet"
+    if not entries:
+        return len(load_eventless_registry(opta_dir))
+    new_df = pd.DataFrame(entries)
+    if reg_path.exists():
+        try:
+            existing = pd.read_parquet(reg_path)
+            combined = pd.concat([existing, new_df], ignore_index=True)
+            combined = combined.drop_duplicates(subset=["match_id"], keep="first")
+        except (pd.errors.ParserError, OSError, ValueError, pyarrow.lib.ArrowInvalid) as e:
+            logger.warning("Could not read registry for merge (%s); writing new rows only", e)
+            combined = new_df
+    else:
+        combined = new_df
+    try:
+        reg_path.parent.mkdir(parents=True, exist_ok=True)
+        combined.to_parquet(reg_path, index=False)
+    except (OSError, pyarrow.lib.ArrowInvalid) as e:
+        logger.error("Failed to write eventless registry %s: %s", reg_path, e)
+    return len(combined)
+
+
+def _heal_append_events(new_rows: list, output_path: Path, dedup_cols: list) -> None:
+    """Append healed event rows to a per-(comp,season) parquet (dedup, write)."""
+    if not new_rows:
+        return
+    new_df = pd.DataFrame(new_rows)
+    if output_path.exists():
+        try:
+            existing = pd.read_parquet(output_path)
+            combined = pd.concat([existing, new_df], ignore_index=True)
+            combined = combined.drop_duplicates(subset=dedup_cols, keep="last")
+        except (pd.errors.ParserError, OSError, ValueError, pyarrow.lib.ArrowInvalid) as e:
+            logger.error("Heal: could not read %s (%s); writing new rows only", output_path, e)
+            combined = new_df
+    else:
+        combined = new_df
+    try:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        combined.to_parquet(output_path, index=False)
+    except (OSError, pyarrow.lib.ArrowInvalid) as e:
+        logger.error("Heal: failed to write %s: %s", output_path, e)
+
+
+def heal_unavailable_events(scraper, opta_dir: Path, manifest_path: Path,
+                             season: str, cap: int = 200,
+                             dry_run: bool = False) -> dict:
+    """Bounded self-heal of transiently-stranded events.
+
+    A match flagged ``event_unavailable=True`` may have failed TRANSIENTLY
+    (events DO exist at Opta -- the 2026-05 Championship 265/557 case) rather
+    than being genuinely event-less. ``reconcile_events_with_manifest()`` only
+    revisits ``has_match_events=True`` entries, so event_unavailable matches
+    strand forever. This re-attempts up to ``cap`` of them for ``season`` that
+    are NOT already confirmed in the event-less registry:
+
+      * events found  -> heal: append the per-(comp,season) match/shot event
+        parquets + flip the manifest entry to has_match_events=True /
+        event_unavailable=False (consolidate picks it up next).
+      * still empty    -> confirm: record to event_less_match_ids.parquet so
+        the coverage checks exclude it and future runs skip it.
+
+    Scoped to ONE season (the manifest holds ~100k genuinely-event-less
+    HISTORICAL matches whose blind re-confirmation would waste the API budget
+    for zero blog value). Best-effort: callers wrap this so a heal failure can
+    never fail the scrape.
+    """
+    summary = {"season": season, "attempted": 0, "healed": 0,
+               "confirmed_eventless": 0, "errors": 0}
+    if cap <= 0 or not manifest_path.exists():
+        return summary
+    try:
+        man = pd.read_parquet(manifest_path)
+    except (pd.errors.ParserError, OSError, ValueError, pyarrow.lib.ArrowInvalid) as e:
+        logger.error("Heal: could not read manifest (%s) — skipping heal pass", e)
+        return summary
+    if "event_unavailable" not in man.columns:
+        return summary
+
+    registry = load_eventless_registry(opta_dir)
+    cand = man[(man["event_unavailable"] == True)
+               & (man["season"] == season)
+               & (~man["match_id"].isin(registry))].copy()
+    if cand.empty:
+        print(f"Heal pass [{season}]: no unconfirmed-unavailable matches.")
+        return summary
+    cand = cand.sort_values(["competition", "match_id"]).head(cap)
+    print(f"Heal pass [{season}]: re-attempting {len(cand)} unconfirmed-unavailable "
+          f"match(es) (cap={cap}); registry has {len(registry)} confirmed.")
+    summary["attempted"] = int(len(cand))
+
+    if dry_run:
+        for comp, grp in cand.groupby("competition"):
+            print(f"  [dry-run] {comp}: {len(grp)} match(es)")
+        return summary
+
+    today = datetime.now().date().isoformat()
+    healed_records, new_eventless = [], []
+    for (comp, ssn), grp in cand.groupby(["competition", "season"]):
+        existing_rows = {r["match_id"]: r.to_dict() for _, r in grp.iterrows()}
+        me_rows, se_rows = [], []
+        for mid in grp["match_id"]:
+            try:
+                event_data = scraper.get_match_events(mid)
+            except Exception as e:  # noqa: BLE001 - network/parse, keep going
+                logger.warning("Heal: fetch failed for %s: %s", mid, e)
+                summary["errors"] += 1
+                continue
+            if not event_data:
+                new_eventless.append({"match_id": mid, "competition": comp,
+                                      "season": ssn, "reason": "empty_response",
+                                      "detected_at": today})
+                continue
+            try:
+                me = scraper.extract_all_match_events(event_data)
+                se = scraper.extract_shot_events(event_data)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Heal: parse failed for %s: %s", mid, e)
+                summary["errors"] += 1
+                continue
+            me_rows.extend([asdict(e) for e in me])
+            se_rows.extend([asdict(s) for s in se])
+            rec = existing_rows[mid]
+            rec.update({"has_match_events": True, "has_stats_events": True,
+                        "event_unavailable": False})
+            healed_records.append(rec)
+            summary["healed"] += 1
+        _heal_append_events(me_rows, opta_dir / "match_events" / comp / f"{ssn}.parquet",
+                            ["match_id", "event_id"])
+        _heal_append_events(se_rows, opta_dir / "shot_events" / comp / f"{ssn}.parquet",
+                            ["match_id", "event_id"])
+
+    if healed_records:
+        update_manifest(manifest_path, healed_records)
+    reg_total = append_eventless_registry(opta_dir, new_eventless)
+    summary["confirmed_eventless"] = len(new_eventless)
+    print(f"Heal pass [{season}]: {summary['healed']} healed (events recovered), "
+          f"{summary['confirmed_eventless']} confirmed event-less "
+          f"(registry now {reg_total}), {summary['errors']} fetch/parse errors.")
+    return summary
+
+
 def get_pannadata_dir():
     """Find pannadata/data directory relative to this script"""
     script_dir = Path(__file__).parent
@@ -915,6 +1075,20 @@ def main():
                        help="Data types to scrape (default: all)")
     parser.add_argument("--tier", type=int, default=0,
                        help="Only scrape competitions with tier <= N (0 = no filter)")
+    parser.add_argument("--heal-cap", type=int, default=200,
+                       help="Phase-2 self-heal: max event_unavailable matches to "
+                            "re-fetch per run (0 = off). Re-attempts matches the "
+                            "manifest flagged unavailable but the event-less "
+                            "registry hasn't confirmed; events found -> healed, "
+                            "still empty -> recorded to the registry.")
+    parser.add_argument("--heal-season", default="2025-2026",
+                       help="Season the self-heal pass targets (default current "
+                            "domestic season). Scoped to one season because the "
+                            "manifest holds ~100k genuinely-event-less historical "
+                            "matches not worth re-confirming.")
+    parser.add_argument("--heal-dry-run", action="store_true",
+                       help="List what the self-heal pass would re-fetch (per comp) "
+                            "without making API calls.")
     args = parser.parse_args()
 
     # Determine what to scrape
@@ -1070,6 +1244,22 @@ def main():
             if consecutive_manifest_failures >= 3:
                 logger.error("3 consecutive manifest failures — likely persistent disk/permission issue. Stopping.")
                 break
+
+    # --- Phase-2 bounded self-heal of transiently-stranded events ---
+    # Re-attempt up to --heal-cap event_unavailable matches that the registry
+    # hasn't confirmed. Best-effort: wrapped so a heal failure can never fail
+    # the scrape. Skipped on --force (full re-scrape already covers everything)
+    # and fixtures-only runs. consolidate_opta.py (next workflow step) picks up
+    # any healed per-(comp,season) parquets.
+    if not fixtures_only and not args.force and args.heal_cap > 0:
+        try:
+            heal_unavailable_events(
+                scraper, pannadata_dir / "opta", manifest_path,
+                season=args.heal_season, cap=args.heal_cap,
+                dry_run=args.heal_dry_run,
+            )
+        except Exception as e:  # noqa: BLE001 - heal must never break the scrape
+            logger.error("Self-heal pass failed (non-fatal): %s", e, exc_info=True)
 
     # Final summary
     print("\n" + "=" * 60)
