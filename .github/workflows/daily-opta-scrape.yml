@@ -79,7 +79,7 @@ jobs:
         echo "Downloading existing consolidated files..."
 
         # Download consolidated files (player_stats, shots, etc.) into data/opta/
-        for file in opta_player_stats.parquet opta_shots.parquet opta_shot_events.parquet opta_events.parquet opta_lineups.parquet opta_fixtures.parquet; do
+        for file in opta_player_stats.parquet opta_shots.parquet opta_shot_events.parquet opta_events.parquet opta_lineups.parquet opta_fixtures.parquet event_less_match_ids.parquet; do
           if gh release download opta-latest --pattern "$file" --dir data/opta/ 2>/dev/null; then
             echo "Downloaded $file"
           fi
@@ -229,7 +229,8 @@ jobs:
             --events-dir data/opta/events_consolidated \
             --season "2025-2026" \
             --gap-threshold "$EVENTS_COVERAGE_GAP_THRESHOLD" \
-            --leagues "$DISPATCH_LEAGUES"
+            --leagues "$DISPATCH_LEAGUES" \
+            --eventless-registry data/opta/event_less_match_ids.parquet
       continue-on-error: false
 
     - name: Setup R for xG enrichment
