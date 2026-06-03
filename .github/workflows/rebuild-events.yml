@@ -77,6 +77,10 @@ jobs:
           gh release download opta-latest --pattern "match_events_${{ inputs.competition }}.parquet" \
             --dir data/opta/match_events/${{ inputs.competition }}/ 2>/dev/null || true
           ls -la data/opta/match_events/${{ inputs.competition }}/ || true
+          # Existing event-less registry — pull so rebuild MERGES new event-less
+          # match_ids into it rather than overwriting prior comps' entries.
+          gh release download opta-latest --pattern "event_less_match_ids.parquet" \
+            --dir data/opta/ 2>/dev/null || true
 
       - name: Run rebuild_events.py
         run: |
@@ -111,6 +115,12 @@ jobs:
               gh release upload opta-latest "$UP_FILE" --repo peteowen1/pannadata --clobber
               echo "Uploaded $UP_FILE"
             fi
+          fi
+          # Upload the event-less registry if rebuild recorded any (matches Opta
+          # has no event feed for) — the coverage check subtracts these.
+          if [ -f opta/event_less_match_ids.parquet ]; then
+            gh release upload opta-latest opta/event_less_match_ids.parquet --repo peteowen1/pannadata --clobber
+            echo "Uploaded event_less_match_ids.parquet"
           fi
 
       - name: Job summary
