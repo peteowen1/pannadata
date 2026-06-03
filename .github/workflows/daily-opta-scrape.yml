@@ -293,6 +293,18 @@ jobs:
           fi
         done
 
+        # Upload the event-less registry (the self-heal pass may have added
+        # confirmed-empty matches to it). Persisted on the release so coverage
+        # checks + the next run's heal pass see the updated set.
+        if [ -f "opta/event_less_match_ids.parquet" ]; then
+          if gh release upload opta-latest opta/event_less_match_ids.parquet --clobber; then
+            echo "Uploaded event_less_match_ids.parquet"
+          else
+            echo "ERROR: Failed to upload event_less_match_ids.parquet"
+            upload_errors=$((upload_errors + 1))
+          fi
+        fi
+
         # Upload data catalog
         if [ -f "opta/opta-catalog.json" ]; then
           if gh release upload opta-latest opta/opta-catalog.json --clobber; then
