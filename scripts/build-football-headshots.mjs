@@ -47,13 +47,24 @@ async function initFace() {
   await faceapi.nets.ssdMobilenetv1.loadFromDisk(path.join(faceApiDir, 'model'))
   console.log('face model loaded · backend', tf.getBackend())
 }
-async function faceBox(buf) {
+// Detect on a DOWNSCALED copy (≤1000px) — feeding a full-res Commons original
+// (some are >100 megapixels) straight to the wasm tensor tries to allocate
+// hundreds of MB and aborts the whole process (a wasm abort try/catch can't
+// catch). Detection doesn't need full res; we scale the box back to original
+// coordinates so the final crop is still cut from the high-res source.
+async function faceBox(buf, meta) {
   try {
-    const { data, info } = await sharp(buf).removeAlpha().raw().toBuffer({ resolveWithObject: true })
+    const MAXD = 1000
+    const scale = Math.min(1, MAXD / Math.max(meta.width || 1, meta.height || 1))
+    const dw = Math.max(1, Math.round((meta.width || 1) * scale)), dh = Math.max(1, Math.round((meta.height || 1) * scale))
+    const { data, info } = await sharp(buf).resize(dw, dh, { fit: "fill" }).removeAlpha().raw().toBuffer({ resolveWithObject: true })
     const t = tf.tensor3d(new Uint8Array(data), [info.height, info.width, 3])
     const d = await faceapi.detectAllFaces(t, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.25 }))
     t.dispose()
-    return d.length ? d.sort((a, b) => b.box.area - a.box.area)[0].box : null
+    if (!d.length) return null
+    const b = d.sort((a, b) => b.box.area - a.box.area)[0].box
+    const inv = 1 / scale
+    return { x: b.x * inv, y: b.y * inv, width: b.width * inv, height: b.height * inv }
   } catch { return null }
 }
 
@@ -213,7 +224,7 @@ if (!DRY) {
       //     shoulders/torso, reads like a trading card.
       // X is centred on the face; clamped to the source (narrow sources like an
       // 880px photo can't pull back further). No face found → smartcrop fallback.
-      const box = await faceBox(buf)
+      const box = await faceBox(buf, meta)
       const faceRegion = (scale, head) => {
         const S = Math.min(Math.round(box.height * scale), meta.width, meta.height)
         return {
