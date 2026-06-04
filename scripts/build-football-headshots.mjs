@@ -186,6 +186,9 @@ if (!DRY) {
       let webp
       try {
         const c = (await smartcrop.crop(buf, { width: 320, height: 320, minScale: 1.0, ruleOfThirds: false })).topCrop
+        // Nudge the crop window up ~7% (where the source allows) for a little
+        // headroom — the face sits slightly lower in the square, less top-of-head.
+        c.y = Math.max(0, c.y - Math.round(c.height * 0.07))
         webp = await sharp(buf).extract({ left: c.x, top: c.y, width: c.width, height: c.height }).resize(320, 320, { fit: "cover" }).webp({ quality: 82 }).toBuffer()
       } catch {
         webp = await sharp(buf).resize(320, 320, { fit: "cover", position: "attention" }).webp({ quality: 82 }).toBuffer()
