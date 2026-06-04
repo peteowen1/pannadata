@@ -14,6 +14,7 @@
 // /photo-credits page from headshot-credits.json. CC0/PD need none but are credited too.
 //
 // Deps (outside repo): npm i hyparquet csv-parse i18n-iso-countries sharp
+//   plus: npm i --legacy-peer-deps smartcrop-sharp  (it pins an older sharp peer)
 // Needs: football/player-bio.json on R2 (from build-football-bio.mjs); wrangler (R2 write).
 // Run: node build-football-headshots.mjs            (full backfill)
 //      node build-football-headshots.mjs --limit=40 (first N players, for testing)
@@ -23,6 +24,7 @@
 import sharp from 'sharp'
 import countries from 'i18n-iso-countries'
 import en from 'i18n-iso-countries/langs/en.json' with { type: 'json' }
+import smartcrop from 'smartcrop-sharp'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { writeFile, mkdir, rm } from 'node:fs/promises'
@@ -176,10 +178,18 @@ if (!DRY) {
       }
       if (!res || !res.ok) { miss++; return }
       if (+(res.headers.get("content-length") || 0) > 30 * 1024 * 1024) { miss++; return }
-      // Content-aware crop: bias toward the most salient region (usually the
-      // player/face) rather than blindly "top" — Commons photos are action shots,
-      // so the subject isn't always at the top.
-      const webp = await sharp(Buffer.from(await res.arrayBuffer())).resize(320, 320, { fit: "cover", position: sharp.strategy.attention }).webp({ quality: 82 }).toBuffer()
+      const buf = Buffer.from(await res.arrayBuffer())
+      // Content-aware crop centred on the subject. minScale:1 forces the LARGEST
+      // square (head-and-shoulders, not a zoomed face), X-centred on the player —
+      // Commons photos are action shots, so the subject isn't always centred.
+      // Falls back to a saliency crop if smartcrop can't analyse the image.
+      let webp
+      try {
+        const c = (await smartcrop.crop(buf, { width: 320, height: 320, minScale: 1.0, ruleOfThirds: false })).topCrop
+        webp = await sharp(buf).extract({ left: c.x, top: c.y, width: c.width, height: c.height }).resize(320, 320, { fit: "cover" }).webp({ quality: 82 }).toBuffer()
+      } catch {
+        webp = await sharp(buf).resize(320, 320, { fit: "cover", position: "attention" }).webp({ quality: 82 }).toBuffer()
+      }
       const fp = path.join(TMP, `${p.id}.webp`)
       await writeFile(fp, webp)
       await exec(WRANGLER, ["r2", "object", "put", `inthegame-data/football/headshots/${p.id}.webp`, "--file", fp, "--remote", "--content-type", "image/webp"], { shell: true, maxBuffer: 1 << 24 })

@@ -33,6 +33,7 @@ jobs:
         run: |
           npm install -g wrangler
           npm install hyparquet csv-parse i18n-iso-countries sharp
+          npm install --legacy-peer-deps smartcrop-sharp   # pins an older sharp peer
 
       - name: Download reep register (CC0)
         run: curl -sL -o scripts/people.csv https://raw.githubusercontent.com/withqwerty/reep/main/data/people.csv
