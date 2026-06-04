@@ -25,13 +25,37 @@ import sharp from 'sharp'
 import countries from 'i18n-iso-countries'
 import en from 'i18n-iso-countries/langs/en.json' with { type: 'json' }
 import smartcrop from 'smartcrop-sharp'
+import * as tf from '@tensorflow/tfjs'
+import { setWasmPaths } from '@tensorflow/tfjs-backend-wasm'
+import * as faceapi from '@vladmandic/face-api/dist/face-api.node-wasm.js'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { writeFile, mkdir, rm } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
 countries.registerLocale(en)
 const exec = promisify(execFile)
+
+// ── Face detection (wasm backend — no native binary, runs in CI + locally) ──
+const require = createRequire(import.meta.url)
+const faceApiDir = path.dirname(require.resolve('@vladmandic/face-api/package.json'))
+const wasmDir = path.dirname(require.resolve('@tensorflow/tfjs-backend-wasm/package.json'))
+async function initFace() {
+  setWasmPaths(path.join(wasmDir, 'dist') + path.sep)
+  await tf.setBackend('wasm'); await tf.ready()
+  await faceapi.nets.ssdMobilenetv1.loadFromDisk(path.join(faceApiDir, 'model'))
+  console.log('face model loaded · backend', tf.getBackend())
+}
+async function faceBox(buf) {
+  try {
+    const { data, info } = await sharp(buf).removeAlpha().raw().toBuffer({ resolveWithObject: true })
+    const t = tf.tensor3d(new Uint8Array(data), [info.height, info.width, 3])
+    const d = await faceapi.detectAllFaces(t, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.25 }))
+    t.dispose()
+    return d.length ? d.sort((a, b) => b.box.area - a.box.area)[0].box : null
+  } catch { return null }
+}
 
 const R2_PUB = "https://pub-ee4bf5b599a047f9ac2b9facc1587008.r2.dev/football/"
 const UA = { "User-Agent": "inthegame-blog/1.0 (https://inthegame.blog; fptpost@gmail.com)" }
@@ -158,12 +182,13 @@ if (!DRY) {
   let skipped = 0
   async function one(p) {
     try {
-      // Already on R2 from an earlier run? Keep its credit, don't re-fetch.
-      // (--reprocess forces a re-fetch + re-crop of everything, e.g. after a
-      // crop-strategy change.)
+      // Skip if BOTH variants already on R2 (resumable). --reprocess forces redo.
       if (!REPROCESS) {
-        const head = await fetch(`${R2_PUB}headshots/${p.id}.webp`, { method: "HEAD" }).catch(() => null)
-        if (head && head.ok) { credits[p.id] = p.credit; skipped++; ok++; return }
+        const [h1, h2] = await Promise.all([
+          fetch(`${R2_PUB}headshots/${p.id}.webp`, { method: "HEAD" }).catch(() => null),
+          fetch(`${R2_PUB}headshots-card/${p.id}.webp`, { method: "HEAD" }).catch(() => null),
+        ])
+        if (h1 && h1.ok && h2 && h2.ok) { credits[p.id] = p.credit; skipped++; ok++; return }
       }
 
       // Gentle, rate-gated fetch of the ORIGINAL (always served), with 429 respect.
@@ -179,29 +204,46 @@ if (!DRY) {
       if (!res || !res.ok) { miss++; return }
       if (+(res.headers.get("content-length") || 0) > 30 * 1024 * 1024) { miss++; return }
       const buf = Buffer.from(await res.arrayBuffer())
-      // Content-aware crop centred on the subject. minScale:1 forces the LARGEST
-      // square (head-and-shoulders, not a zoomed face), X-centred on the player —
-      // Commons photos are action shots, so the subject isn't always centred.
-      // Falls back to a saliency crop if smartcrop can't analyse the image.
-      let webp
-      try {
-        const c = (await smartcrop.crop(buf, { width: 320, height: 320, minScale: 1.0, ruleOfThirds: false })).topCrop
-        // Nudge the crop window up ~7% (where the source allows) for a little
-        // headroom — the face sits slightly lower in the square, less top-of-head.
-        c.y = Math.max(0, c.y - Math.round(c.height * 0.07))
-        webp = await sharp(buf).extract({ left: c.x, top: c.y, width: c.width, height: c.height }).resize(320, 320, { fit: "cover" }).webp({ quality: 82 }).toBuffer()
-      } catch {
-        webp = await sharp(buf).resize(320, 320, { fit: "cover", position: "attention" }).webp({ quality: 82 }).toBuffer()
+      const meta = await sharp(buf).metadata()
+
+      // Both variants are built from the detected FACE BOX, which guarantees the
+      // head is never clipped (smartcrop framed some players too low and cut heads):
+      //   • CIRCLE avatar — tight: crop = 2.6× face height, ~0.55× headroom above.
+      //   • CARD photo    — looser: crop = 3.9× face height, ~0.75× headroom → more
+      //     shoulders/torso, reads like a trading card.
+      // X is centred on the face; clamped to the source (narrow sources like an
+      // 880px photo can't pull back further). No face found → smartcrop fallback.
+      const box = await faceBox(buf)
+      const faceRegion = (scale, head) => {
+        const S = Math.min(Math.round(box.height * scale), meta.width, meta.height)
+        return {
+          left: Math.max(0, Math.min(meta.width - S, Math.round(box.x + box.width / 2 - S / 2))),
+          top: Math.max(0, Math.min(meta.height - S, Math.round(box.y - box.height * head))),
+          width: S, height: S
+        }
       }
-      const fp = path.join(TMP, `${p.id}.webp`)
-      await writeFile(fp, webp)
-      await exec(WRANGLER, ["r2", "object", "put", `inthegame-data/football/headshots/${p.id}.webp`, "--file", fp, "--remote", "--content-type", "image/webp"], { shell: true, maxBuffer: 1 << 24 })
-      await rm(fp).catch(() => {})
+      let circleRegion, cardRegion
+      if (box) {
+        circleRegion = faceRegion(2.6, 0.55)
+        cardRegion = faceRegion(3.9, 0.75)
+      } else {
+        const c = (await smartcrop.crop(buf, { width: 320, height: 320, minScale: 1.0 })).topCrop
+        circleRegion = cardRegion = { left: c.x, top: c.y, width: c.width, height: c.height }
+      }
+      const circleWebp = await sharp(buf).extract(circleRegion).resize(320, 320, { fit: "cover" }).webp({ quality: 82 }).toBuffer()
+      const cardWebp = await sharp(buf).extract(cardRegion).resize(320, 320, { fit: "cover" }).webp({ quality: 82 }).toBuffer()
+
+      const fp1 = path.join(TMP, `${p.id}.webp`), fp2 = path.join(TMP, `${p.id}-card.webp`)
+      await writeFile(fp1, circleWebp); await writeFile(fp2, cardWebp)
+      await exec(WRANGLER, ["r2", "object", "put", `inthegame-data/football/headshots/${p.id}.webp`, "--file", fp1, "--remote", "--content-type", "image/webp"], { shell: true, maxBuffer: 1 << 24 })
+      await exec(WRANGLER, ["r2", "object", "put", `inthegame-data/football/headshots-card/${p.id}.webp`, "--file", fp2, "--remote", "--content-type", "image/webp"], { shell: true, maxBuffer: 1 << 24 })
+      await rm(fp1).catch(() => {}); await rm(fp2).catch(() => {})
       credits[p.id] = p.credit
       ok++
     } catch (e) { err++; if (err <= 4) console.error(`err ${p.id}: ${String(e.message).slice(0, 120)}`) }
     finally { if (++done % 100 === 0) console.log(`  ${done}/${toFetch.length} ok=${ok}(skip ${skipped}) miss=${miss} err=${err}`) }
   }
+  await initFace()
   const CONC = 3, q = toFetch.slice()   // 3 workers, but Commons fetches are gated to ~2/s globally
   await Promise.all(Array.from({ length: CONC }, async () => { while (q.length) await one(q.shift()) }))
 
