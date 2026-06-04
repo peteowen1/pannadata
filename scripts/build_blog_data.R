@@ -135,7 +135,13 @@ panna_ratings <- enriched |>
   ) |>
   ungroup() |>
   select(
-    panna_rank, player_name, team, league, position,
+    panna_rank,
+    # Opta player_id (UUID) — carried through so the blog can join players to
+    # external registers (e.g. reep → Wikidata) by a stable ID instead of
+    # fuzzy name matching, and route profiles by #id= rather than #name=.
+    # any_of() so the build still works if a future source lacks it.
+    any_of("player_id"),
+    player_name, team, league, position,
     panna = xrapm, offense, defense, spm_overall,
     total_minutes,
     panna_percentile,
