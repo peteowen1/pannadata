@@ -118,6 +118,7 @@ inthegame-blog reads from R2
 - `BLOG_DATA_SETUP.md` — Blog delivery chain (R2 bucket setup)
 - `scripts/opta/all_competitions.json` — Opta competition config
 - `scripts/opta/opta_entitlement_catalog.csv` — **every competition + season our Opta outlet can actually fetch** (2,232 comps / 25,356 comp-seasons), one row per (competition, season) with `competition_id`, `season_id`, dates, and `our_key` (our short code if scraped). Regenerate with `python scripts/opta/build_entitlement_catalog.py` (no API key needed — uses the outlet token). Use this to look up correct Opta competition/season IDs before adding a league. NOTE: the IDs in `opta_scraper.py::COMPETITIONS` for MLS/Liga_MX/Argentine_Liga_Profesional/Saudi_League were wrong/stale (404'd) until 2026-06-05 — always validate a new comp's ID against this catalog, not by guessing.
+- `league_strength.csv` — **consolidated league-strength reference** (committed; also on `opta-latest` as `league_strength.{parquet,csv}`). One ranked row per league: club EPV offset vs UCL group stage (`offset_tot`; higher = stronger, 0 = UCL), `confederation`, and confederation Elo prior. Built by `panna/debug/build_league_strength.R` (wraps `compute_league_offsets()` + confederation map). Covers the ~16 EPV-rated leagues only — leagues without EPV `game_logs` (BEL/AUS/TUN/CAF, and the new MLS/Liga_MX/Argentina/Saudi until rated) are absent. Small-n leagues (SCO, ENG2) have noisy offsets — treat as soft.
 - `scripts/opta/README.md` — Opta scraper documentation
 
 ## Gotchas
