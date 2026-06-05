@@ -334,16 +334,16 @@ class OptaScraper:
         "Liga_MX": "2hsidwomhjsaaytdy9u5niyi4",
         "Brazilian_Serie_A": "scf9p4y91yjvqvg5jndxzhxj",
         "Argentine_Liga_Profesional": "581t4mywybx21wcpmpykhyzr3",
-        "CONMEBOL_Libertadores": "86rw2b2ml7rydq74bng6pzwbo",
-        "Copa_do_Brasil": "16bnz0wt7mzzrn92p2pza2k9n",
+        "CONMEBOL_Libertadores": "59tpnfrwnvhnhzmnvfyug68hj",
+        "Copa_do_Brasil": "er5745q30wnr8jv9nr863omzg",
 
         # ===========================================
         # TIER 8: African Leagues & Competitions
         # ===========================================
         "CAF_CL": "cse5oqqt2pzfcy8uz6yz3tkbj",
         "CAF_Confederation_Cup": "bx57cmq1edfq53ckfk791supi",
-        "Egyptian_Premier_League": "12ixvd3k8vfqf10qbfcqitgzo",
-        "South_African_PSL": "xvddvdgd2g40p82e3ztylmrqn",
+        "Egyptian_Premier_League": "8k1xcsyvxapl4jlsluh3eomre",
+        "South_African_PSL": "yv73ms6v1995b5wny16jcfi3",
         "Botola_Pro": "1eruend45vd20g9hbrpiggs5u",
         "Moroccan_Cup": "d1d1wnseo0ao8ojqtpxbirh2b",
         "Tunisian_Ligue_1": "f4jc2cc5nq7flaoptpi5ua4k4",
@@ -353,14 +353,14 @@ class OptaScraper:
         # ===========================================
         # TIER 9: Asian Leagues & Cups
         # ===========================================
-        "J1_League": "ctms5njkdpwkl1lnopx1d0lxp",
-        "K_League_1": "xoxb38hl9k1l9e0yw6xm8qe",
+        "J1_League": "8o5tv5viv4hy1qg9jp94k7ayb",
+        "K_League_1": "avs3xposm3t9x1x2vzsoxzcbu",
         "Saudi_League": "ea0h6cf3bhl698hkxhpulh2zz",
         "UAE_Pro_League": "f39uq10c8xhg5e6rwwcf6lhgc",
         "UAE_League_Cup": "89v3ukjpui1gashsz3i1vphfa",
         "UAE_Presidents_Cup": "2smaq6vx7pgwmkfkn15kp7ib",
         "Gulf_Champions_League": "4gyhjrol8ycf1taamo21fvfh2",
-        "AFC_Champions_League_Elite": "3v16kc92h6xfv10c2b19f5owj",
+        "AFC_Champions_League_Elite": "1fedahp0rws09tj451onten8r",
         "A_League": "xwnjb1az11zffwty3m6vn8y6",
 
         # ===========================================
