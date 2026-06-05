@@ -63,35 +63,43 @@ three R2 parquets and grouping by `league`.
   contains far more leagues (A-League, Ekstraklasa, CAF_CL…). So `ratings`/the `source/*`
   files are built from a **broader** league set than `BLOG_COMPS`. Worth confirming which
   config actually governs each output.
-- **`player-skills.parquet`'s build was NOT found anywhere in pannaverse** — a repo-wide
-  grep for `player-skills` / `player_skills` / `goals_p90` returned nothing in `.R`/`.yml`.
-  So it's produced by something outside what's searchable here (the `panna` package? an
-  Opta box-score script? a `source/*` parquet copied straight through?).
+- **`player-skills.parquet` is built in `.github/workflows/build-blog-data.yml`** (step
+  "Download and filter player skills", ~line 250): it `gh release download opta-latest -p
+  opta_skills.parquet`, then `read_parquet → filter(season_end_year == max(...)) →
+  write_parquet("blog/player-skills.parquet")`. **The blog step only slices to the latest
+  season — it applies NO league/minutes filter.** So whatever coverage `opta_skills.parquet`
+  has *is* the ceiling.
+- **`opta_skills.parquet` is the real source** — `DATA_DICTIONARY.md` / `README.md` describe
+  it as *"Consolidated skills (from panna pipeline)"*, published to the `opta-latest` GitHub
+  release. So the 66% cap is set **upstream in the `panna` package's Opta box-score
+  consolidation**, not in pannadata. The trail leads out of this repo into `panna`.
 
 ---
 
-## Questions to answer (the actual investigation)
+## Questions to answer (the actual investigation — now in `panna`)
 
-1. **Where is `player-skills.parquet` built and uploaded to R2?** Which script/workflow,
-   and from which source feed (Opta box-score? fbref? understat?). Start from the
-   `build-blog-data.yml` workflow and whatever produces the `source/*` skill parquet.
-2. **Why 66% when `ratings` is ~100% and `game-logs` is 83%?** Specifically, is coverage
-   limited by:
-   - a **league filter** (only the Opta-licensed comps, vs. the broader set ratings uses)?
-   - a **minutes / appearances threshold** dropping fringe players?
-   - the box-score feed simply **not existing** for some comps (A-League, CAF_CL, the
-     "unknown league" bucket)?
-3. **Can it be raised toward `game-logs` (83%) or `ratings` (≈100%)?** e.g. by ingesting
-   box-score counts for more competitions, loosening a minutes threshold, or back-filling
-   from fbref/understat where Opta is absent.
+1. **In the `panna` pipeline, how is `opta_skills.parquet` built, and which competitions
+   does it cover?** It's the consolidated Opta box-score per-90 feed. Find where it's
+   assembled and what governs the league set.
+2. **Why 66% when `ratings`/`game-logs` reach 83–100%?** Opta box-score (detailed event)
+   data is licensed per competition — so the likely cause is **Opta simply doesn't cover
+   A-League / CAF_CL / the "unknown league" bucket, and covers the big leagues only
+   partially** (squad/minutes cutoffs). Confirm whether it's a hard licensing boundary vs.
+   a filter we control (a minutes threshold, or comps we *could* ingest but don't).
+   - Note: `ratings`/`game-logs` reach more players because the Panna **model** runs on a
+     broader/lighter feed; the raw box-score counts need full Opta event data, which is narrower.
+3. **Can box-score coverage be raised?** e.g. ingest more Opta comps into `opta_skills`,
+   loosen a minutes cutoff, or back-fill goals/assists from **fbref/understat** (both already
+   scraped in this repo — see the disabled `daily-fbref-scrape.yml` / `daily-understat-scrape.yml`)
+   for competitions Opta doesn't cover.
 
 ## What "done" looks like
 
-A short answer here (or in `DATA_DICTIONARY.md`) stating: where `player-skills.parquet`
-comes from, the exact filter(s) that cap it at 66%, and whether raising coverage is
-feasible/worthwhile. If it's feasible, a follow-up to extend the box-score stat build so
-the blog's card game can include more leagues. If 66% is a hard Opta-licensing ceiling,
-say so — then the blog will just keep filtering games to covered players (already does).
+A short answer here (or in `DATA_DICTIONARY.md`) stating: how `opta_skills.parquet` is built
+in `panna`, the exact reason coverage caps at 66% (Opta licensing vs. a filter we set), and
+whether raising it is feasible (e.g. fbref/understat back-fill). If 66% is a hard Opta
+ceiling, say so — the blog already filters games to covered players, so nothing breaks
+meanwhile; this is purely an upside thread.
 
 ---
 
