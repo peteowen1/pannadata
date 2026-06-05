@@ -82,6 +82,13 @@ COMPETITION_METADATA = {
     "Club_World_Cup": {"name": "FIFA Club World Cup", "country": "International", "type": "cup", "tier": 3},
     "FIFA_Intercontinental_Cup": {"name": "FIFA Intercontinental Cup", "country": "International", "type": "cup", "tier": 3},
 
+    # Americas / Asia Club Competitions (cross-league connectivity bridges)
+    "CONMEBOL_Libertadores": {"name": "CONMEBOL Libertadores", "country": "South America", "type": "cup", "tier": 2},
+    "CONMEBOL_Sudamericana": {"name": "CONMEBOL Sudamericana", "country": "South America", "type": "cup", "tier": 2},
+    "Concacaf_Champions_Cup": {"name": "Concacaf Champions Cup", "country": "N/C America", "type": "cup", "tier": 2},
+    "Leagues_Cup": {"name": "Leagues Cup", "country": "N/C America", "type": "cup", "tier": 2},
+    "AFC_Champions_League_Elite": {"name": "AFC Champions League Elite", "country": "Asia", "type": "cup", "tier": 2},
+
     # African Club Competitions
     "CAF_CL": {"name": "CAF Champions League", "country": "Africa", "type": "cup", "tier": 3},
     "CAF_Confederation_Cup": {"name": "CAF Confederation Cup", "country": "Africa", "type": "cup", "tier": 4},

@@ -7,7 +7,9 @@ import json
 from pathlib import Path
 from opta_scraper import OptaScraper
 
-NEW_LEAGUES = ["MLS", "Liga_MX", "Argentine_Liga_Profesional", "Saudi_League"]
+NEW_LEAGUES = ["CONMEBOL_Libertadores", "CONMEBOL_Sudamericana",
+               "Concacaf_Champions_Cup", "Leagues_Cup",
+               "AFC_Champions_League_Elite", "Club_World_Cup"]
 
 def main():
     script_dir = Path(__file__).parent

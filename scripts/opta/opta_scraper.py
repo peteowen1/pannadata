@@ -335,7 +335,11 @@ class OptaScraper:
         "Brazilian_Serie_A": "scf9p4y91yjvqvg5jndxzhxj",
         "Argentine_Liga_Profesional": "581t4mywybx21wcpmpykhyzr3",
         "CONMEBOL_Libertadores": "59tpnfrwnvhnhzmnvfyug68hj",
+        "CONMEBOL_Sudamericana": "32n2r9bl6x90psj0wa7bfs6vq",
         "Copa_do_Brasil": "er5745q30wnr8jv9nr863omzg",
+        # Cross-league connectivity bridges (MLS/Liga MX <-> Concacaf <-> UEFA)
+        "Leagues_Cup": "9fuwphq8kvugrlc3ckm7k8wes",
+        "Concacaf_Champions_Cup": "e6rl4hongahbihxd3tpudespd",
 
         # ===========================================
         # TIER 8: African Leagues & Competitions
