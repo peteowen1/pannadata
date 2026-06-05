@@ -330,10 +330,10 @@ class OptaScraper:
         # ===========================================
         # TIER 7: Americas Top Leagues & Cups
         # ===========================================
-        "MLS": "287tckirbfj9nb2ar2k9r60vn",
-        "Liga_MX": "5vwz4siguym0udhj3cr4l2sz3",
+        "MLS": "287tckirbfj9nb8ar2k9r60vn",
+        "Liga_MX": "2hsidwomhjsaaytdy9u5niyi4",
         "Brazilian_Serie_A": "scf9p4y91yjvqvg5jndxzhxj",
-        "Argentine_Liga_Profesional": "ecpu6zdp8s0l2zwrx0zprpqzl",
+        "Argentine_Liga_Profesional": "581t4mywybx21wcpmpykhyzr3",
         "CONMEBOL_Libertadores": "86rw2b2ml7rydq74bng6pzwbo",
         "Copa_do_Brasil": "16bnz0wt7mzzrn92p2pza2k9n",
 
@@ -355,7 +355,7 @@ class OptaScraper:
         # ===========================================
         "J1_League": "ctms5njkdpwkl1lnopx1d0lxp",
         "K_League_1": "xoxb38hl9k1l9e0yw6xm8qe",
-        "Saudi_League": "blmkbxq7l6dufmuzqv831y6w9",
+        "Saudi_League": "ea0h6cf3bhl698hkxhpulh2zz",
         "UAE_Pro_League": "f39uq10c8xhg5e6rwwcf6lhgc",
         "UAE_League_Cup": "89v3ukjpui1gashsz3i1vphfa",
         "UAE_Presidents_Cup": "2smaq6vx7pgwmkfkn15kp7ib",

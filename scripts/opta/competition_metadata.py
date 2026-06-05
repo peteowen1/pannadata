@@ -64,6 +64,10 @@ COMPETITION_METADATA = {
     # Oceania / Americas / Middle East
     "A_League": {"name": "A-League Men", "country": "Australia", "type": "league", "tier": 3},
     "Brazilian_Serie_A": {"name": "Brazilian Serie A", "country": "Brazil", "type": "league", "tier": 2},
+    "MLS": {"name": "Major League Soccer", "country": "USA", "type": "league", "tier": 2},
+    "Liga_MX": {"name": "Liga MX", "country": "Mexico", "type": "league", "tier": 2},
+    "Argentine_Liga_Profesional": {"name": "Liga Profesional Argentina", "country": "Argentina", "type": "league", "tier": 2},
+    "Saudi_League": {"name": "Saudi Pro League", "country": "Saudi Arabia", "type": "league", "tier": 2},
     "UAE_Pro_League": {"name": "UAE Pro League", "country": "UAE", "type": "league", "tier": 4},
     "NZ_National_League": {"name": "NZ National League", "country": "New Zealand", "type": "league", "tier": 4},
 

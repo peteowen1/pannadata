@@ -117,6 +117,7 @@ inthegame-blog reads from R2
 - `DATA_DICTIONARY.md` — Column definitions for all data sources
 - `BLOG_DATA_SETUP.md` — Blog delivery chain (R2 bucket setup)
 - `scripts/opta/all_competitions.json` — Opta competition config
+- `scripts/opta/opta_entitlement_catalog.csv` — **every competition + season our Opta outlet can actually fetch** (2,232 comps / 25,356 comp-seasons), one row per (competition, season) with `competition_id`, `season_id`, dates, and `our_key` (our short code if scraped). Regenerate with `python scripts/opta/build_entitlement_catalog.py` (no API key needed — uses the outlet token). Use this to look up correct Opta competition/season IDs before adding a league. NOTE: the IDs in `opta_scraper.py::COMPETITIONS` for MLS/Liga_MX/Argentine_Liga_Profesional/Saudi_League were wrong/stale (404'd) until 2026-06-05 — always validate a new comp's ID against this catalog, not by guessing.
 - `scripts/opta/README.md` — Opta scraper documentation
 
 ## Gotchas
