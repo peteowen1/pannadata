@@ -78,6 +78,7 @@ const WRANGLER = process.env.WRANGLER_BIN ||
 const TMP = path.join(os.tmpdir(), "fbhead-img")
 const DRY = process.argv.includes("--dry")
 const REPROCESS = process.argv.includes("--reprocess")   // re-fetch+re-crop even if already on R2
+const REFACE = process.argv.includes("--reface")         // re-crop ONLY players whose current card crop has no detectable face (the headless smartcrop-fallback cases)
 const LIMIT = (process.argv.find(a => a.startsWith("--limit=")) || "").split("=")[1]
 await mkdir(TMP, { recursive: true })
 
@@ -252,13 +253,24 @@ if (!DRY) {
   let skipped = 0
   async function one(p) {
     try {
-      // Skip if BOTH variants already on R2 (resumable). --reprocess forces redo.
-      if (!REPROCESS) {
+      // Skip if BOTH variants already on R2 (resumable). --reprocess/--reface redo.
+      if (!REPROCESS && !REFACE) {
         const [h1, h2] = await Promise.all([
           fetch(`${R2_PUB}headshots/${p.id}.webp`, { method: "HEAD" }).catch(() => null),
           fetch(`${R2_PUB}headshots-card/${p.id}.webp`, { method: "HEAD" }).catch(() => null),
         ])
         if (h1 && h1.ok && h2 && h2.ok) { credits[p.id] = p.credit; skipped++; ok++; return }
+      }
+      // --reface: cheap targeted fix — detect a face in the EXISTING card crop on
+      // R2 (small, our bucket, no Wikimedia load). If it already shows a face,
+      // leave it; only the headless fallback crops fall through to a re-crop.
+      if (REFACE) {
+        const ex = await fetch(`${R2_PUB}headshots-card/${p.id}.webp`).then(r => r.ok ? r.arrayBuffer() : null).catch(() => null)
+        if (ex) {
+          const exBuf = Buffer.from(ex)
+          const exBox = await faceBox(exBuf, await sharp(exBuf).metadata())
+          if (exBox) { credits[p.id] = p.credit; skipped++; ok++; return }   // existing crop already shows a face
+        }
       }
 
       // Gentle, rate-gated fetch of the ORIGINAL (always served), with 429 respect.
@@ -297,8 +309,22 @@ if (!DRY) {
         circleRegion = faceRegion(2.6, 0.55)
         cardRegion = faceRegion(3.9, 0.75)
       } else {
-        const c = (await smartcrop.crop(buf, { width: 320, height: 320, minScale: 1.0 })).topCrop
-        circleRegion = cardRegion = { left: c.x, top: c.y, width: c.width, height: c.height }
+        // No face detected → a head sits near the TOP of a player photo far more
+        // reliably than smartcrop's saliency, which locks onto the kit/body and
+        // produced headless "torso + legs" crops (e.g. G. Ekpolo). Anchor a square
+        // at the top edge, horizontally centred: tighter for the circle, full
+        // min-dimension square for the card.
+        const S = Math.min(meta.width, meta.height)
+        const topSquare = (frac, topFrac) => {
+          const s = Math.max(1, Math.round(S * frac))
+          return {
+            left: Math.max(0, Math.min(meta.width - s, Math.round(meta.width / 2 - s / 2))),
+            top: Math.max(0, Math.min(meta.height - s, Math.round(meta.height * topFrac))),
+            width: s, height: s
+          }
+        }
+        circleRegion = topSquare(0.72, 0.02)
+        cardRegion = topSquare(1.0, 0.0)
       }
       const circleWebp = await sharp(buf).extract(circleRegion).resize(320, 320, { fit: "cover" }).webp({ quality: 82 }).toBuffer()
       const cardWebp = await sharp(buf).extract(cardRegion).resize(320, 320, { fit: "cover" }).webp({ quality: 82 }).toBuffer()
