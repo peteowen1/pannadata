@@ -93,6 +93,97 @@ three R2 parquets and grouping by `league`.
    scraped in this repo — see the disabled `daily-fbref-scrape.yml` / `daily-understat-scrape.yml`)
    for competitions Opta doesn't cover.
 
+---
+
+## ✅ ANSWER (investigated in `panna`, 2026-06-05)
+
+### 1. Where & how `opta_skills.parquet` is built
+
+It's the output of the **estimated-skills pipeline** in the `panna` package
+(`panna/data-raw/estimated-skills/`), NOT pannadata:
+
+| Step | Script | What it does |
+|---|---|---|
+| 01 | `01_compute_match_stats.R` | Loads Opta **box-score** `player_stats` per league-season → per-match `_p90` rates (`compute_match_level_opta_stats()`). Source feed = `opta_player_stats.parquet` (via `load_opta_stats()` / RAPM cache `cache-opta/02_processed_data.rds`). |
+| 02 | `02_estimate_skills.R` | `aggregate_skills_for_spm()` → one row per **player-season**, Bayesian decay-weighted skill estimates + the `_p90` counts. |
+| 08 | `08_export_skills.R` | `write_parquet()` → `opta_skills.parquet`, `piggyback::pb_upload()` to the **`opta-latest`** release. |
+
+The blog step in `build-blog-data.yml` then just downloads it and slices to the
+latest season — confirmed: **no league/minutes filter downstream**, so the cap is
+entirely upstream in steps 01/02.
+
+### 2. What caps it at 66% — TWO compounding causes (both are filters WE control, NOT Opta licensing)
+
+**CAP 1 — the league list (the big chunk).** The skills pipeline's `leagues`
+vector is **15 comps**; the RAPM/ratings pipeline's is **20**. The 5-comp gap is
+exactly the whole-competition zeros:
+
+| Pipeline | `leagues` vector |
+|---|---|
+| **RAPM / `ratings.parquet`** (`run_pipeline_opta.R`) | ENG ESP GER ITA FRA NED POR TUR ENG2 SCO **BEL BRA AUS TUN CAFCL** UCL UEL UECL WC EURO |
+| **Skills / `opta_skills.parquet`** (`run_skills_pipeline.R` + `01_compute_match_stats.R`) | ENG ESP GER ITA FRA NED POR TUR ENG2 SCO · · · · · UCL UEL UECL WC EURO |
+
+Missing from skills = **BEL, BRA, AUS, TUN, CAFCL**. Maps (via `opta_loaders.R`
+league codes) to: A_League (AUS) **0/221**, CAF_CL (CAFCL) **0/103**, Brazilian_Serie_A
+(BRA, not in the blog breakdown but also 0), Tunisian_Ligue_1 (TUN), and
+Belgian_First_Division (BEL) **40/361** — the 40 Belgians who score are the ones who
+*also* appeared in UCL/UEL/UECL (which IS covered), so they leak in via the European
+feed. The `"?" 0/457` unknown bucket and partial `Conference_League` are the same
+shape: players whose only/primary competition isn't in the 15-list.
+
+**This is NOT an Opta licensing boundary.** Proof: the **SPM half of the RAPM
+pipeline already consumes Opta box-score `player_stats` for BEL/BRA/AUS/TUN/CAFCL**
+— that's literally how those players get a `ratings.parquet` row. So
+`opta_player_stats.parquet` *contains* the box-score counts for them; the skills
+pipeline simply never reads those leagues. (The doc's hypothesis that "the model
+runs on a broader/lighter feed" is half-right — the model pipeline runs on a
+broader *league list*, but it's the **same box-score feed**, just more leagues.)
+
+**CAP 2 — per-season minutes gate (the trim inside covered leagues).** In
+`aggregate_skills_for_spm()` (`estimated_skills.R:885`): a player needs
+**≥ 450 minutes in that season** (`min_minutes = 450`) plus `min_weighted_90s = 5`;
+step 01 also drops player-matches under `min_match_minutes = 10`. Because the blog
+slices to the **current season only**, this is what leaves EPL at 399/433,
+Serie_A 414/467, etc. — fringe/low-minute squad players (cup cameos, late debuts,
+injured) fall under 450 current-season minutes. This gate is deliberate: tiny
+samples produce noisy per-90s, hence the Bayesian shrinkage + threshold.
+
+### 3. Can coverage be raised? — YES
+
+**Smallest, highest-leverage change (recovers the whole-competition zeros):**
+add `"BEL", "BRA", "AUS", "TUN", "CAFCL"` to the skills `leagues` vector so it
+matches the RAPM list, in **both**:
+- `panna/data-raw/estimated-skills/run_skills_pipeline.R` (lines 18-23)
+- `panna/data-raw/estimated-skills/01_compute_match_stats.R` (lines 18-23)
+
+then re-run the skills pipeline steps 01-08 to regenerate + re-upload
+`opta_skills.parquet`. **No new ingestion, no fbref/understat back-fill** — the
+Opta box-score data already exists. This alone recovers A_League (~221), CAF_CL
+(~103), Brazilian, Tunisian, and the bulk of Belgian — i.e. most of the 34% gap is
+these absent competitions, not the minutes trim.
+
+**Lower-leverage (optional):** loosen `min_minutes` / `min_weighted_90s` to pick up
+fringe players inside covered leagues — but at the cost of noisier per-90 skill
+estimates. Better left to the blog's own display filter than baked into the feed.
+
+**fbref/understat back-fill: not needed.** The gap is leagues Opta *already covers*
+but the skills pipeline omits. Back-fill would only matter for comps Opta genuinely
+lacks box-scores for — none of the current gaps are that.
+
+### ⚠ Operational gotcha found while tracing
+
+**No scheduled CI job rebuilds `opta_skills.parquet`.** The only workflow that
+sources `run_skills_pipeline.R` is `panna/.github/workflows/psr-weekly-snapshot.yml`,
+and it runs with `start_step <- "8b"` (PSR-weekly export only — skips step 08).
+`predictions-pipeline.yml` only *downloads/passes-through* the existing parquet.
+So steps 01-08 (which build + upload the file) run **manually/locally** — the file
+refreshes only on manual runs and the 15-league set is baked into whatever the last
+manual run used. After any leagues-vector edit, someone must run steps 01-08 by hand
+to regenerate and re-publish to `opta-latest`. (Worth filing as a follow-up: either
+fold steps 01-08 into a scheduled workflow or add a `start_step <- 1` skills job.)
+
+---
+
 ## What "done" looks like
 
 A short answer here (or in `DATA_DICTIONARY.md`) stating: how `opta_skills.parquet` is built
