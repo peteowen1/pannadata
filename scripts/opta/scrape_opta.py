@@ -701,6 +701,20 @@ def get_season_date_range(season_name: str) -> tuple:
         (f"{year_end}-04-01", f"{year_end}-05-31"),
         (f"{year_end}-06-01", f"{year_end}-07-31"),  # For summer tournaments like AFCON
     ]
+
+    # Calendar-year leagues (MLS, Brazilian Serie A, Argentine Primera, the
+    # Nordic leagues) play Feb-Dec WITHIN the named year, so the Aug(y-1)-Jul(y)
+    # window above clips their entire Aug-Dec back half (incl. play-offs/title
+    # run-in). For single-year season labels, extend coverage through Dec of the
+    # named year. Harmless for single-year tournaments (empty Aug-Dec windows).
+    # NOT applied to two-year European labels (would pull the NEXT season's
+    # Aug-Dec openers into this season's scrape).
+    if len(years) == 1:
+        date_ranges += [
+            (f"{year_end}-08-01", f"{year_end}-09-30"),
+            (f"{year_end}-10-01", f"{year_end}-11-30"),
+            (f"{year_end}-12-01", f"{year_end}-12-31"),
+        ]
     return date_ranges
 
 
