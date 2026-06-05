@@ -22,6 +22,7 @@
 // TODO: fold into pannadata build-blog-data.yml to refresh with the data.
 
 import sharp from 'sharp'
+import { asyncBufferFromUrl, parquetReadObjects } from 'hyparquet'
 import countries from 'i18n-iso-countries'
 import en from 'i18n-iso-countries/langs/en.json' with { type: 'json' }
 import smartcrop from 'smartcrop-sharp'
@@ -96,7 +97,15 @@ const natToIso = (label) => {
   const c = countries.getAlpha2Code(label, "en")
   return c ? [c.toLowerCase(), label] : [null, label]
 }
-const FREE = /^(cc0|cc[\- ]by|cc[\- ]by[\- ]sa|public domain|pd|pdm)/i
+// Free = reuse-allowed (attribution OK) licenses. The Commons {{Attribution}}
+// template, FAL and GFDL are all free but the old CC-only list skipped them —
+// that's why e.g. Raphinha / Kenan Yıldız (both "Attribution"-licensed) showed
+// as monograms. The NONFREE guard rejects NonCommercial / NoDerivs / fair-use
+// even when the short name starts "CC BY" (the old `^cc[\- ]by` prefix wrongly
+// accepted "CC BY-NC ..."). Free iff a free pattern matches AND no non-free one does.
+const FREE = /^(cc0|cc[\- ]by|public domain|pd\b|pdm|attribution|fal\b|free art|gfdl)/i
+const NONFREE = /(non[\- ]?commercial|no[\- ]?deriv|\bnc\b|\bnd\b|fair[\- ]?use|non[\- ]?free|all rights reserved)/i
+const isFreeLicense = (...names) => names.some(n => FREE.test(n || "")) && !names.some(n => NONFREE.test(n || ""))
 
 const chunk = (a, n) => { const o = []; for (let i = 0; i < a.length; i += n) o.push(a.slice(i, i + n)); return o }
 const wapi = async (host, params) => {
@@ -110,9 +119,10 @@ let players = Object.entries(bio).filter(([, b]) => /^Q\d+$/.test(b.wd || "")).m
 if (LIMIT) players = players.slice(0, +LIMIT)
 console.log(`players with a Wikidata QID: ${players.length}`)
 
-// ── 1) Wikidata: P18 (image) + P1532 (country for sport) ───────────
+// ── 1) Wikidata: P18 (image) + P1532 (nation) + P31 (is it even a human?) ──
 const byQid = new Map(players.map(p => [p.qid, p]))
 const countryQids = new Set()
+const claimIds = (c, prop) => (c[prop] || []).map(s => s.mainsnak?.datavalue?.value?.id).filter(Boolean)
 for (const batch of chunk([...byQid.keys()], 50)) {
   const j = await wapi("www.wikidata.org", { action: "wbgetentities", ids: batch.join("|"), props: "claims" })
   for (const qid of batch) {
@@ -120,11 +130,58 @@ for (const batch of chunk([...byQid.keys()], 50)) {
     const p = byQid.get(qid)
     p.img = c.P18?.[0]?.mainsnak?.datavalue?.value || null
     p.cfs = c.P1532?.[0]?.mainsnak?.datavalue?.value?.id || null
+    p.human = claimIds(c, "P31").includes("Q5")    // P31 (instance of) = Q5 (human)
     if (p.cfs) countryQids.add(p.cfs)
   }
 }
 const withImg = players.filter(p => p.img).length, withCfs = players.filter(p => p.cfs).length
 console.log(`P18 image: ${withImg} (${(100*withImg/players.length).toFixed(0)}%) | P1532 nation: ${withCfs} (${(100*withCfs/players.length).toFixed(0)}%)`)
+
+// ── 1b) Re-resolve mis-links: when our QID points at a NON-human entity (e.g.
+// reep linked "K. Mbappé" to the Wikidata item for the FC24 *video-game
+// character*, which has no photo), search Wikidata by the player's name and
+// adopt the real human footballer instead — but only with a strong guard:
+// matching date-of-birth, or "human + footballer occupation". This is gated on
+// !p.human so it stays a small set (the genuine mis-links), not every player
+// who merely lacks a photo. ── DOB from reep (bio.dob) is the anti-homonym key.
+let idToName = new Map()
+try {
+  const rr = await parquetReadObjects({ file: await asyncBufferFromUrl({ url: R2_PUB + "ratings.parquet?t=" + Math.floor(Math.random()*1e9) }) })
+  for (const r of rr) if (r.player_id && !idToName.has(r.player_id)) idToName.set(r.player_id, r.player_name || "")
+} catch (e) { console.warn("ratings load (for re-resolve names) failed:", e.message) }
+const FOOTBALLER = "Q937857"   // association football player (P106 occupation)
+async function reResolve(p) {
+  const name = idToName.get(p.id); if (!name) return null
+  const dob = p.bio && p.bio.dob ? p.bio.dob : null          // "YYYY-MM-DD"
+  const surname = name.replace(/^\p{Lu}\.\s*/u, "").trim()    // strip a leading "K. "
+  const terms = [...new Set([name, surname].filter(t => t && t.length > 1))]
+  const cand = new Set()
+  for (const t of terms) {
+    const s = await wapi("www.wikidata.org", { action: "wbsearchentities", search: t, language: "en", type: "item", limit: "7" })
+    for (const x of (s.search || [])) cand.add(x.id)
+  }
+  if (!cand.size) return null
+  const j = await wapi("www.wikidata.org", { action: "wbgetentities", ids: [...cand].slice(0, 25).join("|"), props: "claims" })
+  let footballerFallback = null
+  for (const qid of cand) {
+    const c = j.entities?.[qid]?.claims || {}
+    if (!claimIds(c, "P31").includes("Q5")) continue          // must be human
+    const img = c.P18?.[0]?.mainsnak?.datavalue?.value; if (!img) continue
+    const cdob = c.P569?.[0]?.mainsnak?.datavalue?.value?.time // "+YYYY-MM-DD..."
+    if (dob && cdob && cdob.slice(1, 11) === dob) return { qid, img }   // DOB match → certain
+    if (!footballerFallback && claimIds(c, "P106").includes(FOOTBALLER)) footballerFallback = { qid, img }
+  }
+  return footballerFallback   // only used if no DOB match found
+}
+const mislinks = players.filter(p => !p.human && !p.img)
+console.log(`non-human linked entities to re-resolve: ${mislinks.length}`)
+let relinked = 0
+for (const p of mislinks) {
+  const r = await reResolve(p)
+  if (r) { p.qid = r.qid; p.img = r.img; p.relinked = true; relinked++ }
+  await new Promise(res => setTimeout(res, 120))   // polite to the Wikidata API
+}
+console.log(`re-resolved mis-links: ${relinked}/${mislinks.length} non-human linked entities now point at a real footballer with a photo`)
 
 // ── 2) Resolve country-for-sport QIDs → label → ISO ────────────────
 const cfsIso = new Map()
@@ -150,7 +207,7 @@ for (const batch of chunk([...fileToPlayers.keys()], 40)) {
     const em = ii.extmetadata || {}
     const licShort = (em.LicenseShortName?.value || "").trim()
     const licCode = (em.License?.value || licShort).trim()
-    const isFree = FREE.test(licCode) || FREE.test(licShort)
+    const isFree = isFreeLicense(licCode, licShort)
     const targets = fileToPlayers.get("File:" + decodeURIComponent(pg.title.replace(/^File:/, ""))) || fileToPlayers.get(pg.title) || []
     for (const p of targets) {
       if (!isFree) { p.img = null; nonfree++; continue }
@@ -178,6 +235,8 @@ for (const p of players) {
     const [iso, nat] = cfsIso.get(p.cfs)
     if (nat) bioOut[p.id] = { ...bioOut[p.id], nat, ...(iso ? { iso } : {}) }
   }
+  // persist a re-resolved QID so future runs start from the corrected link
+  if (p.relinked) bioOut[p.id] = { ...bioOut[p.id], wd: p.qid }
   // credit is recorded only AFTER a successful upload (below), so credits.json
   // always matches what's actually on R2.
   if (p.orig && p.credit && validNumId.test(p.id)) toFetch.push(p)
