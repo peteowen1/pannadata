@@ -288,6 +288,8 @@ jobs:
                 player_name, minute = as.integer(minute), second = as.integer(coalesce(second, 0)),
                 x = round(x, 1), y = round(y, 1), type_id = as.integer(type_id),
                 is_goal = type_id == 16L,
+                situation = if ("situation" %in% names(shots)) as.character(situation) else NA_character_,
+                body_part = if ("body_part" %in% names(shots)) as.character(body_part) else NA_character_,
                 xg = if (has_xg) round(xg, 3) else NA_real_) |>
                 filter(!is.na(match_id)) |> arrange(match_id, minute, second)
               write_parquet(ms, "blog/match-shots.parquet")
