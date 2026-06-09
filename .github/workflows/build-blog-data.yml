@@ -37,6 +37,7 @@ jobs:
           gh release download ratings-data -p "seasonal_xrapm.parquet" -D source/ || { echo "ERROR: Failed to download seasonal_xrapm.parquet"; exit 1; }
           gh release download ratings-data -p "seasonal_spm.parquet" -D source/ || { echo "ERROR: Failed to download seasonal_spm.parquet"; exit 1; }
           gh release download ratings-data -p "player_metadata.parquet" -D source/ || { echo "ERROR: Failed to download player_metadata.parquet"; exit 1; }
+          gh release download ratings-data -p "career_panna.parquet" -D source/ || { echo "ERROR: Failed to download career_panna.parquet"; exit 1; }
 
           # Match predictions (pass through from blog-latest → renamed to predictions.parquet)
           gh release download blog-latest -p "match_predictions.parquet" -D blog/ || { echo "ERROR: Failed to download match_predictions.parquet from blog-latest"; exit 1; }
