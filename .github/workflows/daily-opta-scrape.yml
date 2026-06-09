@@ -38,7 +38,10 @@ on:
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    # 120 was tight for big historical backfills (per-match fetch is rate-limited
+    # ~17 min/league-season). 300 (under GH's 360-min hosted cap) lets one dispatch
+    # drain ~15 league-seasons instead of ~6. Daily cron finishes early regardless.
+    timeout-minutes: 300
 
     permissions:
       contents: write

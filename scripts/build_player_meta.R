@@ -1,6 +1,9 @@
 library(arrow)
 library(dplyr)
 
+# Shared blog league config (BLOG_COMP_EXCLUDE — comps we drop from blog outputs).
+source("scripts/league_config.R")
+
 # Support both local (data/opta/) and CI (source/) paths
 lu_path <- if (file.exists("source/opta_lineups.parquet")) {
   "source/opta_lineups.parquet"
@@ -44,6 +47,14 @@ player_names <- current |>
 player_meta <- main_team_league |>
   left_join(main_position, by = "player_id") |>
   left_join(player_names, by = "player_id")
+
+# Drop players whose MAIN competition is a non-blog comp (CAF_CL / Tunisian_Ligue_1).
+# Players who also feature in a covered domestic league keep that league (main_team_league
+# picks the most-frequent comp), so only pure CAF/Tunisian players are removed.
+n_excl <- sum(player_meta$league %in% BLOG_COMP_EXCLUDE, na.rm = TRUE)
+player_meta <- player_meta |> filter(!league %in% BLOG_COMP_EXCLUDE)
+cat("Excluded", n_excl, "players whose main comp is non-blog:",
+    paste(BLOG_COMP_EXCLUDE, collapse = ", "), "\n")
 
 cat("Player metadata:", nrow(player_meta), "players\n")
 cat("Position coverage:", round(100 * mean(!is.na(player_meta$position)), 1), "%\n")

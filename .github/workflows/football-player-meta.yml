@@ -1,0 +1,58 @@
+name: Football player meta (bio + headshots)
+
+# Refreshes football/player-bio.json (age + nationality flags) and two webp
+# crops per player on R2 — football/headshots/{id}.webp (face-tight circle) and
+# football/headshots-card/{id}.webp (looser, head-and-shoulders, for Top Trumps
+# cards). Sourced from the reep register (CC0) + Wikidata (P18 photo, P1532 FIFA
+# nation) + Wikimedia Commons (CC images). Crops are centred on the detected face
+# (tfjs WASM SSD model) so the head is never clipped.
+#
+# Weekly (transfers/new players are infrequent) + manual. The headshot step is
+# resumable — it HEAD-checks BOTH variants on R2 and skips players that already
+# have both, so a normal run only fetches genuinely-new players and is gentle on
+# Wikimedia (~2 req/s). Run with `--reprocess` manually to re-crop everything.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 5 * * 1"   # Mondays 05:00 UTC
+
+concurrency:
+  group: football-player-meta
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install deps + wrangler
+        run: |
+          npm install -g wrangler
+          npm install hyparquet csv-parse i18n-iso-countries sharp
+          npm install --legacy-peer-deps smartcrop-sharp   # pins an older sharp peer
+          # Face detection (crop centring): tfjs WASM backend — no native binary,
+          # so it builds on the CI runner. @vladmandic/face-api ships the SSD model.
+          npm install --legacy-peer-deps @tensorflow/tfjs @tensorflow/tfjs-backend-wasm @vladmandic/face-api
+
+      - name: Download reep register (CC0)
+        run: curl -sL -o scripts/people.csv https://raw.githubusercontent.com/withqwerty/reep/main/data/people.csv
+
+      - name: Build player-bio.json (reep → dob/nationality/flag) + upload to R2
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/build-football-bio.mjs
+
+      - name: Headshots + P1532 nationality (Wikidata/Commons) → R2
+        continue-on-error: true   # Wikimedia flakiness must not fail the whole job
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/build-football-headshots.mjs

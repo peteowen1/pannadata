@@ -1,0 +1,17 @@
+strength_rank,league,league_name,confederation,offset_off,offset_def,offset_tot,method,n_obs,conf_elo_prior
+1,EURO,UEFA Euros,UEFA,0.072,0.001,0.073,career-direct,55,1500
+2,WC,World Cup,World,0.069,-0.007,0.062,career-direct,19,
+3,UCL,UEFA Champions League,UEFA,0,0,0,anchor,,1500
+4,ENG,Premier League,UEFA,-0.006,-0.002,-0.009,same-season,574,1500
+5,GER,Bundesliga,UEFA,-0.02,-0.002,-0.021,same-season,565,1500
+6,ESP,La Liga,UEFA,-0.024,-0.001,-0.025,same-season,593,1500
+7,ENG2,Championship,UEFA,-0.03,-0.002,-0.031,career-direct,48,1500
+8,BRA,Brazilian Serie A,CONMEBOL,-0.043,0.004,-0.039,chained,201,1519
+9,UEL,UEFA Europa League,UEFA,-0.057,0.004,-0.054,career-direct,261,1500
+10,FRA,Ligue 1,UEFA,-0.057,0.002,-0.054,same-season,341,1500
+11,ITA,Serie A,UEFA,-0.058,-0.002,-0.06,same-season,520,1500
+12,POR,Primeira Liga,UEFA,-0.117,0.008,-0.109,same-season,287,1500
+13,TUR,Super Lig,UEFA,-0.125,0.011,-0.114,same-season,116,1500
+14,UECL,UEFA Conference League,UEFA,-0.137,0.007,-0.129,career-direct,13,1500
+15,NED,Eredivisie,UEFA,-0.119,-0.021,-0.14,same-season,175,1500
+16,SCO,Scottish Premiership,UEFA,-0.212,-0.024,-0.236,same-season,50,1500
