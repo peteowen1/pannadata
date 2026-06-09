@@ -1,6 +1,9 @@
 library(arrow)
 library(dplyr)
 
+# Shared blog league config (BLOG_COMP_EXCLUDE — comps we drop from blog outputs).
+source("scripts/league_config.R")
+
 # Player ratings - latest season xRAPM + SPM
 for (f in c("source/seasonal_xrapm.parquet", "source/seasonal_spm.parquet", "source/player_metadata.parquet")) {
   if (!file.exists(f)) stop("Required file not found: ", f, ". Check the 'Download source data' step.")
@@ -102,6 +105,7 @@ if (file.exists(gl_path)) {
 }
 
 n_before <- nrow(xrapm)
+n_excl <- 0L  # players dropped by BLOG_COMP_EXCLUDE (set below); keeps fan-out check honest
 # Select only columns from player_meta that aren't already in xrapm (plus the join key)
 meta_cols <- c(dedup_key, setdiff(names(player_meta), c(names(xrapm), "player_name")))
 enriched <- xrapm |>
@@ -110,6 +114,17 @@ enriched <- xrapm |>
 if (!is.null(gl_extra)) {
   enriched <- left_join(enriched, gl_extra, by = dedup_key)
 }
+
+# Drop non-blog competitions (CAF_CL / Tunisian_Ligue_1) BEFORE ranking, so
+# panna_rank + percentiles are computed over the blog pool only. `%in%` returns
+# FALSE for NA league, so internationals / unmapped (NA league) are kept.
+if ("league" %in% names(enriched)) {
+  n_excl <- sum(enriched$league %in% BLOG_COMP_EXCLUDE, na.rm = TRUE)
+  enriched <- enriched |> filter(!league %in% BLOG_COMP_EXCLUDE)
+  cat("Excluded", n_excl, "players in non-blog comps:",
+      paste(BLOG_COMP_EXCLUDE, collapse = ", "), "\n")
+}
+
 panna_ratings <- enriched |>
   mutate(
     panna_rank = as.integer(rank(-xrapm, ties.method = "min")),
@@ -163,7 +178,7 @@ na_spm <- sum(is.na(panna_ratings$spm_overall))
 cat("SPM join:", nrow(panna_ratings) - na_spm, "/", nrow(panna_ratings),
     "matched (", round(100 * na_spm / nrow(panna_ratings), 1), "% missing)\n")
 stopifnot(
-  nrow(panna_ratings) == n_before,
+  nrow(panna_ratings) == n_before - n_excl,  # joins didn't fan out (allowing the excluded comps)
   nrow(panna_ratings) > 0,
   na_spm / nrow(panna_ratings) < 0.2
 )

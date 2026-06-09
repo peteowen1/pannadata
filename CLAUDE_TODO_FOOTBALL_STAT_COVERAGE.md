@@ -184,6 +184,73 @@ fold steps 01-08 into a scheduled workflow or add a `start_step <- 1` skills job
 
 ---
 
+## ✅ UPDATE 2026-06-09 — fix shipped & verified, CAF/Tunisian decided, new carry-forward lever found
+
+### Outcome: coverage 66% → **80%** (verified live on R2)
+
+The leagues-vector fix shipped as `panna` commit `c6599e3` (2026-06-05), the skills
+pipeline (steps 01-08) was re-run by hand that day (`cache-skills/` stamps 16:24-17:23
+local), and the regenerated `opta_skills.parquet` re-published to `opta-latest`
+(asset `updatedAt` 07:33 UTC = 17:33 AEST, right after step 07). `build-blog-data.yml`
+then rebuilt the R2 file. Verified 2026-06-09 against the **live R2 parquets**:
+
+| league | before | after |
+|---|---|---|
+| overall coverage | 4,413 / 6,721 = **66%** | 5,359 / 6,721 = **80%** |
+| A_League | 0 / 221 | **166 / 217 (76%)** ✓ |
+| Belgian_First_Division | 40 / 361 | **324 / 370 (88%)** ✓ |
+| Brazilian_Serie_A | 0 | recovered ✓ |
+| big-5 (EPL/Serie A/La Liga/Bund/L1) | ~88–94% | ~88–94% (minutes gate) |
+
+### Big-league residual (the ~10% still missing in covered leagues) = the 450-min gate, working as designed
+
+215 rated big-5 players lack a current-season skills row. They are **low-minute
+fringe players** — median **362 min**, 75% under the 450-min gate (cup cameos,
+January signings, injury-shortened seasons). Not a bug; loosening the gate trades
+noise for coverage. Better handled by the carry-forward lever below.
+
+### CAF_CL / Tunisian: NOT recoverable by the leagues-vector add — decided to blog-filter them out
+
+`c6599e3` added `CAFCL`/`TUN` to the skills vector alongside `AUS`/`BEL`/`BRA`, but
+unlike those three **CAF_CL stayed 0/103 and Tunisian 0/6** — the add was inert for
+them. The source feed `opta_player_stats.parquet` *does* hold their box-scores
+(CAF_CL 35,952 rows, Tunisian 60,859 rows, **including current season 2025-2026**),
+so it's a skills-loader mapping gap, not missing data. **Decision (tier review): these
+two are no longer treated as tier-2 for the blog, so rather than chase the loader bug
+we exclude them at blog-build time.** Implemented 2026-06-09:
+- `pannadata/scripts/league_config.R` — new `BLOG_COMP_EXCLUDE <- c("CAF_CL", "Tunisian_Ligue_1")`.
+- `build_blog_data.R` — filters `enriched` on `BLOG_COMP_EXCLUDE` **before ranking**
+  (so panna_rank/percentiles are over the blog pool); fan-out assertion adjusted to
+  `n_before - n_excl`.
+- `build_player_meta.R` — filters `player_meta` (drops players whose **main** comp is
+  CAF/Tunisian; dual-comp players keep their domestic league).
+They remain in the upstream ratings for other uses. (`game-logs.parquet` is a panna
+step-10b pass-through and is **not** league-filtered here — a CAF/Tunisian player could
+still appear in the Value tab; out of scope for this change.)
+
+### 🆕 Biggest remaining lever: current-season-only slice discards every player's back-catalogue
+
+Found while checking why F. Chiesa (rated, 637 min) has no skills card. The skills file
+is **one row per player-season** (each season's values decay-weighted across recent
+history via `weighted_90s`), but **the blog only serves the latest-season slice**.
+Chiesa has 8 seasons of skills (2017–2024) sitting in `opta_skills.parquet` but **no
+2025/2026 row** — his Liverpool minutes fell under the 450 gate, so the blog shows a
+blank card despite a rich history.
+
+Quantified across the whole pool (live R2, 2026-06-09):
+- 1,362 rated players lack a current-season skills row.
+- **604 of them have a prior qualifying season** (carry-forwardable, like Chiesa).
+- 758 genuinely never had skills (true rookies / never-covered comps).
+- **A "last-good-season carry-forward" would lift coverage 80% → 89%** — *without*
+  loosening the 450-min noise gate. Big-5: 120 of the 215 missing return.
+
+**Recommendation:** this is the highest-leverage next step. Implement as a blog-side
+(or blog-build) fallback: when a rated player has no current-season skills row, use
+their most recent qualifying season's `_p90`s (optionally flag as "stats from {season}").
+Cleaner than loosening the gate, and surfaces marquee names with reduced current minutes.
+
+---
+
 ## What "done" looks like
 
 A short answer here (or in `DATA_DICTIONARY.md`) stating: how `opta_skills.parquet` is built

@@ -11,3 +11,12 @@ BLOG_COMP_TO_CODE <- c(
 
 BLOG_COMPS <- names(BLOG_COMP_TO_CODE)
 BLOG_CODES <- unname(BLOG_COMP_TO_CODE)
+
+# Competitions rated upstream but deliberately EXCLUDED from the blog outputs.
+# CAF_CL and Tunisian_Ligue_1 are no longer treated as tier-2 for the blog, and
+# they carry ~0% box-score skills coverage (the skills loader never picks them up),
+# so they would only ever surface as blank Top Trumps cards / skill-less leaderboard
+# rows. Dropped at build time from ratings.parquet + player-details.parquet via
+# BLOG_COMP_EXCLUDE; they remain in the upstream ratings for other uses.
+# Opta competition names (match the `competition`/`league` column verbatim).
+BLOG_COMP_EXCLUDE <- c("CAF_CL", "Tunisian_Ligue_1")
