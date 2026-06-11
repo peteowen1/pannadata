@@ -105,7 +105,7 @@ jobs:
 
           # World Cup 2026 blog data (panna step 12 → blog-latest). Optional —
           # passed straight through to R2 football/ for the blog's WC section.
-          for wcf in wc2026_predictions wc2026_simulation wc2026_groups wc2026_team_strength; do
+          for wcf in wc2026_predictions wc2026_simulation wc2026_groups wc2026_team_strength wc2026_squads wc2026_knockout_probs; do
             if gh release download blog-latest -p "${wcf}.parquet" -D blog/; then
               echo "Downloaded ${wcf}.parquet"
             else

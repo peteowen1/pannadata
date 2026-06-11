@@ -8,9 +8,7 @@ comp_to_code <- BLOG_COMP_TO_CODE
 # Use arrow dataset for lazy evaluation — avoids loading 247MB into R memory at once
 ds <- open_dataset("source/opta_player_stats.parquet", format = "parquet")
 
-for (comp in names(comp_to_code)) {
-  code <- comp_to_code[comp]
-
+build_shard <- function(comp, code) {
   league_stats <- ds |>
     filter(competition == comp) |>
     select(match_id, season, match_date, player_id, player_name, team_id,
@@ -22,7 +20,14 @@ for (comp in names(comp_to_code)) {
            bigChanceCreated, totalAttAssist) |>
     collect()
 
-  if (nrow(league_stats) == 0) next
+  if (nrow(league_stats) == 0) {
+    # ::warning:: surfaces in the GHA run summary — a shard that silently
+    # fails to build leaves the stale R2 object in place with no signal
+    # anywhere else (upload step has no expected-file manifest).
+    cat("::warning::match-stats-", code, " NOT built -- 0 rows for competition '",
+        comp, "'\n", sep = "")
+    return(invisible(NULL))
+  }
 
   match_stats <- league_stats |>
     transmute(
@@ -59,4 +64,16 @@ for (comp in names(comp_to_code)) {
   write_parquet(match_stats, paste0("blog/match-stats-", code, ".parquet"))
   cat(code, ":", nrow(match_stats), "rows,", length(unique(match_stats$season)), "seasons\n")
   rm(league_stats, match_stats); gc(verbose = FALSE)
+  invisible(NULL)
 }
+
+for (comp in names(comp_to_code)) {
+  build_shard(comp, comp_to_code[comp])
+}
+
+# World Cup shard for the blog's WC Player Stats page (R2 key
+# football/match-stats-WC.parquet). Deliberately NOT in BLOG_COMP_TO_CODE —
+# that map also drives standings/chains steps where a tournament doesn't
+# belong. Ships all WC seasons (historical + 2026); the blog page filters
+# by match_date itself, so 2026 rows light up as the tournament is played.
+build_shard("World_Cup", "WC")
