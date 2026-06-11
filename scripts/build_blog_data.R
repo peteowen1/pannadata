@@ -205,7 +205,11 @@ cat("SPM join:", nrow(panna_ratings) - na_spm, "/", nrow(panna_ratings),
 stopifnot(
   nrow(panna_ratings) == n_before - n_excl,  # joins didn't fan out (allowing the excluded comps)
   nrow(panna_ratings) > 0,
-  na_spm / nrow(panna_ratings) < 0.2
+  # Join-drift gate, not a coverage target: real drift looks like ~100% NA.
+  # Baseline NA is structural — calendar-year leagues (MLS/Argentina/Brazil)
+  # mid-season carry many players with xRAPM evidence but below SPM's
+  # threshold; measured 25.1% the day the 4 new leagues shipped (2026-06-11).
+  na_spm / nrow(panna_ratings) < 0.4
 )
 
 dir.create("blog", showWarnings = FALSE)
