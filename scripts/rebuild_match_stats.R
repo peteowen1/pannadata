@@ -20,7 +20,14 @@ build_shard <- function(comp, code) {
            bigChanceCreated, totalAttAssist) |>
     collect()
 
-  if (nrow(league_stats) == 0) return(invisible(NULL))
+  if (nrow(league_stats) == 0) {
+    # ::warning:: surfaces in the GHA run summary — a shard that silently
+    # fails to build leaves the stale R2 object in place with no signal
+    # anywhere else (upload step has no expected-file manifest).
+    cat("::warning::match-stats-", code, " NOT built -- 0 rows for competition '",
+        comp, "'\n", sep = "")
+    return(invisible(NULL))
+  }
 
   match_stats <- league_stats |>
     transmute(
