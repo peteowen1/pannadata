@@ -202,10 +202,24 @@ panna_ratings <- enriched |>
 na_spm <- sum(is.na(panna_ratings$spm_overall))
 cat("SPM join:", nrow(panna_ratings) - na_spm, "/", nrow(panna_ratings),
     "matched (", round(100 * na_spm / nrow(panna_ratings), 1), "% missing)\n")
+# Minutes-gated drift companion: heavy-minutes players join SPM far more
+# reliably than the tail, so a join-key drift spikes this rate toward 100%
+# while structural growth moves it slowly. NOT a pure minutes gate — players
+# in leagues without xmetrics features (the 2026-06 league additions) lack
+# SPM at any minutes, hence the nonzero baseline.
+heavy <- panna_ratings$total_minutes >= 900
+na_spm_heavy <- sum(heavy & is.na(panna_ratings$spm_overall))
+cat("SPM join (900+ min):", sum(heavy) - na_spm_heavy, "/", sum(heavy),
+    "matched (", round(100 * na_spm_heavy / max(sum(heavy), 1), 1), "% missing)\n")
 stopifnot(
   nrow(panna_ratings) == n_before - n_excl,  # joins didn't fan out (allowing the excluded comps)
   nrow(panna_ratings) > 0,
-  na_spm / nrow(panna_ratings) < 0.2
+  # Join-drift gates, not coverage targets: real drift looks like ~100% NA.
+  # Measured baselines on 2026-06-11 (the day MLS/Liga MX/Argentina/Saudi
+  # shipped): global 25.1% (mid-season calendar-year leagues carry many
+  # players with xRAPM evidence but no SPM row), 900+-minutes 15.5%.
+  na_spm / nrow(panna_ratings) < 0.4,
+  na_spm_heavy / max(sum(heavy), 1) < 0.3
 )
 
 dir.create("blog", showWarnings = FALSE)
