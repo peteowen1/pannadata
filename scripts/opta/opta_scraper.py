@@ -1025,14 +1025,23 @@ class OptaScraper:
             else:
                 body_part = "RightFoot"  # Default: not headed, not left-footed
 
-            # Situation from qualifiers
-            situation = "OpenPlay"
-            if 22 in qualifiers:
-                situation = "SetPiece"
-            if 24 in qualifiers:
-                situation = "Corner"
+            # Situation from qualifiers — Opta dictionary on shot events:
+            # 9 = Penalty, 25 = From corner, 24 = Set piece (free-kick
+            # situation), 26 = Free kick, 23 = Fast break, 22 = Regular play.
+            # Precedence matches the blog worker: a penalty is a penalty even
+            # when also flagged set-piece; corners beat generic set piece;
+            # free kicks bucket under SetPiece. Scrapes before 2026-06 used a
+            # shifted mapping (q22 -> SetPiece, q24 -> Corner) that mislabelled
+            # ~68% of shots — issue #66; fix_shot_situations.py repairs the
+            # historical consolidated file from events qualifier_json.
             if 9 in qualifiers:
                 situation = "Penalty"
+            elif 25 in qualifiers:
+                situation = "Corner"
+            elif 24 in qualifiers or 26 in qualifiers:
+                situation = "SetPiece"
+            else:
+                situation = "OpenPlay"
 
             # Big chance (qualifier 214)
             big_chance = 214 in qualifiers
