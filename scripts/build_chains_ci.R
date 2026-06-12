@@ -15,11 +15,24 @@ dir.create(out_dir, showWarnings = FALSE)
 cat("=== Chain Builder (CI) ===\n")
 cat("Memory:", round(as.numeric(system("free -m | awk '/Mem:/{print $2}'", intern = TRUE)), 0), "MB total\n\n")
 
+# Join keys drift between sources: newer scraper consolidations write event_id
+# as INT64 (arrow reads it as bit64::integer64) while action_equity / action_wpa
+# carry doubles — dplyr hard-errors on an integer64<->double join, which killed
+# the whole loop at Championship (2026-06-12 run) and left every later comp's
+# chains stale on R2 since March. Opta event ids are < 2^53, so double is exact.
+normalize_keys <- function(df) {
+  for (col in intersect(c("event_id"), names(df))) {
+    df[[col]] <- as.numeric(df[[col]])
+  }
+  if ("match_id" %in% names(df)) df$match_id <- as.character(df$match_id)
+  df
+}
+
 # Load equity lookup (optional — from panna predictions pipeline)
 equity_file <- file.path(src_dir, "action_equity.parquet")
 has_equity <- file.exists(equity_file)
 if (has_equity) {
-  equity_lookup <- read_parquet(equity_file)
+  equity_lookup <- normalize_keys(read_parquet(equity_file))
   # Transition: action_equity.parquet carries `epv_credit` (panna 10c, from
   # 2026-06-03) or the legacy `equity` name. Normalise to epv_credit so the
   # join and the chains output column are name-stable regardless of which
@@ -45,8 +58,9 @@ wpa_files <- list.files(src_dir,
 has_wpa <- length(wpa_files) > 0
 if (has_wpa) {
   cat("Loading WPA from", length(wpa_files), "shard(s)...\n")
-  wpa_lookup <- data.table::rbindlist(lapply(wpa_files, read_parquet),
-                                       use.names = TRUE, fill = TRUE)
+  wpa_lookup <- normalize_keys(
+    data.table::rbindlist(lapply(wpa_files, read_parquet),
+                          use.names = TRUE, fill = TRUE))
   wpa_match_ids <- unique(wpa_lookup$match_id)
   cat("WPA loaded:", nrow(wpa_lookup), "actions across",
       length(wpa_match_ids), "matches\n")
@@ -75,8 +89,12 @@ rm(lineups); gc(verbose = FALSE)
 cat("Lineups loaded:", nrow(match_teams), "matches\n\n")
 
 source("scripts/league_config.R")
-blog_comps <- BLOG_COMPS
-comp_to_code <- BLOG_COMP_TO_CODE
+# World Cup shard for the blog's WC match pages (Territorial/Pass Map; #64).
+# Deliberately NOT added to BLOG_COMP_TO_CODE — that map also drives
+# ratings/player-details/standings steps where a tournament doesn't belong.
+# Same local-extension precedent as rebuild_match_stats.R's build_shard call.
+blog_comps <- c(BLOG_COMPS, "World_Cup")
+comp_to_code <- c(BLOG_COMP_TO_CODE, World_Cup = "WC")
 dead_ball_types <- c(2L, 4L, 5L, 6L, 17L, 55L, 56L, 57L, 70L, 80L, 81L)
 non_play_types <- c(18L, 19L, 24L, 27L, 28L, 30L, 32L, 34L, 37L, 40L, 43L, 65L, 68L)
 shot_types <- c(13L, 14L, 15L, 16L)
@@ -110,7 +128,13 @@ for (comp in blog_comps) {
   }
 
   cat(comp, ": ", sep = "")
-  events <- read_parquet(event_file)
+  # One comp's failure must not starve every comp after it in the loop — that
+  # failure mode left ESP..TUR chains stale on R2 for 3 months and UCL/UEL/UECL
+  # never built (the loop died at Championship on a join type error while the
+  # workflow step is continue-on-error). Errors are recorded in join_failures
+  # and raised after all comps have had their turn.
+  tryCatch({
+  events <- normalize_keys(read_parquet(event_file))
   seasons <- sort(unique(events$season), decreasing = TRUE)
   if (nrow(events) > 200000 && length(seasons) > 1) {
     events <- events |> filter(season == seasons[1])
@@ -274,6 +298,13 @@ for (comp in blog_comps) {
 
   # Free memory before next league
   rm(events, chains, chain_states); gc(verbose = FALSE)
+  }, error = function(e) {
+    join_failures <<- c(join_failures,
+                        sprintf("%s: %s", comp, conditionMessage(e)))
+    cat("  FAIL ", comp, " — ", conditionMessage(e),
+        " (recorded, continuing)\n", sep = "")
+    gc(verbose = FALSE)
+  })
 
   # Delete event file to save disk space in CI
   unlink(event_file)

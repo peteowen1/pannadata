@@ -11,7 +11,11 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The chains step builds ~14 comps serially at ~4-6 min each once the loop
+    # is healthy — 30 min only ever fit because the loop was crashing at comp 2
+    # (see build_chains_ci.R per-comp tryCatch note). A timeout mid-chains kills
+    # the job BEFORE the R2 upload step, shipping nothing at all.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v6
 
