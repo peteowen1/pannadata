@@ -92,6 +92,8 @@ source("data-raw/migrate_to_parquet.R")           # Convert legacy formats to pa
 |----------|---------|---------|
 | `daily-opta-scrape.yml` | 5 AM UTC / `workflow_dispatch` | Python Opta scraper + consolidate + coverage check → `opta-latest` release. Dispatch supports `leagues` (space-separated, underscored), `seasons`, `recent`, `tier`, `force_rescrape`. Coverage check scopes to dispatched leagues. |
 | `build-blog-data.yml` | `repository_dispatch` (`predictions-complete`) | Build blog data + run `build_player_positions.R` → Cloudflare R2 |
+| `rebuild-events.yml` | Manual dispatch only | Backfill short `events_consolidated` per comp via `rebuild_events.py` (see Gotchas — this, not `force_rescrape`, is the fix for stale events) |
+| `football-player-meta.yml` | Mondays 5 AM UTC / manual | Player bios (age, nationality) + face-cropped webp headshots (2 variants) → R2. Resumable: HEAD-checks R2 and only fetches new players; dispatch with `--reprocess` to re-crop all |
 | `daily-understat-scrape.yml.disabled` | (disabled) | Understat scraper — retired with FBref/Understat deprecation |
 | `daily-fbref-scrape.yml.disabled` | (disabled) | FBref scraper — also retired (Oracle VM scrape gone) |
 | `scrape-notification.yml.disabled` | (disabled) | Notification on scrape success/failure |
