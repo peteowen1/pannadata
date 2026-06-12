@@ -1027,7 +1027,9 @@ class OptaScraper:
 
             # Situation from qualifiers — Opta dictionary on shot events:
             # 9 = Penalty, 25 = From corner, 24 = Set piece (free-kick
-            # situation), 26 = Free kick, 23 = Fast break, 22 = Regular play.
+            # situation), 26 = Free kick, 23 = Fast break, 22 = Regular play
+            # (22 and 23 both deliberately bucket as OpenPlay via the bare
+            # else — q23 is not a missing case).
             # Precedence matches the blog worker: a penalty is a penalty even
             # when also flagged set-piece; corners beat generic set piece;
             # free kicks bucket under SetPiece. Scrapes before 2026-06 used a
