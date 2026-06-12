@@ -312,7 +312,17 @@ for (comp in blog_comps) {
 
 # Healthy comps are built and uploaded above; now fail the run if any comp's
 # equity/wpa join breached a guard, so CI goes red with the full offender list.
+# The workflow's chains step runs with continue-on-error (so the R2 upload
+# still ships the healthy comps), which demotes this stop() to a step-level
+# warning and leaves the RUN green — so also write a marker file that a final
+# non-continue-on-error workflow step checks AFTER the upload; that step is
+# what actually turns the run red. The ::error:: annotation surfaces the
+# offender list on the run page either way.
 if (length(join_failures) > 0) {
+  writeLines(join_failures, "chains_failures.txt")
+  cat(sprintf("::error::Chain build failed for %d comp(s): %s\n",
+              length(join_failures),
+              paste(join_failures, collapse = " | ")))
   stop(sprintf("Chain build failed for %d comp(s):\n%s",
                length(join_failures),
                paste0("  - ", join_failures, collapse = "\n")))
