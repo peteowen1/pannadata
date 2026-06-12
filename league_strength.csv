@@ -2,22 +2,22 @@ strength_rank,league,league_name,confederation,offset_off,offset_def,offset_tot,
 1,EURO,UEFA Euros,UEFA,0.072,0.001,0.073,career-direct,55,,,,1500
 2,WC,World Cup,World,0.069,-0.007,0.062,career-direct,19,,,,
 3,UCL,UEFA Champions League,UEFA,0,0,0,anchor,,,,,1500
-4,ENG,Premier League,UEFA,-0.006,-0.002,-0.009,same-season,574,0.0426,1,403,1500
-5,GER,Bundesliga,UEFA,-0.02,-0.002,-0.021,same-season,565,0.0224,2,361,1500
-6,ESP,La Liga,UEFA,-0.024,-0.001,-0.025,same-season,593,0.0192,5,433,1500
-7,ENG2,Championship,UEFA,-0.03,-0.002,-0.031,career-direct,48,0.0055,14,567,1500
-8,BRA,Brazilian Serie A,CONMEBOL,-0.043,0.004,-0.039,chained,201,0.0143,6,388,1519
-9,UEL,UEFA Europa League,UEFA,-0.057,0.004,-0.054,career-direct,261,0.0018,17,79,1500
-10,FRA,Ligue 1,UEFA,-0.057,0.002,-0.054,same-season,341,0.0222,3,384,1500
-11,ITA,Serie A,UEFA,-0.058,-0.002,-0.06,same-season,520,0.02,4,427,1500
-12,POR,Primeira Liga,UEFA,-0.117,0.008,-0.109,same-season,287,0.0083,9,389,1500
-13,TUR,Super Lig,UEFA,-0.125,0.011,-0.114,same-season,116,0.0044,15,377,1500
-14,UECL,UEFA Conference League,UEFA,-0.137,0.007,-0.129,career-direct,13,-0.0253,19,96,1500
-15,NED,Eredivisie,UEFA,-0.119,-0.021,-0.14,same-season,175,0.007,12,364,1500
-16,SCO,Scottish Premiership,UEFA,-0.212,-0.024,-0.236,same-season,50,-0.0063,18,274,1500
-,ARG,Liga Profesional Argentina,CONMEBOL,,,,,,0.0062,13,519,1519
-,AUS,A-League,AFC,,,,,,0.0037,16,173,963
-,BEL,Belgian First Div,UEFA,,,,,,0.0072,10,333,1500
-,MEX,Liga MX,CONCACAF,,,,,,0.0099,8,373,1471
-,MLS,Major League Soccer,CONCACAF,,,,,,0.0072,11,443,1471
-,SAU,Saudi Pro League,AFC,,,,,,0.013,7,365,963
+4,ENG,Premier League,UEFA,-0.006,-0.002,-0.009,same-season,574,0.0427,1,403,1500
+5,GER,Bundesliga,UEFA,-0.02,-0.002,-0.021,same-season,565,0.022,2,361,1500
+6,ESP,La Liga,UEFA,-0.024,-0.001,-0.025,same-season,593,0.019,5,433,1500
+7,ENG2,Championship,UEFA,-0.03,-0.002,-0.031,career-direct,48,0.0031,14,567,1500
+8,BRA,Brazilian Serie A,CONMEBOL,-0.043,0.004,-0.039,chained,201,0.0182,6,388,1519
+9,MEX,Liga MX,CONCACAF,-0.043,-0.002,-0.045,career-direct,23,0.0138,9,373,1471
+10,SAU,Saudi Pro League,AFC,-0.047,-0.002,-0.049,career-direct,60,0.0171,8,365,963
+11,UEL,UEFA Europa League,UEFA,-0.057,0.004,-0.054,career-direct,261,0.0019,16,79,1500
+12,FRA,Ligue 1,UEFA,-0.057,0.002,-0.054,same-season,341,0.0216,3,384,1500
+13,ARG,Liga Profesional Argentina,CONMEBOL,-0.053,-0.001,-0.055,career-direct,29,0.0061,12,519,1519
+14,ITA,Serie A,UEFA,-0.058,-0.002,-0.06,same-season,520,0.0197,4,427,1500
+15,POR,Primeira Liga,UEFA,-0.117,0.008,-0.109,same-season,287,0.0079,10,389,1500
+16,TUR,Super Lig,UEFA,-0.125,0.011,-0.114,same-season,116,0.0044,13,377,1500
+17,UECL,UEFA Conference League,UEFA,-0.137,0.007,-0.129,career-direct,13,-0.0255,19,96,1500
+18,NED,Eredivisie,UEFA,-0.119,-0.021,-0.14,same-season,175,0.007,11,364,1500
+19,SCO,Scottish Premiership,UEFA,-0.212,-0.024,-0.236,same-season,50,-0.0063,18,274,1500
+20,MLS,Major League Soccer,CONCACAF,-0.335,-0.018,-0.352,same-season,5,0.0181,7,443,1471
+,AUS,A-League,AFC,,,,,,-0.0027,17,173,963
+,BEL,Belgian First Div,UEFA,,,,,,0.0019,15,333,1500

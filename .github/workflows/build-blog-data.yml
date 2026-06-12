@@ -11,7 +11,11 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The chains step builds ~14 comps serially at ~4-6 min each once the loop
+    # is healthy — 30 min only ever fit because the loop was crashing at comp 2
+    # (see build_chains_ci.R per-comp tryCatch note). A timeout mid-chains kills
+    # the job BEFORE the R2 upload step, shipping nothing at all.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v6
 
@@ -480,5 +484,18 @@ jobs:
           done
           if [ "$upload_errors" -gt 0 ]; then
             echo "ERROR: $upload_errors upload(s) failed"
+            exit 1
+          fi
+
+      # The chains step runs with continue-on-error so the R2 upload still
+      # ships healthy comps — but that keeps the run green even when comps
+      # fail every week (stale chains on R2 with zero red signal). This step
+      # runs AFTER the upload and turns the run red if build_chains_ci.R
+      # recorded any per-comp failures.
+      - name: Fail run if chains had per-comp failures
+        run: |
+          if [ -f chains_failures.txt ]; then
+            echo "::error::build_chains_ci.R recorded per-comp failures (healthy comps were still uploaded to R2):"
+            cat chains_failures.txt
             exit 1
           fi

@@ -48,13 +48,9 @@ data/
 # Opta (Python — usually runs via GHA)
 cd scripts/opta && pip install -r requirements.txt
 python scrape_opta.py
-
-# Understat (R — usually runs via GHA)
-Rscript scripts/understat/scrape_understat.R
-
-# FBref (R — runs on Oracle VM)
-Rscript scripts/fbref/scrape_fbref.R
 ```
+
+Understat/FBref scrapers (`scripts/understat/`, `scripts/fbref/`) are retired — code kept for reference only, do not run.
 
 ### Blog Data
 
@@ -76,6 +72,8 @@ source("scripts/build_chains_ci.R")     # Possession chains with EPV equity
 | `game-logs-<season>.parquet` | panna step 10b per-season → `blog-latest` pass-through | Historical per-season value metrics, fetched on-demand by the blog Value tab (kept per-season, ~6MB each — never concatenated) |
 | `chains-{CODE}.parquet` | `build_chains_ci.R` + equity join | Possession chains with per-action EPV equity |
 | `predictions.parquet` | panna step 10 → `blog-latest` pass-through | Match predictions |
+| `match-stats-{CODE}.parquet` | `rebuild_match_stats.R` (per-league, incl. `match-stats-WC.parquet`) | Per-match team/player box stats for blog match pages |
+| `wc2026_*.parquet` | panna steps 11+12 → `blog-latest` pass-through | WC 2026 sim outputs: `predictions`, `simulation`, `groups`, `team_strength`, `squads`, `knockout_probs` |
 
 ### Data Utilities
 
@@ -92,6 +90,8 @@ source("data-raw/migrate_to_parquet.R")           # Convert legacy formats to pa
 |----------|---------|---------|
 | `daily-opta-scrape.yml` | 5 AM UTC / `workflow_dispatch` | Python Opta scraper + consolidate + coverage check → `opta-latest` release. Dispatch supports `leagues` (space-separated, underscored), `seasons`, `recent`, `tier`, `force_rescrape`. Coverage check scopes to dispatched leagues. |
 | `build-blog-data.yml` | `repository_dispatch` (`predictions-complete`) | Build blog data + run `build_player_positions.R` → Cloudflare R2 |
+| `rebuild-events.yml` | Manual dispatch only | Backfill short `events_consolidated` per comp via `rebuild_events.py` (see Gotchas — this, not `force_rescrape`, is the fix for stale events) |
+| `football-player-meta.yml` | Mondays 5 AM UTC / manual | Player bios (age, nationality) + face-cropped webp headshots (2 variants) → R2. Resumable: HEAD-checks R2 and only fetches new players. To re-crop all, run `node scripts/build-football-headshots.mjs --reprocess` locally — the dispatch has no inputs and never passes that flag |
 | `daily-understat-scrape.yml.disabled` | (disabled) | Understat scraper — retired with FBref/Understat deprecation |
 | `daily-fbref-scrape.yml.disabled` | (disabled) | FBref scraper — also retired (Oracle VM scrape gone) |
 | `scrape-notification.yml.disabled` | (disabled) | Notification on scrape success/failure |
@@ -118,7 +118,7 @@ inthegame-blog reads from R2
 - `BLOG_DATA_SETUP.md` — Blog delivery chain (R2 bucket setup)
 - `scripts/opta/all_competitions.json` — Opta competition config
 - `scripts/opta/opta_entitlement_catalog.csv` — **every competition + season our Opta outlet can actually fetch** (2,232 comps / 25,356 comp-seasons), one row per (competition, season) with `competition_id`, `season_id`, dates, and `our_key` (our short code if scraped). Regenerate with `python scripts/opta/build_entitlement_catalog.py` (no API key needed — uses the outlet token). Use this to look up correct Opta competition/season IDs before adding a league. NOTE: the IDs in `opta_scraper.py::COMPETITIONS` for MLS/Liga_MX/Argentine_Liga_Profesional/Saudi_League were wrong/stale (404'd) until 2026-06-05 — always validate a new comp's ID against this catalog, not by guessing.
-- `league_strength.csv` — **consolidated league-strength reference** (committed; also on `opta-latest` as `league_strength.{parquet,csv}`). One ranked row per league: club EPV offset vs UCL group stage (`offset_tot`; higher = stronger, 0 = UCL), `confederation`, and confederation Elo prior. Built by `panna/debug/build_league_strength.R` (wraps `compute_league_offsets()` + confederation map). Covers the ~16 EPV-rated leagues only — leagues without EPV `game_logs` (BEL/AUS/TUN/CAF, and the new MLS/Liga_MX/Argentina/Saudi until rated) are absent. Small-n leagues (SCO, ENG2) have noisy offsets — treat as soft.
+- `league_strength.csv` — **consolidated league-strength reference** (committed; also on `opta-latest` as `league_strength.{parquet,csv}`). One row per league with **two independent strength metrics** (since 2026-06-11): `offset_tot` = club EPV offset vs UCL group stage ("how hard is it to produce there"; higher = stronger, 0 = UCL; EPV-rated leagues only, NA elsewhere) and `xrapm_mean`/`xrapm_rank` = minutes-weighted mean player xRAPM, latest season, 450+ min ("how good are the players"; covers every rated league incl. MLS/Liga_MX/Argentina/Saudi). Plus `confederation` + Elo prior. Built by `panna/debug/build_league_strength.R`. The metrics deliberately disagree in places (Championship: #4 club league by offset — `strength_rank` 7 incl. EURO/WC/UCL — but #14 by player quality). Small-n offsets (SCO, ENG2, and especially MLS at n_obs=5) are noisy — treat as soft; BEL/AUS have rows with NA offsets, TUN/CAF have no rows at all.
 - `scripts/opta/README.md` — Opta scraper documentation
 
 ## Gotchas
