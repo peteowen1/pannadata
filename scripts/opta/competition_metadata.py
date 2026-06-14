@@ -77,7 +77,10 @@ COMPETITION_METADATA = {
     # UEFA Club Competitions
     "UCL": {"name": "UEFA Champions League", "country": "Europe", "type": "cup", "tier": 1},
     "UEL": {"name": "UEFA Europa League", "country": "Europe", "type": "cup", "tier": 2},
-    "Conference_League": {"name": "UEFA Conference League", "country": "Europe", "type": "cup", "tier": 3},
+    # tier 2 (was 3) since 2026-06: UECL is a blog deliverable (chains-UECL,
+    # match pages) but tier 3 sat below the daily cron's tier=2 cutoff, so
+    # knockout rounds were never auto-scraped (issue #68: 48 missing matches)
+    "Conference_League": {"name": "UEFA Conference League", "country": "Europe", "type": "cup", "tier": 2},
     "UEFA_Super_Cup": {"name": "UEFA Super Cup", "country": "Europe", "type": "cup", "tier": 4},
     "Club_World_Cup": {"name": "FIFA Club World Cup", "country": "International", "type": "cup", "tier": 3},
     "FIFA_Intercontinental_Cup": {"name": "FIFA Intercontinental Cup", "country": "International", "type": "cup", "tier": 3},

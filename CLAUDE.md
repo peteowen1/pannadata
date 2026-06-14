@@ -123,6 +123,8 @@ inthegame-blog reads from R2
 
 ## Gotchas
 
+**TL;DR fix matrix** (symptom → fix; details below): stale/short `events_consolidated` → `rebuild-events.yml` (NOT `force_rescrape`); scrape returns `Found 0 total, 0 new` → missing `TOURNAMENT_DATE_EXCEPTIONS` entry (NOT "Opta gap"); cron daily-opta-scrape red on non-blog leagues → backlog backfill via `rebuild-events.yml` / daily heal pass; "corrupt" chains equity → metric-mismatch, not a join bug (don't diff `epv_credit`).
+
 - **FBref match IDs are opaque** — 8-char hex IDs (e.g., `74125d47`) cannot be guessed. Look up from `data/fbref/metadata/` or fbref.com.
 - **Opta scraper is Python**, everything else is R — check Python deps separately.
 - **`build_blog_data.R` smart join** — auto-detects `player_id` vs `player_name` for joins. Step 10 of panna predictions now exports `player_id`.
