@@ -144,6 +144,21 @@ jobs:
             echo "::warning::opta_lineups.parquet not available — match-shots will lack team names"
           fi
 
+          # Per-player EPR + PSR weekly snapshots (optional — feed the blog's
+          # "Piero" composite player rating in ratings.parquet). build_blog_data.R
+          # takes the latest snapshot per player and joins on the dedup key;
+          # absent files just leave epr/psr NA (Piero falls back to panna).
+          if gh release download opta-latest -p "opta_epr_weekly.parquet" -D source/; then
+            echo "Downloaded opta_epr_weekly.parquet"
+          else
+            echo "::warning::opta_epr_weekly.parquet not available — Piero's EPR component will be NA"
+          fi
+          if gh release download opta-latest -p "opta_psr_weekly.parquet" -D source/; then
+            echo "Downloaded opta_psr_weekly.parquet"
+          else
+            echo "::warning::opta_psr_weekly.parquet not available — Piero's PSR component will be NA"
+          fi
+
           # NOTE: opta_player_stats.parquet (247MB) and opta_xmetrics.parquet (10MB) are
           # downloaded lazily by their respective steps to reduce peak memory usage.
 

@@ -61,6 +61,29 @@ spm <- seasonal_spm |>
   ungroup() |>
   select(all_of(dedup_key), spm_overall = spm)
 
+# Per-player EPR + PSR — latest weekly snapshot per player, from the opta-latest
+# release (opta_epr_weekly.parquet / opta_psr_weekly.parquet). These feed the
+# blog's "Piero" composite player rating (panna+EPR+PSR), the player-level
+# analog of the team Tiento. OPTIONAL: join defensively so a missing/failed
+# download degrades to NA (Piero renormalizes onto available components) rather
+# than breaking the build. EPR weekly currently refreshes manually upstream, so
+# it can lag — that's acceptable; PSR weekly refreshes on schedule.
+load_latest_snapshot <- function(path, value_col) {
+  if (!file.exists(path)) { cat("Optional source missing:", path, "-", value_col, "will be NA\n"); return(NULL) }
+  df <- read_parquet(path)
+  if (!all(c(dedup_key, value_col, "snapshot_date") %in% names(df))) {
+    warning(path, " missing ", dedup_key, "/", value_col, "/snapshot_date - skipping"); return(NULL)
+  }
+  df |>
+    filter(!is.na(.data[[dedup_key]])) |>
+    group_by(.data[[dedup_key]]) |>
+    slice_max(snapshot_date, n = 1, with_ties = FALSE) |>
+    ungroup() |>
+    select(all_of(dedup_key), all_of(value_col))
+}
+epr <- load_latest_snapshot("source/opta_epr_weekly.parquet", "epr")
+psr <- load_latest_snapshot("source/opta_psr_weekly.parquet", "psr")
+
 # Aggregate per-season EPV / WPA / PSV from per-match game-logs.parquet (if present).
 # game-logs.parquet is downloaded into blog/ by the workflow before this script runs.
 # We produce per-90 rates (to match the scale of panna/offense/defense) and join on dedup_key.
@@ -132,6 +155,10 @@ if (!is.null(gl_extra)) {
 # their career rating). Keyed unique by dedup_key, so row count is unchanged.
 enriched <- left_join(enriched, career, by = dedup_key)
 
+# EPR / PSR (optional — present only if the opta-latest snapshots downloaded).
+if (!is.null(epr)) enriched <- left_join(enriched, epr, by = dedup_key)
+if (!is.null(psr)) enriched <- left_join(enriched, psr, by = dedup_key)
+
 # Drop non-blog competitions (CAF_CL / Tunisian_Ligue_1) BEFORE ranking, so
 # panna_rank + percentiles are computed over the blog pool only. `%in%` returns
 # FALSE for NA league, so internationals / unmapped (NA league) are kept.
@@ -181,6 +208,9 @@ panna_ratings <- enriched |>
     player_name, team, league, position,
     # Headline = career-trait Panna (career O/D); season xRAPM kept alongside.
     panna, offense, defense, spm_overall,
+    # EPR/PSR trait ratings (latest weekly snapshot) — feed the blog's Piero
+    # composite. any_of() so the build still works if the snapshots are absent.
+    any_of(c("epr", "psr")),
     xrapm, xrapm_offense, xrapm_defense,
     total_minutes,
     panna_percentile,
@@ -195,13 +225,23 @@ panna_ratings <- enriched |>
       "psv", "osv", "dsv", "panna_value_p90"
     ))
   ) |>
-  mutate(across(c(panna, offense, defense, xrapm, xrapm_offense, xrapm_defense, spm_overall),
+  mutate(across(any_of(c("panna", "offense", "defense", "xrapm", "xrapm_offense",
+                         "xrapm_defense", "spm_overall", "epr", "psr")),
                 \(x) round(x, 4))) |>
   arrange(panna_rank)
 
 na_spm <- sum(is.na(panna_ratings$spm_overall))
 cat("SPM join:", nrow(panna_ratings) - na_spm, "/", nrow(panna_ratings),
     "matched (", round(100 * na_spm / nrow(panna_ratings), 1), "% missing)\n")
+for (col in c("epr", "psr")) {
+  if (col %in% names(panna_ratings)) {
+    n_ok <- sum(!is.na(panna_ratings[[col]]))
+    cat(toupper(col), "join:", n_ok, "/", nrow(panna_ratings),
+        "matched (", round(100 * (1 - n_ok / nrow(panna_ratings)), 1), "% missing)\n")
+  } else {
+    cat(toupper(col), "absent — snapshot not downloaded; Piero will fall back to available components\n")
+  }
+}
 # Minutes-gated drift companion: heavy-minutes players join SPM far more
 # reliably than the tail, so a join-key drift spikes this rate toward 100%
 # while structural growth moves it slowly. NOT a pure minutes gate — players
