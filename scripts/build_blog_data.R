@@ -262,7 +262,101 @@ stopifnot(
   na_spm_heavy / max(sum(heavy), 1) < 0.3
 )
 
+# ── Piero: pool-independent composite player rating ──────────────────────────
+# Faithful R port of inthegame-blog/football/player-rating.js
+# `computePlayerRating(rows, { scaleTo: "panna" })`. Computed ONCE here over the
+# canonical reference population (the full rated pool in ratings.parquet) and
+# shipped as a `piero` column, so the blog reads it directly instead of
+# recomputing pool-relative z-scores per page (which made the SAME player show
+# different Piero on the player vs World Cup pages — see PIERO-POOL-INDEPENDENCE.md).
+#
+# Method (mirrors the JS exactly):
+#   weights panna 0.5 / epr 0.3 / psr 0.2
+#   1. per-metric POPULATION mean/sd over finite values (sd <- 1 if degenerate)
+#   2. z_m = (value - mu_m) / sd_m  (NA where the metric is missing)
+#   3. blend = sum(w_m * z_m) / sum(w_m) over the metrics PRESENT for that row
+#      (weights renormalize on gaps; a panna-only player gets blend = z_panna)
+#   4. blend POPULATION mean/sd over finite blends
+#   5. piero = ((blend - mu_blend)/sd_blend) * sd_panna + mu_panna, rounded 4dp
+# `panna` here is the CAREER trait (never the season xrapm) — guaranteed because
+# panna_ratings$panna is the career column assembled above.
+PIERO_WEIGHTS <- c(panna = 0.5, epr = 0.3, psr = 0.2)
+piero_metrics <- names(PIERO_WEIGHTS)
+
+# Population mean/sd over finite values; sd falls back to 1 (matches JS meanSd:
+# empty -> {mu:0, sd:1}; sd uses /N, and `|| 1` makes a zero/degenerate sd -> 1).
+.piero_mean_sd <- function(x) {
+  v <- x[is.finite(x)]
+  if (length(v) == 0L) return(c(mu = 0, sd = 1))
+  mu <- mean(v)
+  sd <- sqrt(mean((v - mu)^2))           # population sd (/N), as in the JS
+  if (!is.finite(sd) || sd == 0) sd <- 1
+  c(mu = mu, sd = sd)
+}
+
+# Only the rows that survive into the published parquet form the reference pool.
+piero_present <- piero_metrics[piero_metrics %in% names(panna_ratings)]
+piero_stat <- lapply(piero_present, function(m) .piero_mean_sd(panna_ratings[[m]]))
+names(piero_stat) <- piero_present
+
+# Per-metric z matrix (NA where the metric column is absent or value missing).
+piero_z <- vapply(piero_metrics, function(m) {
+  if (!m %in% piero_present) return(rep(NA_real_, nrow(panna_ratings)))
+  (panna_ratings[[m]] - piero_stat[[m]]["mu"]) / piero_stat[[m]]["sd"]
+}, numeric(nrow(panna_ratings)))
+# vapply drops to a vector when nrow == 1; force a matrix so the rowSums work.
+if (is.null(dim(piero_z))) piero_z <- matrix(piero_z, nrow = nrow(panna_ratings),
+                                             dimnames = list(NULL, piero_metrics))
+
+# Renormalized weighted z-blend per row.
+w_vec  <- PIERO_WEIGHTS[piero_metrics]
+w_mat  <- matrix(w_vec, nrow = nrow(piero_z), ncol = length(w_vec), byrow = TRUE)
+have   <- is.finite(piero_z)
+acc    <- rowSums(ifelse(have, w_mat * piero_z, 0))
+sw     <- rowSums(ifelse(have, w_mat, 0))
+piero_blend <- ifelse(sw > 0, acc / sw, NA_real_)
+
+# Standardize the blend, then map onto panna's own mean/sd ("panna" scale).
+blend_stat <- .piero_mean_sd(piero_blend)
+panna_stat <- if ("panna" %in% names(piero_stat)) piero_stat[["panna"]] else c(mu = 0, sd = 1)
+piero <- round(((piero_blend - blend_stat["mu"]) / blend_stat["sd"]) *
+                 panna_stat["sd"] + panna_stat["mu"], 4)
+panna_ratings$piero <- unname(piero)
+
+cat("Piero:", sum(!is.na(panna_ratings$piero)), "/", nrow(panna_ratings),
+    "players rated (coverage:",
+    paste(sprintf("%s %d", piero_present,
+                  vapply(piero_present, function(m) sum(is.finite(panna_ratings[[m]])), integer(1))),
+          collapse = ", "), ")\n")
+
+# Persist the reference constants so the WC squads build (panna step 12) can
+# recompute Piero for the rare squad players absent from ratings.parquet using
+# the SAME population stats (NEVER the squad pool's own stats — that reproduces
+# the divergence bug). Squad players present in ratings.parquet get piero via a
+# left join on player_id instead (identical number for free).
+piero_reference <- list(
+  weights = as.list(PIERO_WEIGHTS),
+  metrics = lapply(piero_present, function(m) {
+    list(mean = unname(piero_stat[[m]]["mu"]), sd = unname(piero_stat[[m]]["sd"]))
+  }),
+  blend = list(mean = unname(blend_stat["mu"]), sd = unname(blend_stat["sd"])),
+  panna = list(mean = unname(panna_stat["mu"]), sd = unname(panna_stat["sd"])),
+  n_reference = nrow(panna_ratings),
+  built_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
+)
+names(piero_reference$metrics) <- piero_present
+
 dir.create("blog", showWarnings = FALSE)
+if (requireNamespace("jsonlite", quietly = TRUE)) {
+  jsonlite::write_json(piero_reference, "blog/piero_reference.json",
+                       auto_unbox = TRUE, pretty = TRUE, digits = 10)
+  cat("Piero reference constants written to blog/piero_reference.json\n")
+} else {
+  # jsonlite absent: the `piero` column still ships (it needs no JSON); only the
+  # WC-squad recompute-from-reference fallback loses its constants source.
+  warning("jsonlite not installed — skipping blog/piero_reference.json (piero column still written)")
+}
+
 write_parquet(panna_ratings, "blog/ratings.parquet")
 cat("ratings:", nrow(panna_ratings), "players (season", latest_season, ")\n")
 
