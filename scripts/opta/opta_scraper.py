@@ -22,6 +22,7 @@ Data extracted:
 - fixtures: Match fixtures with scores and statuses
 """
 
+import os
 import requests
 import json
 import re
@@ -220,7 +221,10 @@ class OptaScraper:
     """Scrapes Opta data from TheAnalyst API"""
 
     BASE_URL = "https://api.performfeeds.com/soccerdata"
-    PROVIDER_ID = "1mjq6w6ezkxe611ykkj8rgz7f1"
+    # Opta/Stats Perform public outlet token. Overridable via env (OPTA_OUTLET_ID,
+    # set as a GitHub Actions secret); falls back to the public default so the
+    # scrape works whether or not the secret is configured.
+    PROVIDER_ID = os.environ.get("OPTA_OUTLET_ID") or "1mjq6w6ezkxe611ykkj8rgz7f1"
 
     # Rotating User-Agent pool to help prevent rate limiting
     # Mimics various browsers on Windows/Mac for realistic traffic patterns
