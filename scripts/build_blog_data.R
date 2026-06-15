@@ -268,7 +268,8 @@ stopifnot(
 # canonical reference population (the full rated pool in ratings.parquet) and
 # shipped as a `piero` column, so the blog reads it directly instead of
 # recomputing pool-relative z-scores per page (which made the SAME player show
-# different Piero on the player vs World Cup pages — see PIERO-POOL-INDEPENDENCE.md).
+# different Piero on the player vs World Cup pages — see the rationale doc
+# pannaverse/PIERO-POOL-INDEPENDENCE.md in the parent repo).
 #
 # Method (mirrors the JS exactly):
 #   weights panna 0.5 / epr 0.3 / psr 0.2

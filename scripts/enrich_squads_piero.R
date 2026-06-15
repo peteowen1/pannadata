@@ -15,11 +15,11 @@
 #      squad players are the same career-trait players, so the overlap gets the
 #      IDENTICAL number for free.
 #   2. For squad players absent from ratings.parquet (rare untracked-league
-#      call-ups), recompute piero using the PERSISTED reference constants from
-#      piero_reference.json — NEVER the squad pool's own stats (that reproduces
-#      the divergence bug). NA if a required metric is missing.
+#      call-ups), piero is left NA (see the note at the join below for why a
+#      recompute is deliberately not done).
 #
-# Idempotent: re-running overwrites any existing `piero` column.
+# Rationale doc: pannaverse/PIERO-POOL-INDEPENDENCE.md (in the parent repo, not
+# pannadata). Idempotent: re-running overwrites any existing `piero` column.
 
 suppressPackageStartupMessages({ library(arrow); library(dplyr) })
 
@@ -50,6 +50,12 @@ if (!"piero" %in% names(ratings)) {
 
 # 1. LEFT JOIN piero from ratings on player_id (identical numbers for the overlap).
 squads$piero <- NULL  # drop any stale column so the join is the single source
+# Coerce the join key to character on BOTH sides. wc2026_squads (panna step 12)
+# and ratings.parquet (this build) are written by different codebases, so a
+# silent int64-vs-string player_id type mismatch would make left_join match 0
+# rows and ship an all-NA piero. Character is the safe common type.
+squads$player_id  <- as.character(squads$player_id)
+ratings$player_id <- as.character(ratings$player_id)
 # One piero per player_id (ratings.parquet is already unique per player, but
 # guard against any dup so the join can't fan out the squad rows).
 piero_lut <- ratings |>
@@ -59,70 +65,30 @@ piero_lut <- ratings |>
 squads <- left_join(squads, piero_lut, by = "player_id")
 n_joined <- sum(!is.na(squads$piero))
 cat("Piero join:", n_joined, "/", nrow(squads), "squad players matched from ratings.parquet\n")
+# Coverage gate — squad players are tracked-league internationals, so the vast
+# majority are in ratings.parquet. A near-zero join means player_id drift, not a
+# real roster: fail loudly. (The workflow step is continue-on-error, so this
+# surfaces as a red step without blocking the rest of the build, and the blog
+# falls back to its client-side compute — never wrong data.)
+if (n_joined == 0)
+  stop("Piero squad join matched 0 rows — player_id type/key drift between wc2026_squads and ratings.parquet")
+if (n_joined / nrow(squads) < 0.5)
+  warning(sprintf("Piero squad join coverage only %.0f%% (%d/%d) — possible player_id drift",
+                  100 * n_joined / nrow(squads), n_joined, nrow(squads)))
 
-# 2. Unmatched squad players (absent from ratings.parquet — rare untracked-league
-# call-ups). RESOLVED (was TODO): leave their piero = NA rather than recompute.
-# The squad parquet's `panna` is the LATEST-SEASON xrapm (panna step 12 renames
-# it), not the career trait the reference constants were calibrated on, so a
-# recompute would ship a mildly miscalibrated number for these players. An
-# honest NA ("—" on the page) beats a wrong rating — the whole point of this fix
-# is trust. Flip RECOMPUTE_UNMATCHED to TRUE only once step 12 carries the
-# CAREER panna into wc2026_squads (then the recompute below is exact).
-RECOMPUTE_UNMATCHED <- FALSE
+# 2. Squad players absent from ratings.parquet (rare untracked-league call-ups)
+# keep piero = NA. We deliberately do NOT recompute from the reference constants:
+# the squad parquet's `panna` is the LATEST-SEASON xrapm (renamed by panna step
+# 12's 12_export_wc2026_blog.R), not the career trait the constants were
+# calibrated on, so a recompute would ship a mildly miscalibrated number. An
+# honest NA ("—" on the page) beats a wrong rating. If step 12 is later changed
+# to carry the CAREER panna into wc2026_squads, an exact recompute (z-blend over
+# the persisted reference mean/sd, NEVER the squad pool's own stats) can be
+# reinstated here.
 unmatched <- which(is.na(squads$piero))
-if (RECOMPUTE_UNMATCHED && length(unmatched) > 0 && file.exists(ref_path) &&
-    requireNamespace("jsonlite", quietly = TRUE)) {
-  ref <- jsonlite::fromJSON(ref_path, simplifyVector = FALSE)
-  metric_names <- names(ref$metrics)          # e.g. panna / epr / psr present in ref
-  weights <- unlist(ref$weights[metric_names])
-
-  recompute_piero <- function(row) {
-    # weighted renormalized z-blend over the metrics PRESENT for this row,
-    # using the REFERENCE pool's mean/sd (never the squad pool's).
-    acc <- 0; sw <- 0
-    for (m in metric_names) {
-      v <- suppressWarnings(as.numeric(row[[m]]))
-      if (length(v) == 1 && is.finite(v)) {
-        mu <- ref$metrics[[m]]$mean; sd <- ref$metrics[[m]]$sd
-        z <- (v - mu) / sd
-        acc <- acc + weights[[m]] * z
-        sw  <- sw  + weights[[m]]
-      }
-    }
-    if (sw <= 0) return(NA_real_)
-    blend <- acc / sw
-    round(((blend - ref$blend$mean) / ref$blend$sd) * ref$panna$sd + ref$panna$mean, 4)
-  }
-
-  # CAVEAT on the recompute path (unmatched squad players ONLY — the common
-  # join path above is unaffected and correct):
-  # The reference constants were built on ratings.parquet's `panna`, which is the
-  # CAREER trait. But panna step 12 (12_export_wc2026_blog.R, ~L218-222) builds
-  # the squad parquet's `panna` by renaming the LATEST-SEASON `xrapm` — i.e. a
-  # SEASON metric, not the career trait. Feeding that into the career-calibrated
-  # reference is a scale mismatch for the handful of recomputed players.
-  # TODO(human): decide the right behaviour for untracked-league call-ups —
-  # either (a) have step 12 carry the career `panna` into wc2026_squads (then
-  # this recompute is exact), or (b) leave their piero = NA rather than ship a
-  # mildly miscalibrated number. Until then this recompute is best-effort and
-  # only affects players genuinely absent from ratings.parquet.
-  needed <- intersect(metric_names, names(squads))
-  if (length(needed) == length(metric_names)) {
-    for (i in unmatched) {
-      squads$piero[i] <- recompute_piero(as.list(squads[i, metric_names, drop = FALSE]))
-    }
-    n_recomp <- sum(!is.na(squads$piero[unmatched]))
-    cat("Piero recompute (reference constants):", n_recomp, "/", length(unmatched),
-        "unmatched squad players rated\n")
-  } else {
-    cat("::warning::squads missing metric column(s) [",
-        paste(setdiff(metric_names, names(squads)), collapse = ", "),
-        "] — leaving unmatched rows' piero = NA\n")
-  }
-} else if (length(unmatched) > 0) {
-  cat("::warning::", length(unmatched), "unmatched squad players and no",
-      ref_path, "/jsonlite — their piero stays NA\n")
-}
+if (length(unmatched) > 0)
+  cat(sprintf("::notice::%d squad players absent from ratings.parquet — piero left NA\n",
+              length(unmatched)))
 
 write_parquet(squads, squads_path)
 cat("wc2026_squads.parquet:", sum(!is.na(squads$piero)), "/", nrow(squads),

@@ -254,7 +254,7 @@ jobs:
       # build because it LEFT JOINs piero from blog/ratings.parquet and reuses
       # blog/piero_reference.json for the rare squad players absent from ratings.
       # Both files are written by build_blog_data.R above. See
-      # scripts/enrich_squads_piero.R and PIERO-POOL-INDEPENDENCE.md.
+      # scripts/enrich_squads_piero.R and (parent repo) pannaverse/PIERO-POOL-INDEPENDENCE.md.
       - name: Enrich WC squads with Piero
         continue-on-error: true
         run: |
