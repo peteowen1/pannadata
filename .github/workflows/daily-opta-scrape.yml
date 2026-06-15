@@ -109,6 +109,7 @@ jobs:
       # needs longer.
       timeout-minutes: ${{ fromJson(github.event.inputs.scrape_timeout_minutes || '35') }}
       env:
+        OPTA_OUTLET_ID: ${{ secrets.OPTA_OUTLET_ID }}
         INPUT_LEAGUES: ${{ github.event.inputs.leagues }}
         INPUT_SEASONS: ${{ github.event.inputs.seasons }}
         INPUT_RECENT: ${{ github.event.inputs.recent || 1 }}

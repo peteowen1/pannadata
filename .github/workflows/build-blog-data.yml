@@ -30,6 +30,7 @@ jobs:
             any::dplyr
             any::tidyr
             any::xgboost
+            any::jsonlite
 
       - name: Download source data
         env:
@@ -248,6 +249,21 @@ jobs:
       - name: Build ratings parquet
         run: Rscript scripts/build_blog_data.R
 
+      # Attach the pool-independent `piero` column to the WC squads parquet
+      # (downloaded as a pass-through from panna step 12). Runs AFTER the ratings
+      # build because it LEFT JOINs piero from blog/ratings.parquet and reuses
+      # blog/piero_reference.json for the rare squad players absent from ratings.
+      # Both files are written by build_blog_data.R above. See
+      # scripts/enrich_squads_piero.R and (parent repo) pannaverse/PIERO-POOL-INDEPENDENCE.md.
+      - name: Enrich WC squads with Piero
+        continue-on-error: true
+        run: |
+          if [ -f blog/wc2026_squads.parquet ]; then
+            Rscript scripts/enrich_squads_piero.R
+          else
+            echo "::notice::Skipping squad Piero — wc2026_squads.parquet not downloaded"
+          fi
+
       - name: Build player details parquet
         continue-on-error: true
         run: |
@@ -292,7 +308,11 @@ jobs:
             Rscript -e '
               library(arrow); library(dplyr)
               source("scripts/league_config.R")
-              shots <- read_parquet("source/opta_shot_events.parquet") |> filter(competition %in% BLOG_COMPS)
+              # BLOG_SHOT_COMPS = BLOG_COMPS + World_Cup, so finished WC matches
+              # carry shot-level xG into match-shots.parquet (and thence into
+              # predictions xg_home/xg_away). WC is intentionally not in
+              # BLOG_COMPS — see league_config.R.
+              shots <- read_parquet("source/opta_shot_events.parquet") |> filter(competition %in% BLOG_SHOT_COMPS)
               has_xg <- "xg" %in% names(shots)
               cat("Source has xG:", has_xg, "\n")
               # Team names from lineups
@@ -384,17 +404,30 @@ jobs:
               team_xg <- ms |> filter(!is.na(xg)) |>
                 group_by(match_id, team_id) |>
                 summarise(xg = round(sum(xg, na.rm = TRUE), 2), .groups = "drop")
-              # Get home/away from match-stats team_position
-              codes <- BLOG_CODES
-              pos <- list()
-              for (code in codes) {
-                f <- paste0("blog/match-stats-", code, ".parquet")
-                if (file.exists(f)) {
-                  pos[[code]] <- read_parquet(f, col_select = c("match_id","team_id","team_position")) |>
-                    distinct(match_id, team_id, team_position)
-                }
+              # Home/away (team_position) per (match_id, team_id). Prefer
+              # opta_lineups.parquet: it covers EVERY scraped competition,
+              # including the World Cup, whereas the per-league
+              # match-stats-<code>.parquet files only exist for BLOG_CODES (no
+              # WC file → WC matches would be dropped by the inner_join and
+              # stay xG-NULL). Fall back to match-stats if lineups is absent.
+              pos <- NULL
+              lu_path <- "source/opta_lineups.parquet"
+              if (file.exists(lu_path)) {
+                pos <- read_parquet(lu_path, col_select = c("match_id","team_id","team_position")) |>
+                  distinct(match_id, team_id, team_position)
               }
-              pos <- bind_rows(pos)
+              if (is.null(pos) || nrow(pos) == 0) {
+                codes <- BLOG_CODES
+                pos_list <- list()
+                for (code in codes) {
+                  f <- paste0("blog/match-stats-", code, ".parquet")
+                  if (file.exists(f)) {
+                    pos_list[[code]] <- read_parquet(f, col_select = c("match_id","team_id","team_position")) |>
+                      distinct(match_id, team_id, team_position)
+                  }
+                }
+                pos <- bind_rows(pos_list)
+              }
               # Pivot to one row per match: xg_home, xg_away
               match_xg <- team_xg |>
                 inner_join(pos, by = c("match_id", "team_id")) |>

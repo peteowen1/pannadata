@@ -12,6 +12,17 @@ BLOG_COMP_TO_CODE <- c(
 BLOG_COMPS <- names(BLOG_COMP_TO_CODE)
 BLOG_CODES <- unname(BLOG_COMP_TO_CODE)
 
+# Competitions whose SHOTS we want in match-shots.parquet / predictions xG, even
+# though they are NOT first-class blog leagues (no BLOG_CODE, no match-stats
+# file, no league badge). The World Cup is keyed by tournament YEAR not a club
+# season, and its `league` in match_predictions.parquet is "WC" while its
+# `competition` in opta_shot_events.parquet is "World_Cup" (see panna
+# R/opta_loaders.R league map). Adding it here lets finished WC matches get
+# xg_home/xg_away from the same panna XGBoost shot-xG model as club games,
+# joined onto predictions by match_id — without pulling WC into BLOG_COMPS
+# (which drives match-stats / league-xg and would have wider side effects).
+BLOG_SHOT_COMPS <- c(BLOG_COMPS, "World_Cup")
+
 # Competitions rated upstream but deliberately EXCLUDED from the blog outputs.
 # CAF_CL and Tunisian_Ligue_1 are no longer treated as tier-2 for the blog, and
 # they carry ~0% box-score skills coverage (the skills loader never picks them up),
