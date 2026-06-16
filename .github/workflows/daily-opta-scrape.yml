@@ -250,18 +250,34 @@ jobs:
           any::dplyr
           any::xgboost
 
-    - name: Enrich shots with xG
+    - name: Enrich shots with xG + xGOT
       continue-on-error: true
       run: |
         if [ -f data/opta/opta_shot_events.parquet ]; then
           mkdir -p source
+          # Goal-mouth placement (Opta q102/103): re-derive from the events feed
+          # each run so it survives re-consolidation — the same reason xG below is
+          # re-added every run rather than relied upon through consolidate.
+          if python scripts/opta/backfill_goalmouth.py \
+               data/opta/opta_shot_events.parquet data/opta/events_consolidated; then
+            echo "goalmouth backfill OK"
+          else
+            echo "::warning::goalmouth backfill skipped/failed — xGOT will no-op this run"
+          fi
+          # Pre-shot xG
           if gh release download models -p "xg_model.rds" -D source/; then
             Rscript scripts/enrich_shots_xg.R data/opta/opta_shot_events.parquet source/xg_model.rds
           else
             echo "::warning::xg_model.rds not available — shots will not include xG"
           fi
+          # Post-shot xG (needs goalmouth + xgot_model; skips cleanly if absent)
+          if gh release download models -p "xgot_model.rds" -D source/ 2>/dev/null; then
+            Rscript scripts/enrich_shots_xgot.R data/opta/opta_shot_events.parquet source/xgot_model.rds
+          else
+            echo "::notice::xgot_model.rds not in models release yet — skipping xGOT enrichment"
+          fi
         else
-          echo "::notice::No shot events file — skipping xG enrichment"
+          echo "::notice::No shot events file — skipping enrichment"
         fi
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

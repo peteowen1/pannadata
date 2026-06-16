@@ -92,6 +92,12 @@ class ShotEvent:
     body_part: str = ""  # Head, RightFoot, LeftFoot
     situation: str = ""  # OpenPlay, SetPiece, Corner, Penalty, etc.
     big_chance: bool = False
+    # Goal-mouth placement: where the shot crosses the goal-line plane.
+    # Opta q102 = y-coord (0-100 pitch-width scale; posts ~45.2/54.8),
+    # q103 = z-coord/height (crossbar ~38). Present for ON- and OFF-target
+    # shots (Opta projects the crossing point). None when absent -> NaN, never 0.
+    goalmouth_y: float = None
+    goalmouth_z: float = None
 
 
 @dataclass
@@ -1052,6 +1058,17 @@ class OptaScraper:
             # Big chance (qualifier 214)
             big_chance = 214 in qualifiers
 
+            # Goal-mouth placement (q102=y, q103=z). Coerce to float only when
+            # present; absent/blank -> None (NaN downstream), never 0.
+            def _gm(qid):
+                v = qualifiers.get(qid)
+                if v in (None, ""):
+                    return None
+                # Opta sometimes returns European-locale decimals ("49,8").
+                return float(v.replace(",", ".") if isinstance(v, str) else v)
+            goalmouth_y = _gm(102)
+            goalmouth_z = _gm(103)
+
             shots.append(ShotEvent(
                 match_id=match_id,
                 event_id=event.get("id", 0),
@@ -1068,6 +1085,8 @@ class OptaScraper:
                 body_part=body_part,
                 situation=situation,
                 big_chance=big_chance,
+                goalmouth_y=goalmouth_y,
+                goalmouth_z=goalmouth_z,
             ))
 
         return shots
