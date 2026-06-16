@@ -262,6 +262,87 @@ stopifnot(
   na_spm_heavy / max(sum(heavy), 1) < 0.3
 )
 
+# ── Recover recently-active career players (bounded Option B) ─────────────────
+# ratings.parquet's row set above is gated to the latest rated season, but the
+# HEADLINE is the career trait — which exists whether or not a player logged a
+# latest-season rated minute. So players injured / relegated / now in an
+# untracked league (Lukaku, the WC squad's Group B) were dropped WITH their
+# career rating. Re-add any career-rated player who appeared in ANY Opta-tracked
+# match within RECENCY_DAYS, carrying their career panna/offense/defense/epr/psr
+# but NA season columns, flagged by `last_rated_season` (membership in
+# seasonal_xrapm = the authoritative staleness signal; no fragile comp list) and
+# `last_match_date`. The active build + its join-drift gates above are untouched.
+# See pannaverse/PIERO-POOL-INDEPENDENCE.md.
+RECENCY_DAYS <- 548L  # ~18 months
+lineups_path <- "source/opta_lineups.parquet"
+if (file.exists(lineups_path)) {
+  lu <- arrow::read_parquet(lineups_path, col_select = c(dedup_key, "match_date"))
+  lu <- as.data.frame(lu)
+  lu[[dedup_key]] <- as.character(lu[[dedup_key]])
+  lu$match_date <- as.Date(substr(as.character(lu$match_date), 1, 10))
+  lu <- lu[!is.na(lu$match_date), ]
+  ref_date <- max(lu$match_date)
+  last_app <- lu |> group_by(.data[[dedup_key]]) |>
+    summarise(last_match_date = max(match_date), .groups = "drop")
+  # last_rated_season: authoritative — a player is "rated" in a season iff they
+  # appear in seasonal_xrapm for it. Drift-proof (same data that built the rating).
+  last_rated <- seasonal_xrapm |>
+    mutate(.k = as.character(.data[[dedup_key]])) |>
+    group_by(.k) |> summarise(last_rated_season = max(season_end_year), .groups = "drop") |>
+    rename(!!dedup_key := .k)
+
+  active_ids <- as.character(panna_ratings[[dedup_key]])
+  panna_ratings[[dedup_key]] <- active_ids
+  panna_ratings <- panna_ratings |>
+    left_join(last_app, by = dedup_key) |>
+    left_join(last_rated, by = dedup_key)
+
+  # Recovered = career-rated, appeared within RECENCY_DAYS, not already active.
+  career_all <- career_panna |>
+    mutate(.k = as.character(.data[[dedup_key]])) |>
+    group_by(.k) |> slice_max(total_minutes, n = 1, with_ties = FALSE) |> ungroup() |>
+    transmute(!!dedup_key := .k, player_name,
+              panna, offense = panna_offense, defense = panna_defense)
+  recov <- career_all |>
+    inner_join(last_app, by = dedup_key) |>
+    filter(as.numeric(ref_date - last_match_date) <= RECENCY_DAYS,
+           !.data[[dedup_key]] %in% active_ids) |>
+    left_join(last_rated, by = dedup_key) |>
+    left_join(player_meta |> select(any_of(c(dedup_key, "team", "league", "position"))),
+              by = dedup_key)
+  if (!is.null(epr)) recov <- left_join(recov, epr, by = dedup_key)
+  if (!is.null(psr)) recov <- left_join(recov, psr, by = dedup_key)
+  if ("league" %in% names(recov))   # honour BLOG_COMP_EXCLUDE for recovered too
+    recov <- recov |> filter(is.na(league) | !league %in% BLOG_COMP_EXCLUDE)
+  recov <- recov |> select(any_of(names(panna_ratings)))  # bind_rows NA-fills the rest
+  recov[, c("panna","offense","defense","epr","psr")] <-
+    lapply(intersect(c("panna","offense","defense","epr","psr"), names(recov)),
+           function(c) round(recov[[c]], 4))
+
+  cat(sprintf("Recovered %d recently-active career players (<= %dd, season cols NA)\n",
+              nrow(recov), RECENCY_DAYS))
+  panna_ratings <- dplyr::bind_rows(panna_ratings, recov)
+
+  # Recompute ranks/percentiles over the UNION (headline career panna).
+  panna_ratings <- panna_ratings |>
+    mutate(is_active = !is.na(xrapm),
+           panna_rank = as.integer(rank(-panna, ties.method = "min")),
+           panna_percentile = round(100 * rank(panna, ties.method = "min") / n(), 1)) |>
+    group_by(position) |>
+    mutate(panna_rank_position = ifelse(is.na(position), NA_integer_,
+                                        as.integer(rank(-panna, ties.method = "min"))),
+           panna_percentile_position = ifelse(is.na(position), NA_real_,
+                                        round(100 * rank(panna, ties.method = "min") / n(), 1)),
+           offense_percentile_position = ifelse(is.na(position), NA_real_,
+                                        round(100 * rank(offense, ties.method = "min") / n(), 1)),
+           defense_percentile_position = ifelse(is.na(position), NA_real_,
+                                        round(100 * rank(defense, ties.method = "min") / n(), 1))) |>
+    ungroup() |>
+    arrange(panna_rank)
+} else {
+  cat("source/opta_lineups.parquet absent — skipping recently-active recovery (latest-season pool only)\n")
+}
+
 # ── Piero: pool-independent composite player rating ──────────────────────────
 # Faithful R port of inthegame-blog/football/player-rating.js
 # `computePlayerRating(rows, { scaleTo: "panna" })`. Computed ONCE here over the
