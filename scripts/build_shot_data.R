@@ -82,6 +82,20 @@ if ("xg" %in% names(opta_shots)) {
   }
 }
 
+# ── Goal-mouth placement (Opta q102/103): where the shot crosses the line ──
+# Powers the blog's shot-placement maps ("which corners does this player
+# find?"). Present once the updated scraper + backfill_goalmouth.py have
+# shipped goalmouth_y/z to opta-latest; absent gracefully otherwise.
+sel <- opta_shots$competition %in% tracked_leagues & opta_shots$season %in% recent_seasons
+if (all(c("goalmouth_y", "goalmouth_z") %in% names(opta_shots))) {
+  panna_shots$gm_y <- round(opta_shots$goalmouth_y[sel], 1)  # NA stays NA
+  panna_shots$gm_z <- round(opta_shots$goalmouth_z[sel], 1)
+  cat("goal-mouth coords:", sum(!is.na(panna_shots$gm_y)), "of", nrow(panna_shots),
+      "shots have placement\n")
+} else {
+  cat("goal-mouth coords: not in source yet (run backfill_goalmouth.py + re-upload)\n")
+}
+
 # Drop big_chance before writing (internal feature, not needed in blog)
 panna_shots <- panna_shots |> select(-big_chance)
 

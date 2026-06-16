@@ -288,6 +288,8 @@ Individual shot-level data with x/y coordinates. Used for xG model training.
 | `body_part` | chr | Head, LeftFoot, RightFoot |
 | `situation` | chr | OpenPlay, SetPiece, Corner, Penalty |
 | `big_chance` | lgl | Big chance flag |
+| `goalmouth_y` | num | Goal-line crossing point, horizontal (Opta q102; 0-100 width scale, posts ~45.2/54.8). `NA` if absent. Reliably present 2021-22+; backfilled for history via `scripts/opta/backfill_goalmouth.py`. Feeds the xGOT (post-shot xG) model. |
+| `goalmouth_z` | num | Goal-line crossing point, height (Opta q103; crossbar ~38). `NA` if absent. See `goalmouth_y`. |
 
 ---
 
