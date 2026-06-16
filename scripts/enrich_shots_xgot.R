@@ -76,8 +76,13 @@ features <- data.frame(
 
 missing_feat <- setdiff(feature_cols, names(features))
 if (length(missing_feat) > 0) {
-  cat("::warning:: model expects features not built here:", paste(missing_feat, collapse=", "), "\n")
-  for (col in missing_feat) features[[col]] <- 0
+  # Fatal, NOT a 0-fill: a missing model feature means the placement/base
+  # feature logic here has drifted from panna::.create_placement_features /
+  # .create_shot_features. Predicting on 0-filled features would ship
+  # plausible-but-wrong xGOT to the canonical parquet — refuse instead.
+  stop("xgot_model expects features this script does not build: ",
+       paste(missing_feat, collapse = ", "),
+       " — feature logic has drifted from panna; refusing to predict.")
 }
 
 on_target <- shots$type_id %in% c(15L, 16L)
