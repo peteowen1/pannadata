@@ -298,19 +298,24 @@ if (file.exists(lineups_path)) {
   # It need not agree with last_rated_season, which is sourced independently.
   #
   # Cups & national-team fixtures are EXCLUDED: a player's single most recent match
-  # is very often a cup tie (29% of recovered players), which would mislabel a La
-  # Liga regular as Copa_del_Rey. We keep only "league" competitions — anything in
-  # BLOG_COMPS (so the European club comps UCL/UEL/Conference_League survive even
-  # though they're knockout) plus any competition NOT matching the cup/international
-  # blocklist below.
+  # is frequently a cup tie (~29% of recovered players as measured 2026-06-16),
+  # which would mislabel a La Liga regular as Copa_del_Rey. A competition counts as a
+  # "league" if it is NOT matched by the cup/international blocklist regex below, OR
+  # is explicitly whitelisted via BLOG_COMPS. Note: under current data the three
+  # European club comps (UCL/UEL/Conference_League) already pass the negated-regex
+  # test on their own — their scraper keys aren't cup-keyword strings — so the
+  # BLOG_COMPS clause is a defensive guard (it would rescue them if a future scrape
+  # renamed them to a *_Cup form, and rescues any new BLOG_COMP that collides with a
+  # keyword), NOT the active mechanism for them today.
   #
   # The blocklist is a keyword regex SHIM. The authoritative type is Opta's
   # `competitionFormat` (Domestic league/cup/super cup, International cup), present
-  # in scripts/opta/all_competitions.json — but that file maps only ~13 of our ~100
-  # lineup comps, and the comprehensive opta_entitlement_catalog.csv lacks the field.
-  # PROPER FIX: add competition_format to build_entitlement_catalog.py and look it up
-  # here. Until then this regex is validated 100% on the current 100 comps; extend it
-  # if a new domestic cup leaks through as a league.
+  # in scripts/opta/all_competitions.json — but that file covers only a minority of
+  # our lineup comps, and the comprehensive opta_entitlement_catalog.csv lacks the
+  # field. PROPER FIX: add competition_format to build_entitlement_catalog.py and
+  # look it up here. Until then this is a best-effort blocklist validated against the
+  # comp set as of 2026-06; extend it when a new domestic cup surfaces as a player's
+  # last_rated_league (the classification counts logged below are the tripwire).
   cup_intl_rx <- paste0(
     "Cup|Kupa|Pokal|Coppa|Copa|Coupe|Taca|Taça|Beker|Trophy|Trophee|Trophée|Shield|Supercopa|",
     "Supercup|Super_Cup|Champions_League|CAF_CL|Confederation|Libertadores|",
@@ -318,6 +323,9 @@ if (file.exists(lineups_path)) {
     "Asian_Cup|Play_?[Oo]ff|Gulf_Champions")
   is_league_comp <- lu$competition %in% BLOG_COMPS |
     !grepl(cup_intl_rx, lu$competition, ignore.case = TRUE)
+  cat(sprintf("last_rated_league: %d competitions classified as leagues, %d as cup/intl (eyeball for a cup leaking through the shim)\n",
+              length(unique(lu$competition[is_league_comp])),
+              length(unique(lu$competition[!is_league_comp]))))
   last_league <- lu[is_league_comp, ] |> group_by(.data[[dedup_key]]) |>
     slice_max(match_date, n = 1, with_ties = FALSE) |> ungroup() |>
     select(all_of(dedup_key), last_rated_league = competition)
@@ -370,6 +378,18 @@ if (file.exists(lineups_path)) {
   n_na_league <- if ("league" %in% names(recov)) sum(is.na(recov$league)) else nrow(recov)
   cat(sprintf("Recovered %d recently-active career players (<= %dd, season cols NA; %d NA-league)\n",
               nrow(recov), RECENCY_DAYS, n_na_league))
+  # Own loud floor for last_rated_league: the n_na_league count above is a DIFFERENT
+  # column (recov$league from player_meta), so it gives false reassurance here. A
+  # recovered player whose every recent appearance was a cup → NA is legitimate, but
+  # an ALL-NA result means the competition column or cup_intl_rx drifted (real
+  # leagues excluded en masse) — surface that loudly, don't silently ship NA.
+  if ("last_rated_league" %in% names(recov)) {
+    n_na_rated_league <- sum(is.na(recov$last_rated_league))
+    if (nrow(recov) > 0L && n_na_rated_league == nrow(recov))
+      cat("::warning::every recovered player has NA last_rated_league — expected most to resolve to a league; check opta_lineups competition column / cup_intl_rx over-matching\n")
+    cat(sprintf("  ... %d of %d recovered players have NA last_rated_league (all recent apps were cups/intl)\n",
+                n_na_rated_league, nrow(recov)))
+  }
   panna_ratings <- dplyr::bind_rows(panna_ratings, recov)
 
   # Recompute ranks/percentiles over the UNION (headline career panna).
