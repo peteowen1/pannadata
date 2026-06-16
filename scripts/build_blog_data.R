@@ -282,6 +282,11 @@ if (file.exists(lineups_path)) {
   lu$match_date <- as.Date(substr(as.character(lu$match_date), 1, 10))
   lu <- lu[!is.na(lu$match_date), ]
   ref_date <- max(lu$match_date)
+  # ref_date anchors the recency window ("today"). If the scrape stalls and the
+  # newest lineup goes stale, the window silently slides — flag it loudly.
+  if (as.numeric(Sys.Date() - ref_date) > 30)
+    cat(sprintf("::warning::opta_lineups newest match_date %s is >30d old — recency window anchors on it, so it may be sliding\n",
+                as.character(ref_date)))
   last_app <- lu |> group_by(.data[[dedup_key]]) |>
     summarise(last_match_date = max(match_date), .groups = "drop")
   # last_rated_season: authoritative — a player is "rated" in a season iff they
@@ -315,12 +320,23 @@ if (file.exists(lineups_path)) {
   if ("league" %in% names(recov))   # honour BLOG_COMP_EXCLUDE for recovered too
     recov <- recov |> filter(is.na(league) | !league %in% BLOG_COMP_EXCLUDE)
   recov <- recov |> select(any_of(names(panna_ratings)))  # bind_rows NA-fills the rest
-  recov[, c("panna","offense","defense","epr","psr")] <-
-    lapply(intersect(c("panna","offense","defense","epr","psr"), names(recov)),
-           function(c) round(recov[[c]], 4))
+  # Round name-aligned on BOTH sides. A fixed 5-name LHS (`recov[, c(...5...)]`)
+  # with a shorter intersect() RHS recycles BY POSITION in base R — when the
+  # EPR/PSR snapshots are absent it would write panna/offense into the (created)
+  # epr/psr columns, fabricating Piero inputs and corrupting the published
+  # parquet. Use the same intersected set on both sides.
+  round_cols <- intersect(c("panna","offense","defense","epr","psr"), names(recov))
+  recov[round_cols] <- lapply(round_cols, function(cc) round(recov[[cc]], 4))
 
-  cat(sprintf("Recovered %d recently-active career players (<= %dd, season cols NA)\n",
-              nrow(recov), RECENCY_DAYS))
+  # Loud floor: 0 recovered means a player_id / match_date join drift (a real run
+  # recovers ~thousands), not a green no-op. NA-league count surfaces a meta-join
+  # drift (a spike = every recovered player lost its team/league, which would also
+  # leak past the is.na(league) branch of the BLOG_COMP_EXCLUDE filter).
+  if (nrow(recov) == 0L)
+    cat("::warning::recency recovery matched 0 players — expected thousands; check player_id/match_date join drift\n")
+  n_na_league <- if ("league" %in% names(recov)) sum(is.na(recov$league)) else nrow(recov)
+  cat(sprintf("Recovered %d recently-active career players (<= %dd, season cols NA; %d NA-league)\n",
+              nrow(recov), RECENCY_DAYS, n_na_league))
   panna_ratings <- dplyr::bind_rows(panna_ratings, recov)
 
   # Recompute ranks/percentiles over the UNION (headline career panna).
@@ -340,7 +356,16 @@ if (file.exists(lineups_path)) {
     ungroup() |>
     arrange(panna_rank)
 } else {
-  cat("source/opta_lineups.parquet absent — skipping recently-active recovery (latest-season pool only)\n")
+  # The recovery is now part of ratings.parquet's contract (~half the rows), and
+  # opta_lineups arrives via a continue-on-error release download — so absence is
+  # a real, reachable infra failure, NOT a benign skip. Annotate loudly and keep
+  # the published schema stable (is_active / last_rated_season / last_match_date
+  # present regardless) so downstream blog code never sees the columns vanish.
+  cat("::warning::source/opta_lineups.parquet absent — shipping LATEST-SEASON pool only; the recently-active career players are NOT recovered (ratings.parquet ~half its intended size this run)\n")
+  panna_ratings$is_active        <- TRUE
+  panna_ratings$last_match_date  <- as.Date(NA)
+  if (!"last_rated_season" %in% names(panna_ratings))
+    panna_ratings$last_rated_season <- latest_season
 }
 
 # ── Piero: pool-independent composite player rating ──────────────────────────
