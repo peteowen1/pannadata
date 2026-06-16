@@ -96,6 +96,13 @@ if (all(c("goalmouth_y", "goalmouth_z") %in% names(opta_shots))) {
   cat("goal-mouth coords: not in source yet (run backfill_goalmouth.py + re-upload)\n")
 }
 
+# ── xGOT (post-shot xG): per-shot placement value, from enrich_shots_xgot.R ──
+# 0 = off-target, NA = on-target without coords (surfaced, not imputed).
+if ("xgot" %in% names(opta_shots)) {
+  panna_shots$xgot <- round(opta_shots$xgot[sel], 3)
+  cat("xGOT from source:", sum(!is.na(panna_shots$xgot)), "shots have xGOT\n")
+}
+
 # Drop big_chance before writing (internal feature, not needed in blog)
 panna_shots <- panna_shots |> select(-big_chance)
 
