@@ -276,7 +276,7 @@ stopifnot(
 RECENCY_DAYS <- 548L  # ~18 months
 lineups_path <- "source/opta_lineups.parquet"
 if (file.exists(lineups_path)) {
-  lu <- arrow::read_parquet(lineups_path, col_select = c(dedup_key, "match_date"))
+  lu <- arrow::read_parquet(lineups_path, col_select = c(dedup_key, "match_date", "competition"))
   lu <- as.data.frame(lu)
   lu[[dedup_key]] <- as.character(lu[[dedup_key]])
   lu$match_date <- as.Date(substr(as.character(lu$match_date), 1, 10))
@@ -287,8 +287,49 @@ if (file.exists(lineups_path)) {
   if (as.numeric(Sys.Date() - ref_date) > 30)
     cat(sprintf("::warning::opta_lineups newest match_date %s is >30d old — recency window anchors on it, so it may be sliding\n",
                 as.character(ref_date)))
+  # last_match_date = the player's true most recent appearance in ANY competition
+  # (the recency/staleness signal; gates the recovery window below).
   last_app <- lu |> group_by(.data[[dedup_key]]) |>
     summarise(last_match_date = max(match_date), .groups = "drop")
+  # last_rated_league = the league of the player's most recent LEAGUE appearance —
+  # i.e. "where the player plays now" (design call 2026-06-16), NOT the league of
+  # their last xRAPM-rated season (seasonal_xrapm carries no league, so this is
+  # reconstructed from opta_lineups, its only (player, match) -> competition map).
+  # It need not agree with last_rated_season, which is sourced independently.
+  #
+  # Cups & national-team fixtures are EXCLUDED: a player's single most recent match
+  # is frequently a cup tie (~29% of recovered players as measured 2026-06-16),
+  # which would mislabel a La Liga regular as Copa_del_Rey. A competition counts as a
+  # "league" if it is NOT matched by the cup/international blocklist regex below, OR
+  # is explicitly whitelisted via BLOG_COMPS. Note: under current data the three
+  # European club comps (UCL/UEL/Conference_League) already pass the negated-regex
+  # test on their own — their scraper keys aren't cup-keyword strings — so the
+  # BLOG_COMPS clause is a defensive guard (it would rescue them if a future scrape
+  # renamed them to a *_Cup form, and rescues any new BLOG_COMP that collides with a
+  # keyword), NOT the active mechanism for them today.
+  #
+  # The blocklist is a keyword regex SHIM. The authoritative type is Opta's
+  # `competitionFormat` (Domestic league/cup/super cup, International cup), present
+  # in scripts/opta/all_competitions.json — but that file covers only a minority of
+  # our lineup comps, and the comprehensive opta_entitlement_catalog.csv lacks the
+  # field. PROPER FIX: add competition_format to build_entitlement_catalog.py and
+  # look it up here. Until then this is a best-effort blocklist validated against the
+  # comp set as of 2026-06; extend it when a new domestic cup surfaces as a player's
+  # last_rated_league (the classification counts logged below are the tripwire).
+  cup_intl_rx <- paste0(
+    "Cup|Kupa|Pokal|Coppa|Copa|Coupe|Taca|Taça|Beker|Trophy|Trophee|Trophée|Shield|Supercopa|",
+    "Supercup|Super_Cup|Champions_League|CAF_CL|Confederation|Libertadores|",
+    "Sudamericana|Qualifiers|World_Cup|AFCON|_America|Euros?$|Nations|Gold_Cup|",
+    "Asian_Cup|Play_?[Oo]ff|Gulf_Champions")
+  is_league_comp <- lu$competition %in% BLOG_COMPS |
+    !grepl(cup_intl_rx, lu$competition, ignore.case = TRUE)
+  cat(sprintf("last_rated_league: %d competitions classified as leagues, %d as cup/intl (eyeball for a cup leaking through the shim)\n",
+              length(unique(lu$competition[is_league_comp])),
+              length(unique(lu$competition[!is_league_comp]))))
+  last_league <- lu[is_league_comp, ] |> group_by(.data[[dedup_key]]) |>
+    slice_max(match_date, n = 1, with_ties = FALSE) |> ungroup() |>
+    select(all_of(dedup_key), last_rated_league = competition)
+  last_app <- left_join(last_app, last_league, by = dedup_key)
   # last_rated_season: authoritative — a player is "rated" in a season iff they
   # appear in seasonal_xrapm for it. Drift-proof (same data that built the rating).
   last_rated <- seasonal_xrapm |>
@@ -337,6 +378,18 @@ if (file.exists(lineups_path)) {
   n_na_league <- if ("league" %in% names(recov)) sum(is.na(recov$league)) else nrow(recov)
   cat(sprintf("Recovered %d recently-active career players (<= %dd, season cols NA; %d NA-league)\n",
               nrow(recov), RECENCY_DAYS, n_na_league))
+  # Own loud floor for last_rated_league: the n_na_league count above is a DIFFERENT
+  # column (recov$league from player_meta), so it gives false reassurance here. A
+  # recovered player whose every recent appearance was a cup → NA is legitimate, but
+  # an ALL-NA result means the competition column or cup_intl_rx drifted (real
+  # leagues excluded en masse) — surface that loudly, don't silently ship NA.
+  if ("last_rated_league" %in% names(recov)) {
+    n_na_rated_league <- sum(is.na(recov$last_rated_league))
+    if (nrow(recov) > 0L && n_na_rated_league == nrow(recov))
+      cat("::warning::every recovered player has NA last_rated_league — expected most to resolve to a league; check opta_lineups competition column / cup_intl_rx over-matching\n")
+    cat(sprintf("  ... %d of %d recovered players have NA last_rated_league (all recent apps were cups/intl)\n",
+                n_na_rated_league, nrow(recov)))
+  }
   panna_ratings <- dplyr::bind_rows(panna_ratings, recov)
 
   # Recompute ranks/percentiles over the UNION (headline career panna).
@@ -359,11 +412,13 @@ if (file.exists(lineups_path)) {
   # The recovery is now part of ratings.parquet's contract (~half the rows), and
   # opta_lineups arrives via a continue-on-error release download — so absence is
   # a real, reachable infra failure, NOT a benign skip. Annotate loudly and keep
-  # the published schema stable (is_active / last_rated_season / last_match_date
-  # present regardless) so downstream blog code never sees the columns vanish.
+  # the published schema stable (is_active / last_rated_season / last_rated_league
+  # / last_match_date present regardless) so downstream blog code never sees the
+  # columns vanish.
   cat("::warning::source/opta_lineups.parquet absent — shipping LATEST-SEASON pool only; the recently-active career players are NOT recovered (ratings.parquet ~half its intended size this run)\n")
-  panna_ratings$is_active        <- TRUE
-  panna_ratings$last_match_date  <- as.Date(NA)
+  panna_ratings$is_active         <- TRUE
+  panna_ratings$last_match_date   <- as.Date(NA)
+  panna_ratings$last_rated_league <- NA_character_
   if (!"last_rated_season" %in% names(panna_ratings))
     panna_ratings$last_rated_season <- latest_season
 }
