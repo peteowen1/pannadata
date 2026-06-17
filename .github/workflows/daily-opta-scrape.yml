@@ -257,8 +257,9 @@ jobs:
           mkdir -p source
           # Self-heal: re-derive shot rows for matches that have match_events but
           # NO shots in the consolidated file. Such matches get stranded under the
-          # opta-manifest "complete" flag (set on player_stats) when shot
-          # extraction silently failed/changed — the WC-2026 group games hit this
+          # opta-manifest "complete" flag (has_match_events — it tracks the events
+          # feed, not shot_events separately) when shot extraction silently
+          # failed/changed — the WC-2026 group games hit this
           # (12/16 had events but no shots, 2026-06). Zero API calls: the shots
           # come straight from the stored events qualifier_json. Runs BEFORE the
           # goalmouth/xG/xGOT enrich below so the healed shots get fully enriched.
@@ -289,6 +290,14 @@ jobs:
             Rscript scripts/enrich_shots_xgot.R data/opta/opta_shot_events.parquet source/xgot_model.rds
           else
             echo "::notice::xgot_model.rds not in models release yet — skipping xGOT enrichment"
+          fi
+          # Loud signal if shots shipped under-enriched: a high xG NaN rate means an
+          # enrich step above silently no-op'd (e.g. model download failed under
+          # continue-on-error), so any shots healed this run would ship without xG.
+          NAN=$(Rscript -e 'suppressMessages(library(arrow)); s<-read_parquet("data/opta/opta_shot_events.parquet"); cat(round(100*mean(is.na(s$xg))))' 2>/dev/null | tr -dc "0-9")
+          [ -z "$NAN" ] && NAN=100
+          if [ "$NAN" -gt 15 ]; then
+            echo "::error::xG NaN rate ${NAN}% after enrich (healthy <5%) — an enrich step likely failed; shots (incl. any healed this run) shipped without xG."
           fi
         else
           echo "::notice::No shot events file — skipping enrichment"
