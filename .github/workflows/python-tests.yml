@@ -1,0 +1,38 @@
+name: Python Tests
+
+# Runs the Opta scraper unit tests (pytest) on any change under scripts/opta/.
+# Additive CI — does not touch the scraper or scrape workflows.
+
+on:
+  push:
+    paths:
+      - 'scripts/opta/**'
+      - '.github/workflows/python-tests.yml'
+  pull_request:
+    paths:
+      - 'scripts/opta/**'
+      - '.github/workflows/python-tests.yml'
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: scripts/opta/requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r scripts/opta/requirements-dev.txt
+
+      - name: Run pytest
+        # scripts/opta is the working directory so the scraper modules'
+        # bare-name imports (from scrape_opta import ...) resolve, and
+        # pytest.ini there excludes the live-API test_live_events.py.
+        working-directory: scripts/opta
+        run: pytest -q
