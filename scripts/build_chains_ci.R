@@ -98,6 +98,13 @@ comp_to_code <- c(BLOG_COMP_TO_CODE, World_Cup = "WC")
 dead_ball_types <- c(2L, 4L, 5L, 6L, 17L, 55L, 56L, 57L, 70L, 80L, 81L)
 non_play_types <- c(18L, 19L, 24L, 27L, 28L, 30L, 32L, 34L, 37L, 40L, 43L, 65L, 68L)
 shot_types <- c(13L, 14L, 15L, 16L)
+# Keeper rebound touches: GK Save (10), Claim (11), Punch (41), Blocked Pass
+# (50). These carry the DEFENDING team's team_id, so a shot -> save -> rebound
+# sequence flips attacking->defending->attacking and the raw team-change rule
+# below would split one possession into three (the 1-event save chain
+# mislabelled "lost_possession"). Treat them as transparent to possession
+# tracking so rebound possessions stay in one chain (pannadata#76).
+keeper_rebound_types <- c(10L, 11L, 41L, 50L)
 
 # Equity/WPA joins land on chain events by (match_id, event_id). Only chain
 # events that survive panna's SPADL conversion carry equity/wpa — SPADL drops
@@ -151,12 +158,19 @@ for (comp in blog_comps) {
   prev_team <- ""
   prev_match <- ""
   for (i in seq_len(nrow(events))) {
+    # A keeper rebound (save/claim/punch/block) must not end the attacking
+    # possession: it neither forces a new chain on the team-change clause nor
+    # advances prev_team. If the original attacker regains the ball the chain
+    # continues; if the defending team actually wins it, their NEXT event still
+    # has team_id != prev_team and triggers a split, so genuine turnovers are
+    # preserved (pannadata#76).
+    is_keeper_rebound <- events$type_id[i] %in% keeper_rebound_types
     new_chain <- events$match_id[i] != prev_match ||
-      (events$team_id[i] != prev_team && events$team_id[i] != "") ||
+      (!is_keeper_rebound && events$team_id[i] != prev_team && events$team_id[i] != "") ||
       events$type_id[i] %in% dead_ball_types
     if (new_chain) chain_n <- chain_n + 1L
     events$chain_number[i] <- chain_n
-    prev_team <- events$team_id[i]
+    if (!is_keeper_rebound) prev_team <- events$team_id[i]
     prev_match <- events$match_id[i]
   }
 
