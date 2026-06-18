@@ -270,7 +270,7 @@ jobs:
           if [ -f source/opta_lineups.parquet ]; then
             Rscript scripts/build_player_meta.R
           else
-            echo "::notice::Skipping player details — lineups file not available"
+            echo "::warning::Skipping player details — lineups file not available"
           fi
 
       - name: Build shot parquet
@@ -280,7 +280,7 @@ jobs:
               echo "::warning::Shot data build failed, continuing without shot charts"
             fi
           else
-            echo "::notice::Skipping shot data — source file not available"
+            echo "::warning::Skipping shot data — source file not available"
           fi
 
       - name: Download and filter player skills
@@ -348,7 +348,7 @@ jobs:
             Rscript scripts/rebuild_match_stats.R
             rm -f source/opta_player_stats.parquet  # free disk for chains
           else
-            echo "::notice::Skipping match-stats — source file not available"
+            echo "::warning::Skipping match-stats — source file not available"
           fi
 
       - name: Build league xG from match-shots
@@ -534,6 +534,54 @@ jobs:
             echo "ERROR: $upload_errors upload(s) failed"
             exit 1
           fi
+
+      # Expected-artifact manifest gate. Many build steps run with
+      # continue-on-error and `exit 0` on missing inputs, so a never-built
+      # shard leaves a STALE R2 object with no red signal (the upload only
+      # ships whatever files happen to exist). This step runs AFTER the upload
+      # — like the chains gate below — so it never blocks shipping the healthy
+      # files; it only reddens a degraded run.
+      #
+      # HARD-FAIL tier (always-rebuilt every healthy run): the 14 match-stats
+      # shards (13 BLOG_CODES from scripts/league_config.R + WC) plus ratings,
+      # player-details, and match-shots. Any missing → exit 1.
+      #
+      # WARN tier (optional upstream / pass-through — absence is expected, not
+      # a degraded build): player-positions, player-skills, predictions,
+      # game-logs*, wc2026_*, shootout-wpa.
+      - name: Fail run if expected blog artifacts are missing
+        run: |
+          # 13 BLOG_CODES from scripts/league_config.R + the WC shard.
+          HARD_MATCH_STATS="ENG ENG2 ESP FRA GER ITA NED POR SCO TUR UCL UEL UECL WC"
+          missing=0
+          for code in $HARD_MATCH_STATS; do
+            f="blog/match-stats-${code}.parquet"
+            if [ ! -f "$f" ]; then
+              echo "::error::Missing expected artifact: $f (match-stats shard never built — stale R2 object)"
+              missing=$((missing + 1))
+            fi
+          done
+          for f in blog/ratings.parquet blog/player-details.parquet blog/match-shots.parquet; do
+            if [ ! -f "$f" ]; then
+              echo "::error::Missing expected artifact: $f (load-bearing build step skipped — stale R2 object)"
+              missing=$((missing + 1))
+            fi
+          done
+
+          # WARN tier — optional upstream downloads / pass-throughs. Absence is
+          # surfaced for visibility but does not fail the run.
+          for f in blog/player-positions.parquet blog/player-skills.parquet \
+                   blog/predictions.parquet blog/shootout-wpa.parquet; do
+            [ -f "$f" ] || echo "::warning::Optional artifact missing: $f"
+          done
+          ls blog/game-logs*.parquet 1>/dev/null 2>&1 || echo "::warning::Optional artifact missing: blog/game-logs*.parquet"
+          ls blog/wc2026_*.parquet 1>/dev/null 2>&1 || echo "::warning::Optional artifact missing: blog/wc2026_*.parquet"
+
+          if [ "$missing" -gt 0 ]; then
+            echo "::error::$missing expected blog artifact(s) missing — degraded build shipped stale R2 objects"
+            exit 1
+          fi
+          echo "All hard-fail expected artifacts present."
 
       # The chains step runs with continue-on-error so the R2 upload still
       # ships healthy comps — but that keeps the run green even when comps
