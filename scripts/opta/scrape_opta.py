@@ -1103,6 +1103,10 @@ def main():
     parser.add_argument("--heal-dry-run", action="store_true",
                        help="List what the self-heal pass would re-fetch (per comp) "
                             "without making API calls.")
+    parser.add_argument("--dry-run", action="store_true",
+                       help="Build the scrape plan, load + reconcile the manifest "
+                            "(read-only), print what WOULD be scraped, then exit "
+                            "before any API calls or writes (pannadata#36).")
     args = parser.parse_args()
 
     # Determine what to scrape
@@ -1118,21 +1122,38 @@ def main():
         league_seasons = seasons_config[league]
 
         if args.seasons:
-            # Filter to specified seasons
+            # Filter to specified seasons. Explicit --seasons is honoured as-is
+            # (operators may pre-pull a not-yet-started future calendar on demand);
+            # the post-loop future-season guard below trims those if appropriate.
             seasons = [(s, sid) for s, sid in league_seasons.items() if s in args.seasons]
         elif args.recent > 0:
-            # Get N most recent seasons
-            sorted_seasons = sorted(league_seasons.items(), reverse=True)
+            # Get N most recent ACTIVE seasons. Filter out future (not-yet-started)
+            # seasons BEFORE slicing — otherwise --recent 1 can land on a future
+            # label (e.g. "2026-2027") that the later guard strips, leaving the
+            # league with ZERO seasons and freezing the still-active season's
+            # fixtures at status=Fixture (pannadata#60).
+            sorted_seasons = sorted(
+                ((s, sid) for s, sid in league_seasons.items() if not is_future_season(s)),
+                reverse=True,
+            )
             seasons = sorted_seasons[:args.recent]
         else:
-            # Default: current season only
-            sorted_seasons = sorted(league_seasons.items(), reverse=True)
+            # Default: current (most-recent active) season only — same future-
+            # season filtering as the --recent path so we never default onto a
+            # not-yet-started label.
+            sorted_seasons = sorted(
+                ((s, sid) for s, sid in league_seasons.items() if not is_future_season(s)),
+                reverse=True,
+            )
             seasons = sorted_seasons[:1]
 
         for season_name, season_id in seasons:
             scrape_plan.append((league, season_name, season_id))
 
-    # Filter out future seasons (e.g., Club_World_Cup 2029, UEFA_Euros 2028)
+    # Future-season guard for the explicit --seasons path. The --recent/default
+    # paths already filtered future seasons before slicing (above); this remains
+    # as a guard so an operator-specified future label is dropped unless that's
+    # the intent. (e.g., Club_World_Cup 2029, UEFA_Euros 2028)
     original_count = len(scrape_plan)
     scrape_plan = [(l, s, sid) for l, s, sid in scrape_plan if not is_future_season(s)]
     if len(scrape_plan) < original_count:
@@ -1211,6 +1232,25 @@ def main():
         print(f"Manifest: {len(complete_matches):,} complete, "
               f"{len(unavailable_matches):,} unavailable, "
               f"{n_invalidated} reconciled this run")
+
+    # Dry-run short-circuit (pannadata#36). Runs AFTER reconcile (which is
+    # read-only) so the reconcile preview is shown, but BEFORE any API calls
+    # or writes. Reports, per (league, season), how many matches are already
+    # complete in the manifest; the run would scrape NEW played matches in the
+    # window on top of that.
+    if args.dry_run:
+        print("=" * 60)
+        print("DRY RUN — exiting before API calls / writes")
+        print("=" * 60)
+        for league, season_name, _ in scrape_plan:
+            n_complete = sum(
+                1 for (_mid, comp, seas) in complete_matches
+                if comp == league and seas == season_name
+            )
+            print(f"  - {league} {season_name}: {n_complete} already complete in manifest; "
+                  f"would scrape NEW played matches in the window")
+        print(f"Reconcile would invalidate (re-scrape): {n_invalidated} matches")
+        return
 
     # Execute scraping with incremental manifest saves
     results = []

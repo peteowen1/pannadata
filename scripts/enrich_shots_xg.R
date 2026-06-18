@@ -95,6 +95,20 @@ if ("type_id" %in% names(shots)) {
   cat("::warning:: no type_id column -- skipping own-goal xG guard\n")
 }
 
+# Penalty override. panna's xG model is deliberately penalty-free (penalties
+# carry no shot-geometry signal), so a spot kick scores ~0.33 geometric xG --
+# meaningless. The EPV pipeline overrides penalties to a fixed conversion rate;
+# replicate that here so the blog shot map and team/league xG totals use the
+# right value. 0.76 == panna::PENALTY_XG.
+if ("situation" %in% names(shots)) {
+  is_pen <- !is.na(shots$situation) & tolower(shots$situation) == "penalty"
+  n_pen <- sum(is_pen)
+  shots$xg[is_pen] <- 0.76  # == panna::PENALTY_XG
+  cat("Penalty override: set xG = 0.76 on", n_pen, "penalty shot(s)\n")
+} else {
+  cat("::warning:: no situation column -- skipping penalty xG override\n")
+}
+
 cat("xG: mean =", round(mean(shots$xg, na.rm = TRUE), 4),
     ", total =", round(sum(shots$xg, na.rm = TRUE), 1),
     ", goals =", sum(shots$is_goal, na.rm = TRUE), "\n")
