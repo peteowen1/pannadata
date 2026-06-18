@@ -29,6 +29,11 @@ on:
         required: false
         type: boolean
         default: false
+      dry_run:
+        description: 'Preview the scrape plan + reconcile counts, then exit before any API calls or writes'
+        required: false
+        type: boolean
+        default: false
       scrape_timeout_minutes:
         description: 'Override the Run Opta scraper timeout (default 35; raise for full-catalog rebuilds)'
         required: false
@@ -115,6 +120,7 @@ jobs:
         INPUT_RECENT: ${{ github.event.inputs.recent || 1 }}
         INPUT_TIER: ${{ github.event.inputs.tier || 2 }}
         INPUT_FORCE: ${{ github.event.inputs.force_rescrape }}
+        INPUT_DRY_RUN: ${{ github.event.inputs.dry_run }}
       run: |
         cd scripts/opta
         ARGS="--recent $INPUT_RECENT"
@@ -127,6 +133,9 @@ jobs:
         if [ "$INPUT_FORCE" = "true" ]; then
           ARGS="$ARGS --force"
         fi
+        if [ "$INPUT_DRY_RUN" = "true" ]; then
+          ARGS="$ARGS --dry-run"
+        fi
         # --seasons may contain spaces (tournament names like "2022 Qatar"),
         # so pass it as a quoted argument after the unquoted ARGS expansion.
         if [ -n "$INPUT_SEASONS" ]; then
@@ -136,6 +145,69 @@ jobs:
           echo "Running: python scrape_opta.py $ARGS"
           python scrape_opta.py $ARGS
         fi
+
+    # Scrape stats → job summary (pannadata#37). Reads the scrape_summary.json
+    # the scraper writes (totals + per-league-season results), renders a
+    # markdown table to $GITHUB_STEP_SUMMARY. if: always() so a failed/timed-out
+    # scrape still surfaces whatever progress landed. Must never fail the job —
+    # the Python is wrapped so any error degrades to a one-line note.
+    - name: Scrape stats job summary
+      if: always()
+      continue-on-error: true
+      run: |
+        python <<'PY' >> "$GITHUB_STEP_SUMMARY"
+        import json, os
+
+        path = "scripts/opta/data/scrape_summary.json"
+        try:
+            if not os.path.exists(path):
+                print("## Opta scrape stats\n\n_No scrape_summary.json produced_")
+                raise SystemExit(0)
+            with open(path) as f:
+                data = json.load(f)
+
+            totals = data.get("totals", {}) or {}
+            results = data.get("results", []) or []
+
+            print("## Opta scrape stats\n")
+            print(
+                "**Totals:** "
+                f"{totals.get('new_matches', 0)} new matches, "
+                f"{totals.get('total_matches', 0)} total matches, "
+                f"{totals.get('player_records', 0)} player records, "
+                f"{totals.get('shot_records', 0)} shot records\n"
+            )
+
+            ok = [r for r in results if not r.get("error")]
+            ok.sort(key=lambda r: r.get("new_matches", 0) or 0, reverse=True)
+            if ok:
+                print("| League | Season | New | Total | Players | Shots |")
+                print("|---|---|--:|--:|--:|--:|")
+                for r in ok:
+                    print(
+                        f"| {r.get('competition', '?')} "
+                        f"| {r.get('season', '?')} "
+                        f"| {r.get('new_matches', 0)} "
+                        f"| {r.get('total_matches', 0)} "
+                        f"| {r.get('player_records', 0)} "
+                        f"| {r.get('shot_records', 0)} |"
+                    )
+                print("")
+
+            errs = [r for r in results if r.get("error")]
+            if errs:
+                print("### Errors\n")
+                for r in errs:
+                    print(
+                        f"- **{r.get('competition', '?')} "
+                        f"{r.get('season', '?')}**: {r.get('error')}"
+                    )
+                print("")
+        except SystemExit:
+            raise
+        except Exception as e:
+            print(f"\n_Failed to render scrape stats: {e}_")
+        PY
 
     - name: Build consolidated parquet files
       env:
