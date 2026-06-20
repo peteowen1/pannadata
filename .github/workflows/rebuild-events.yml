@@ -104,6 +104,14 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd data
+          # Pull the EXISTING consolidated events for this comp BEFORE we rebuild,
+          # so we can MERGE (accumulate) rather than replace. rebuild_events.py
+          # fetched only one season, so consolidate writes a single-season file;
+          # without this merge the upload would clobber every other season already
+          # on opta-latest (the 2026-06 Championship/UCL single-season regression).
+          mkdir -p /tmp/prior
+          gh release download opta-latest --pattern "events_${{ inputs.competition }}.parquet" \
+            --dir /tmp/prior 2>/dev/null || true
           # Force coverage check to pick up the new per-league rows
           OPTA_CONSOLIDATE_FORCE=1 python ../scripts/opta/consolidate_opta.py
           # Upload the affected per-league + consolidated files
@@ -112,8 +120,14 @@ jobs:
             # consolidate_events_by_league() to opta/events_consolidated/
             UP_FILE="opta/events_consolidated/events_${{ inputs.competition }}.parquet"
             if [ -f "$UP_FILE" ]; then
+              # Accumulate: union the prior consolidated seasons with this run's
+              # season (new data wins on overlap) so seasons add up across runs.
+              PRIOR="/tmp/prior/events_${{ inputs.competition }}.parquet"
+              if [ -f "$PRIOR" ]; then
+                python ../scripts/opta/merge_events_accumulate.py "$PRIOR" "$UP_FILE" "$UP_FILE"
+              fi
               gh release upload opta-latest "$UP_FILE" --repo peteowen1/pannadata --clobber
-              echo "Uploaded $UP_FILE"
+              echo "Uploaded $UP_FILE (accumulated)"
             fi
           fi
           # Upload the event-less registry if rebuild recorded any (matches Opta

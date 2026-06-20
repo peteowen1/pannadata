@@ -101,6 +101,16 @@ jobs:
             echo "::notice::shootout_wpa.parquet not available — shootout WPA absent (no shootouts yet, or step 10d not run)"
           fi
 
+          # Tournament event-timing (slim per-event timing for the cross-tournament
+          # cooling/hydration-break analysis — match_id, minute, second, period_id,
+          # type_id + home/away across WC/Euro/AFCON/Copa/Asian Cup/Gold Cup, all
+          # seasons). Pass straight through to R2 as football/tournament-events-timing.parquet.
+          if gh release download blog-latest -p "tournament-events-timing.parquet" -D blog/; then
+            echo "Downloaded tournament-events-timing.parquet"
+          else
+            echo "::notice::tournament-events-timing.parquet not available — cross-tournament breaks panel will be empty"
+          fi
+
           # Action equity (per-action EPV credit — optional, used by chain builder)
           if gh release download blog-latest -p "action_equity.parquet" -D source/; then
             echo "Downloaded action_equity.parquet"
