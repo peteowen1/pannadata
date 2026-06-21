@@ -31,7 +31,10 @@ jobs:
 
           # Current-season alias — the fast default every player-stats page view
           # loads. Renamed game_logs.parquet -> game-logs.parquet (R2 naming).
-          if gh release download blog-latest -p "game_logs.parquet" -D blog/; then
+          # --repo is required: there's no actions/checkout step (we don't need
+          # the repo source), so gh can't infer the repo from a .git dir.
+          REPO=peteowen1/pannadata
+          if gh release download blog-latest --repo "$REPO" -p "game_logs.parquet" -D blog/; then
             mv blog/game_logs.parquet blog/game-logs.parquet
             echo "Downloaded game-logs.parquet (current-season default)"
           else
@@ -43,7 +46,7 @@ jobs:
           # _<season> suffix), so there's no double-download. Each renamed to
           # game-logs-<season>.parquet for R2.
           GL_SEASONS=0
-          if gh release download blog-latest -p "game_logs_*.parquet" -D blog/; then
+          if gh release download blog-latest --repo "$REPO" -p "game_logs_*.parquet" -D blog/; then
             for f in blog/game_logs_*.parquet; do
               [ -e "$f" ] || continue
               season=${f#blog/game_logs_}        # -> 2024-2025.parquet
