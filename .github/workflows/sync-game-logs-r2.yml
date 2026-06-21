@@ -1,0 +1,84 @@
+name: Sync game-logs to R2
+
+# Fast path for game-logs-only data refreshes (e.g. a PSV/value re-export).
+#
+# build-blog-data.yml rebuilds the ENTIRE blog dataset — chains (~14 comps x
+# 4-6 min), ratings, shots, match-stats, simulations — ~50 min. But game-logs
+# are a pure PASS-THROUGH there: downloaded from blog-latest and uploaded to R2
+# verbatim, never rebuilt. So when ONLY game-logs change, none of that heavy
+# work is needed. This workflow does just the game-logs -> R2 copy (~2-3 min).
+#
+# Use it after uploading fresh game_logs*.parquet to the blog-latest release
+# (panna step 10b / 10b backfill). For any change that also touches ratings,
+# chains, predictions, shots, or sims, run build-blog-data.yml instead.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Download game-logs from blog-latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p blog
+
+          # Current-season alias — the fast default every player-stats page view
+          # loads. Renamed game_logs.parquet -> game-logs.parquet (R2 naming).
+          if gh release download blog-latest -p "game_logs.parquet" -D blog/; then
+            mv blog/game_logs.parquet blog/game-logs.parquet
+            echo "Downloaded game-logs.parquet (current-season default)"
+          else
+            echo "::error::game_logs.parquet not on blog-latest — nothing to sync"
+            exit 1
+          fi
+
+          # Per-season historical files. The glob excludes the alias above (no
+          # _<season> suffix), so there's no double-download. Each renamed to
+          # game-logs-<season>.parquet for R2.
+          GL_SEASONS=0
+          if gh release download blog-latest -p "game_logs_*.parquet" -D blog/; then
+            for f in blog/game_logs_*.parquet; do
+              [ -e "$f" ] || continue
+              season=${f#blog/game_logs_}        # -> 2024-2025.parquet
+              mv "$f" "blog/game-logs-${season}"
+              GL_SEASONS=$((GL_SEASONS + 1))
+            done
+            echo "Downloaded $GL_SEASONS per-season game-logs file(s)"
+          else
+            echo "::warning::No per-season game_logs_*.parquet on blog-latest — historical Value tab unchanged"
+          fi
+
+          echo "Files to sync:"
+          ls -lh blog/game-logs*.parquet
+
+      - name: Upload to R2
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npm install -g wrangler
+          if ! ls blog/game-logs*.parquet 1>/dev/null 2>&1; then
+            echo "::error::No game-logs parquet files to upload"
+            exit 1
+          fi
+          upload_errors=0
+          for f in blog/game-logs*.parquet; do
+            if wrangler r2 object put "inthegame-data/football/$(basename "$f")" --file "$f" --remote; then
+              echo "Uploaded football/$(basename "$f")"
+            else
+              echo "::error::Failed to upload football/$(basename "$f")"
+              upload_errors=$((upload_errors + 1))
+            fi
+          done
+          if [ "$upload_errors" -gt 0 ]; then
+            echo "::error::$upload_errors upload(s) failed"
+            exit 1
+          fi
+          echo "game-logs synced to R2."
