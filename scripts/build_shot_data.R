@@ -41,45 +41,61 @@ panna_shots <- opta_shots |>
 
 stopifnot(nrow(panna_shots) > 0, length(recent_seasons) > 0)
 
-# ── xG: use pre-enriched source column if available, else predict ──
-if ("xg" %in% names(opta_shots)) {
-  # xG already enriched at source (by enrich_shots_xg.R in daily scrape)
-  panna_shots$xg <- round(opta_shots$xg[opta_shots$competition %in% tracked_leagues &
+# ── xG: model-score EVERY shot, coalescing the canonical source column where ──
+# present. The source `xg` only covers freshly-enriched shots (recent daily
+# scrape), so the old "use source if the column exists, else predict" left ~99%
+# NaN whenever the column was present-but-sparse (pannadata#87). Model-scoring
+# every row makes `xg` ship non-null so the blog can read s.xg directly
+# (pannadata#89). Mirrors enrich_shots_xg.R's own-goal + penalty guards.
+source_xg <- if ("xg" %in% names(opta_shots)) {
+  round(opta_shots$xg[opta_shots$competition %in% tracked_leagues &
     opta_shots$season %in% recent_seasons], 3)
-  cat("xG from source:", round(sum(panna_shots$xg, na.rm = TRUE), 1), "total xG across",
-      nrow(panna_shots), "shots\n")
+} else rep(NA_real_, nrow(panna_shots))
+
+xg_model_path <- "source/xg_model.rds"
+if (file.exists(xg_model_path)) {
+  library(xgboost)
+  xg_model <- readRDS(xg_model_path)
+  cat("Loaded xG model:", length(xg_model$panna_metadata$feature_cols), "features\n")
+  distance_to_goal <- sqrt((100 - panna_shots$x)^2 + (50 - panna_shots$y)^2)
+  dist_to_goal_line <- pmax(100 - panna_shots$x, 0.1)
+  angle_left  <- atan2(50 - 6 - panna_shots$y, dist_to_goal_line)
+  angle_right <- atan2(50 + 6 - panna_shots$y, dist_to_goal_line)
+  bp_lower <- tolower(panna_shots$body_part)
+  sit_lower <- tolower(panna_shots$situation)
+  features <- data.frame(
+    x = panna_shots$x, y = panna_shots$y,
+    distance_to_goal = distance_to_goal, angle_to_goal = abs(angle_right - angle_left),
+    in_penalty_area = as.integer(panna_shots$x > 83 & panna_shots$y > 21 & panna_shots$y < 79),
+    in_six_yard_box = as.integer(panna_shots$x > 94 & panna_shots$y > 37 & panna_shots$y < 63),
+    is_header = as.integer(grepl("head", bp_lower)), is_right_foot = as.integer(grepl("right", bp_lower)),
+    is_left_foot = as.integer(grepl("left", bp_lower)), is_open_play = as.integer(grepl("open", sit_lower)),
+    is_set_piece = as.integer(grepl("set", sit_lower)), is_corner = as.integer(grepl("corner", sit_lower)),
+    is_direct_freekick = as.integer(grepl("free", sit_lower)),
+    is_big_chance = panna_shots$big_chance)
+  feature_cols <- xg_model$panna_metadata$feature_cols
+  for (col in setdiff(feature_cols, names(features))) features[[col]] <- 0
+  X <- as.matrix(features[, feature_cols, drop = FALSE]); X[is.na(X)] <- 0
+  model_xg <- round(predict(xg_model$model, X), 3)
+  # Own-goal guard: Opta logs an OG as a goal (type_id 16) at the scorer's own-half
+  # location, which the model reads as ~0.97 — meaningless. Surface as NA.
+  is_og <- panna_shots$type_id == 16L & !is.na(panna_shots$x) & panna_shots$x < 50
+  model_xg[is_og] <- NA_real_
+  # Penalty override: panna's xG model is penalty-free → fix to 0.80 (== panna::PENALTY_XG,
+  # the value panna's own xg_model.R:475 applies — keep these locked).
+  is_pen <- !is.na(panna_shots$situation) & tolower(panna_shots$situation) == "penalty"
+  model_xg[is_pen] <- 0.80
+  # Prefer the canonical source xG where present (already OG/penalty-guarded by
+  # enrich_shots_xg.R), model-fill the rest.
+  panna_shots$xg <- coalesce(source_xg, model_xg)
+  cat("xG:", round(sum(panna_shots$xg, na.rm = TRUE), 1), "total across", nrow(panna_shots),
+      "shots (", sum(is.na(source_xg)), "model-filled,", sum(is_pen), "pens@0.80,",
+      sum(is_og), "OG->NA)\n")
+} else if (!all(is.na(source_xg))) {
+  panna_shots$xg <- source_xg
+  warning("xg_model.rds not found — using source xG only (likely sparse; see pannadata#87)")
 } else {
-  # Fallback: predict using xG model
-  xg_model_path <- "source/xg_model.rds"
-  if (file.exists(xg_model_path)) {
-    library(xgboost)
-    xg_model <- readRDS(xg_model_path)
-    cat("Loaded xG model:", length(xg_model$panna_metadata$feature_cols), "features\n")
-    distance_to_goal <- sqrt((100 - panna_shots$x)^2 + (50 - panna_shots$y)^2)
-    dist_to_goal_line <- pmax(100 - panna_shots$x, 0.1)
-    angle_left  <- atan2(50 - 6 - panna_shots$y, dist_to_goal_line)
-    angle_right <- atan2(50 + 6 - panna_shots$y, dist_to_goal_line)
-    bp_lower <- tolower(panna_shots$body_part)
-    sit_lower <- tolower(panna_shots$situation)
-    features <- data.frame(
-      x = panna_shots$x, y = panna_shots$y,
-      distance_to_goal = distance_to_goal, angle_to_goal = abs(angle_right - angle_left),
-      in_penalty_area = as.integer(panna_shots$x > 83 & panna_shots$y > 21 & panna_shots$y < 79),
-      in_six_yard_box = as.integer(panna_shots$x > 94 & panna_shots$y > 37 & panna_shots$y < 63),
-      is_header = as.integer(grepl("head", bp_lower)), is_right_foot = as.integer(grepl("right", bp_lower)),
-      is_left_foot = as.integer(grepl("left", bp_lower)), is_open_play = as.integer(grepl("open", sit_lower)),
-      is_set_piece = as.integer(grepl("set", sit_lower)), is_corner = as.integer(grepl("corner", sit_lower)),
-      is_direct_freekick = as.integer(grepl("free", sit_lower)),
-      is_big_chance = panna_shots$big_chance)
-    feature_cols <- xg_model$panna_metadata$feature_cols
-    for (col in setdiff(feature_cols, names(features))) features[[col]] <- 0
-    X <- as.matrix(features[, feature_cols, drop = FALSE]); X[is.na(X)] <- 0
-    panna_shots$xg <- round(predict(xg_model$model, X), 3)
-    cat("xG predicted:", round(sum(panna_shots$xg, na.rm = TRUE), 1), "total xG across",
-        nrow(panna_shots), "shots\n")
-  } else {
-    warning("No xG in source and xg_model.rds not found — shots will not include xG")
-  }
+  warning("No xG in source and xg_model.rds not found — shots will not include xG")
 }
 
 # ── Goal-mouth placement (Opta q102/103): where the shot crosses the line ──
@@ -103,8 +119,9 @@ if ("xgot" %in% names(opta_shots)) {
   cat("xGOT from source:", sum(!is.na(panna_shots$xgot)), "shots have xGOT\n")
 }
 
-# Drop big_chance before writing (internal feature, not needed in blog)
-panna_shots <- panna_shots |> select(-big_chance)
+# Keep big_chance (renamed is_big_chance) — it's the dominant xG feature, so the
+# blog can score xG from this parquet as a worker-fallback (pannadata#89).
+panna_shots <- panna_shots |> rename(is_big_chance = big_chance)
 
 dir.create("blog", showWarnings = FALSE)
 write_parquet(panna_shots, "blog/shots.parquet")
