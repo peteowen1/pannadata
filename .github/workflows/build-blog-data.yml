@@ -283,6 +283,22 @@ jobs:
             echo "::warning::Skipping player details — lineups file not available"
           fi
 
+      # Post-shot xG (xGOT) for the blog Shooting tab. build_shot_data.R passes
+      # `xgot` straight through IF the source carries it, but opta-latest's shot
+      # events don't always have it (the daily scrape's xGOT step skips when
+      # goalmouth coords aren't present at scrape time). So re-enrich here too —
+      # belt-and-suspenders, exactly like enrich_shots_xg.R above. enrich_shots_xgot.R
+      # self-skips (exit 0) if xgot_model.rds or goalmouth_y/z are absent, so this
+      # never blocks the build. Fixes pannadata#88.
+      - name: Enrich shots with xGOT
+        continue-on-error: true
+        run: |
+          if [ -f source/opta_shot_events.parquet ] && gh release download models -p "xgot_model.rds" -D source/ 2>/dev/null; then
+            Rscript scripts/enrich_shots_xgot.R source/opta_shot_events.parquet source/xgot_model.rds
+          else
+            echo "::notice::Skipping xGOT enrich — shot file or xgot_model.rds unavailable (build_shot_data passes through any existing xgot)"
+          fi
+
       - name: Build shot parquet
         run: |
           if [ -f source/opta_shot_events.parquet ]; then
