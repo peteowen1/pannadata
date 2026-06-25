@@ -81,14 +81,15 @@ if (file.exists(xg_model_path)) {
   # location, which the model reads as ~0.97 — meaningless. Surface as NA.
   is_og <- panna_shots$type_id == 16L & !is.na(panna_shots$x) & panna_shots$x < 50
   model_xg[is_og] <- NA_real_
-  # Penalty override: panna's xG model is penalty-free → fix to 0.76 (== panna::PENALTY_XG).
+  # Penalty override: panna's xG model is penalty-free → fix to 0.80 (== panna::PENALTY_XG,
+  # the value panna's own xg_model.R:475 applies — keep these locked).
   is_pen <- !is.na(panna_shots$situation) & tolower(panna_shots$situation) == "penalty"
-  model_xg[is_pen] <- 0.76
+  model_xg[is_pen] <- 0.80
   # Prefer the canonical source xG where present (already OG/penalty-guarded by
   # enrich_shots_xg.R), model-fill the rest.
   panna_shots$xg <- coalesce(source_xg, model_xg)
   cat("xG:", round(sum(panna_shots$xg, na.rm = TRUE), 1), "total across", nrow(panna_shots),
-      "shots (", sum(is.na(source_xg)), "model-filled,", sum(is_pen), "pens@0.76,",
+      "shots (", sum(is.na(source_xg)), "model-filled,", sum(is_pen), "pens@0.80,",
       sum(is_og), "OG->NA)\n")
 } else if (!all(is.na(source_xg))) {
   panna_shots$xg <- source_xg
