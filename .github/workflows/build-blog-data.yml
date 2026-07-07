@@ -549,7 +549,10 @@ jobs:
           fi
           upload_errors=0
           for f in blog/*.parquet; do
-            if wrangler r2 object put "inthegame-data/football/$(basename $f)" --file "$f" --remote; then
+            # Cache-Control lets browsers/CF cache the parquet and revalidate via
+            # ETag (304, zero bytes) instead of re-downloading megabytes — the blog
+            # drops its cache-busting query once objects carry this (blog #388).
+            if wrangler r2 object put "inthegame-data/football/$(basename $f)" --file "$f" --cache-control "public, max-age=300" --remote; then
               echo "Uploaded football/$(basename $f)"
             else
               echo "ERROR: Failed to upload football/$(basename $f)"
