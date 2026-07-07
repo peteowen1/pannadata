@@ -73,7 +73,7 @@ jobs:
           fi
           upload_errors=0
           for f in blog/game-logs*.parquet; do
-            if wrangler r2 object put "inthegame-data/football/$(basename "$f")" --file "$f" --remote; then
+            if wrangler r2 object put "inthegame-data/football/$(basename "$f")" --file "$f" --cache-control "public, max-age=300" --remote; then
               echo "Uploaded football/$(basename "$f")"
             else
               echo "::error::Failed to upload football/$(basename "$f")"
