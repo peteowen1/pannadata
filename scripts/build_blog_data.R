@@ -91,6 +91,13 @@ gl_path <- "blog/game-logs.parquet"
 gl_extra <- NULL
 if (file.exists(gl_path)) {
   game_logs <- read_parquet(gl_path)
+  # Transition shim (2026-07-07): panna_value -> piero_value column rename.
+  # Tolerate an old-vintage game-logs parquet (pre-rename) so the blog build
+  # never breaks on ordering between the panna deploy and parquet migration.
+  if ("panna_value_p90" %in% names(game_logs) &&
+      !"piero_value_p90" %in% names(game_logs)) {
+    names(game_logs)[names(game_logs) == "panna_value_p90"] <- "piero_value_p90"
+  }
   # Only pull columns that don't already exist in xrapm/spm (to avoid collisions).
   # panna/offense/defense/spm_overall/panna_percentile are excluded — those come from xrapm+spm.
   extra_cols <- intersect(
@@ -99,22 +106,22 @@ if (file.exists(gl_path)) {
       "epv_passing", "epv_shooting", "epv_dribbling",
       "epv_aerial", "epv_keeping", "epv_defending",
       "wpa_total", "wpa_as_actor", "wpa_as_receiver",
-      "psv", "osv", "dsv", "panna_value_p90"),
+      "psv", "osv", "dsv", "piero_value_p90"),
     names(game_logs)
   )
   if (length(extra_cols) > 0 && dedup_key %in% names(game_logs) &&
       "total_minutes" %in% names(game_logs)) {
     gl_dt <- data.table::as.data.table(game_logs)
-    # panna_value_p90 is already a per-90 rate — average weighted by minutes.
+    # piero_value_p90 is already a per-90 rate — average weighted by minutes.
     # Everything else is per-match credit — sum then divide by season minutes * 90.
-    rate_cols <- setdiff(extra_cols, "panna_value_p90")
+    rate_cols <- setdiff(extra_cols, "piero_value_p90")
     agg <- gl_dt[, c(
       list(gl_minutes = sum(total_minutes, na.rm = TRUE)),
       lapply(.SD, \(x) sum(x, na.rm = TRUE))
     ), by = dedup_key, .SDcols = rate_cols]
-    if ("panna_value_p90" %in% extra_cols) {
+    if ("piero_value_p90" %in% extra_cols) {
       pvp_agg <- gl_dt[, .(
-        panna_value_p90 = sum(panna_value_p90 * total_minutes, na.rm = TRUE) /
+        piero_value_p90 = sum(piero_value_p90 * total_minutes, na.rm = TRUE) /
           pmax(sum(total_minutes, na.rm = TRUE), 1)
       ), by = dedup_key]
       agg <- merge(agg, pvp_agg, by = dedup_key, all.x = TRUE)
@@ -127,8 +134,8 @@ if (file.exists(gl_path)) {
                        NA_real_)
       )
     }
-    if ("panna_value_p90" %in% extra_cols) {
-      data.table::set(agg, j = "panna_value_p90", value = round(agg$panna_value_p90, 4))
+    if ("piero_value_p90" %in% extra_cols) {
+      data.table::set(agg, j = "piero_value_p90", value = round(agg$piero_value_p90, 4))
     }
     agg[, gl_minutes := NULL]
     gl_extra <- as.data.frame(agg)
@@ -222,7 +229,7 @@ panna_ratings <- enriched |>
       "epv_passing", "epv_shooting", "epv_dribbling",
       "epv_aerial", "epv_keeping", "epv_defending",
       "wpa_total", "wpa_as_actor", "wpa_as_receiver",
-      "psv", "osv", "dsv", "panna_value_p90"
+      "psv", "osv", "dsv", "piero_value_p90"
     ))
   ) |>
   mutate(across(any_of(c("panna", "offense", "defense", "xrapm", "xrapm_offense",
