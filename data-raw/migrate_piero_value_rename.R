@@ -37,15 +37,26 @@ for (f in sort(targets)) {
     if (length(hit) == 0) {
       cat(sprintf("  %-32s already migrated (skip)\n", f))
       n_skipped <<- n_skipped + 1L
+      file.remove(p)
     } else {
       names(d)[match(hit, names(d))] <- renames[hit]
-      arrow::write_parquet(d, p)
-      piggyback::pb_upload(p, repo = repo, tag = tag, overwrite = TRUE)
+      # NEVER write back to the downloaded path: arrow memory-maps it during
+      # read and Windows then refuses the overwrite (error 1224, the same trap
+      # 10b works around). Write a sibling file in a per-asset subdir whose
+      # basename matches the asset name (pb_upload uses basename as the asset
+      # name), and upload that.
+      newdir <- file.path(tmp, "renamed")
+      dir.create(newdir, showWarnings = FALSE)
+      p_new <- file.path(newdir, f)
+      arrow::write_parquet(d, p_new)
+      piggyback::pb_upload(p_new, repo = repo, tag = tag, overwrite = TRUE)
       cat(sprintf("  %-32s renamed %s (%s rows)\n", f,
                   paste(hit, collapse = "+"), format(nrow(d), big.mark = ",")))
       n_migrated <<- n_migrated + 1L
+      rm(d); gc(verbose = FALSE)
+      file.remove(p_new)
+      suppressWarnings(file.remove(p))
     }
-    file.remove(p)
     TRUE
   }, error = function(e) {
     cat(sprintf("  %-32s FAILED: %s\n", f, conditionMessage(e)))
