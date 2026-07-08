@@ -40,6 +40,10 @@ on:
         type: number
         default: 35
 
+concurrency:
+  group: opta-latest-writer
+  cancel-in-progress: false
+
 jobs:
   scrape:
     runs-on: ubuntu-latest
@@ -298,12 +302,25 @@ jobs:
           echo "::warning::No events_consolidated/ — skipping coverage check"
           exit 0
         fi
+        # Current European domestic season (Aug-Jul rollover), derived from
+        # today's date instead of pinned — the pinned "2025-2026" string was
+        # a time bomb due to go stale every August (mirrors
+        # scrape_opta.py's current_domestic_season()).
+        YEAR=$(date -u +%Y)
+        MONTH=$((10#$(date -u +%m)))
+        if [ "$MONTH" -ge 8 ]; then
+          CURRENT_SEASON="${YEAR}-$((YEAR + 1))"
+        else
+          CURRENT_SEASON="$((YEAR - 1))-${YEAR}"
+        fi
+        echo "Derived current season: $CURRENT_SEASON"
+
         # Step working dir is the repo root (not `data` like the consolidate
         # step that cd's first), so scripts/ resolves directly with no `../`.
         python scripts/opta/check_events_coverage.py \
             --player-stats data/opta/opta_player_stats.parquet \
             --events-dir data/opta/events_consolidated \
-            --season "2025-2026" \
+            --season "$CURRENT_SEASON" \
             --gap-threshold "$EVENTS_COVERAGE_GAP_THRESHOLD" \
             --leagues "$DISPATCH_LEAGUES" \
             --eventless-registry data/opta/event_less_match_ids.parquet
@@ -386,16 +403,7 @@ jobs:
           gh release create opta-latest --title "Opta Data (Latest)" --notes "Automated daily Opta data scrape. Uses manifest-based incremental updates." --prerelease
         fi
 
-        # Upload manifest (critical for incremental scraping)
         upload_errors=0
-        if [ -f "opta-manifest.parquet" ]; then
-          if gh release upload opta-latest opta-manifest.parquet --clobber; then
-            echo "Uploaded opta-manifest.parquet ($(ls -lh opta-manifest.parquet | awk '{print $5}'))"
-          else
-            echo "CRITICAL: Failed to upload manifest. Next run will re-scrape all matches."
-            upload_errors=$((upload_errors + 1))
-          fi
-        fi
 
         # Upload consolidated parquets (by table type)
         for f in opta/opta_*.parquet; do
@@ -462,6 +470,23 @@ jobs:
             fi
           done
           echo "Events files: $uploaded_count uploaded (modified), $skipped_count skipped (unchanged)"
+        fi
+
+        # Upload manifest LAST, gated on zero earlier failures (mirrors the
+        # Recovery step's invariant below): the release's manifest must never
+        # claim matches whose data isn't in the consolidated parquets, or the
+        # next run's discovery layer skips them forever.
+        if [ "$upload_errors" -eq 0 ]; then
+          if [ -f "opta-manifest.parquet" ]; then
+            if gh release upload opta-latest opta-manifest.parquet --clobber; then
+              echo "Uploaded opta-manifest.parquet ($(ls -lh opta-manifest.parquet | awk '{print $5}'))"
+            else
+              echo "CRITICAL: Failed to upload manifest. Next run will re-scrape all matches."
+              upload_errors=$((upload_errors + 1))
+            fi
+          fi
+        else
+          echo "::error::Skipping manifest upload — $upload_errors earlier upload(s) failed. Refusing to advertise matches whose data isn't fully on the release."
         fi
 
         if [ "$upload_errors" -gt 0 ]; then

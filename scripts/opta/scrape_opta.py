@@ -465,6 +465,20 @@ def load_seasons_config():
         sys.exit(1)
 
 
+def current_domestic_season() -> str:
+    """Return the current European domestic season label (e.g. "2025-2026").
+
+    Aug-Jul rollover convention (mirrors is_future_season() below): before
+    August the season is (year-1)-(year); from August onward it's
+    year-(year+1). Used to derive the --heal-season default from the clock
+    instead of a pinned string that goes stale every August.
+    """
+    now = datetime.now()
+    if now.month >= 8:
+        return f"{now.year}-{now.year + 1}"
+    return f"{now.year - 1}-{now.year}"
+
+
 def is_future_season(season_name: str) -> bool:
     """Check if a season is entirely in the future (hasn't started yet).
 
@@ -1095,11 +1109,12 @@ def main():
                             "manifest flagged unavailable but the event-less "
                             "registry hasn't confirmed; events found -> healed, "
                             "still empty -> recorded to the registry.")
-    parser.add_argument("--heal-season", default="2025-2026",
-                       help="Season the self-heal pass targets (default current "
-                            "domestic season). Scoped to one season because the "
-                            "manifest holds ~100k genuinely-event-less historical "
-                            "matches not worth re-confirming.")
+    parser.add_argument("--heal-season", default=current_domestic_season(),
+                       help="Season the self-heal pass targets (default: current "
+                            "domestic season, derived from today's date via "
+                            "current_domestic_season()). Scoped to one season "
+                            "because the manifest holds ~100k genuinely-event-less "
+                            "historical matches not worth re-confirming.")
     parser.add_argument("--heal-dry-run", action="store_true",
                        help="List what the self-heal pass would re-fetch (per comp) "
                             "without making API calls.")
