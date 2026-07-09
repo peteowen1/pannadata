@@ -38,6 +38,10 @@ on:
         type: boolean
         default: true
 
+concurrency:
+  group: opta-latest-writer
+  cancel-in-progress: false
+
 jobs:
   rebuild:
     runs-on: ubuntu-latest
@@ -66,34 +70,40 @@ jobs:
       - name: Download opta_player_stats.parquet + per-league existing match_events
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMPETITION: ${{ inputs.competition }}
         run: |
-          mkdir -p data/opta/match_events/${{ inputs.competition }}
-          mkdir -p data/opta/shot_events/${{ inputs.competition }}
+          mkdir -p "data/opta/match_events/$COMPETITION"
+          mkdir -p "data/opta/shot_events/$COMPETITION"
           # Source of truth for which match_ids exist
           gh release download opta-latest --pattern "opta_player_stats.parquet" \
             --dir data/opta/
           # Existing per-league match_events (empty download is fine; the
           # rebuild script treats missing file as "0 matches present")
-          gh release download opta-latest --pattern "match_events_${{ inputs.competition }}.parquet" \
-            --dir data/opta/match_events/${{ inputs.competition }}/ 2>/dev/null || true
-          ls -la data/opta/match_events/${{ inputs.competition }}/ || true
+          gh release download opta-latest --pattern "match_events_${COMPETITION}.parquet" \
+            --dir "data/opta/match_events/$COMPETITION/" 2>/dev/null || true
+          ls -la "data/opta/match_events/$COMPETITION/" || true
           # Existing event-less registry — pull so rebuild MERGES new event-less
           # match_ids into it rather than overwriting prior comps' entries.
           gh release download opta-latest --pattern "event_less_match_ids.parquet" \
             --dir data/opta/ 2>/dev/null || true
 
       - name: Run rebuild_events.py
+        env:
+          COMPETITION: ${{ inputs.competition }}
+          SEASON: ${{ inputs.season }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          MAX_MATCHES: ${{ inputs.max_matches }}
         run: |
           cd scripts/opta
           ARGS="--player-stats ../../data/opta/opta_player_stats.parquet \
                 --opta-dir ../../data/opta \
-                --competition ${{ inputs.competition }} \
-                --season ${{ inputs.season }}"
-          if [ "${{ inputs.dry_run }}" = "true" ]; then
+                --competition $COMPETITION \
+                --season $SEASON"
+          if [ "$DRY_RUN" = "true" ]; then
             ARGS="$ARGS --dry-run"
           fi
-          if [ -n "${{ inputs.max_matches }}" ]; then
-            ARGS="$ARGS --max-matches ${{ inputs.max_matches }}"
+          if [ -n "$MAX_MATCHES" ]; then
+            ARGS="$ARGS --max-matches $MAX_MATCHES"
           fi
           echo "Running: python rebuild_events.py $ARGS"
           python rebuild_events.py $ARGS
@@ -102,6 +112,8 @@ jobs:
         if: inputs.run_consolidate == true && inputs.dry_run == false
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMPETITION: ${{ inputs.competition }}
+          SEASON: ${{ inputs.season }}
         run: |
           cd data
           # Pull the EXISTING consolidated events for this comp BEFORE we rebuild,
@@ -110,19 +122,19 @@ jobs:
           # without this merge the upload would clobber every other season already
           # on opta-latest (the 2026-06 Championship/UCL single-season regression).
           mkdir -p /tmp/prior
-          gh release download opta-latest --pattern "events_${{ inputs.competition }}.parquet" \
+          gh release download opta-latest --pattern "events_${COMPETITION}.parquet" \
             --dir /tmp/prior 2>/dev/null || true
           # Force coverage check to pick up the new per-league rows
           OPTA_CONSOLIDATE_FORCE=1 python ../scripts/opta/consolidate_opta.py
           # Upload the affected per-league + consolidated files
-          if [ -f opta/match_events/${{ inputs.competition }}/${{ inputs.season }}.parquet ]; then
+          if [ -f "opta/match_events/$COMPETITION/$SEASON.parquet" ]; then
             # The flat per-league match_events_<comp>.parquet gets written by
             # consolidate_events_by_league() to opta/events_consolidated/
-            UP_FILE="opta/events_consolidated/events_${{ inputs.competition }}.parquet"
+            UP_FILE="opta/events_consolidated/events_${COMPETITION}.parquet"
             if [ -f "$UP_FILE" ]; then
               # Accumulate: union the prior consolidated seasons with this run's
               # season (new data wins on overlap) so seasons add up across runs.
-              PRIOR="/tmp/prior/events_${{ inputs.competition }}.parquet"
+              PRIOR="/tmp/prior/events_${COMPETITION}.parquet"
               if [ -f "$PRIOR" ]; then
                 python ../scripts/opta/merge_events_accumulate.py "$PRIOR" "$UP_FILE" "$UP_FILE"
               fi
@@ -139,11 +151,17 @@ jobs:
 
       - name: Job summary
         if: always()
+        env:
+          COMPETITION: ${{ inputs.competition }}
+          SEASON: ${{ inputs.season }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          MAX_MATCHES: ${{ inputs.max_matches }}
+          RUN_CONSOLIDATE: ${{ inputs.run_consolidate }}
         run: |
           {
-            echo "## rebuild_events.py — ${{ inputs.competition }} / ${{ inputs.season }}"
+            echo "## rebuild_events.py — $COMPETITION / $SEASON"
             echo ""
-            echo "- Dry run: \`${{ inputs.dry_run }}\`"
-            echo "- Max matches: \`${{ inputs.max_matches }}\`"
-            echo "- Consolidate: \`${{ inputs.run_consolidate }}\`"
+            echo "- Dry run: \`$DRY_RUN\`"
+            echo "- Max matches: \`$MAX_MATCHES\`"
+            echo "- Consolidate: \`$RUN_CONSOLIDATE\`"
           } >> "$GITHUB_STEP_SUMMARY"
