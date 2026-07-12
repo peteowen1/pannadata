@@ -150,8 +150,8 @@ inthegame-blog reads from R2
 
 Deep/verse-level docs (reviews, plans, incidents, reference material, backlog TODOs) live one level
 up at `pannaverse/docs/{reviews,plans,incidents,reference,backlog}/`, not in this repo — see
-`pannaverse/HOME.md` for the index. This repo keeps only README, CLAUDE, ARCHITECTURE,
-DATA_DICTIONARY, and BLOG_DATA_SETUP at its root. `pannaverse/NEXT-STEPS.md` and
-`pannaverse/DECISIONS.md` are the living queue/decision-log — update them at the end of a session.
+`pannaverse/docs/HOME.md` for the index. This repo keeps only README, CLAUDE, ARCHITECTURE,
+DATA_DICTIONARY, and BLOG_DATA_SETUP at its root. `pannaverse/docs/NEXT-STEPS.md` and
+`pannaverse/docs/DECISIONS.md` are the living queue/decision-log — update them at the end of a session.
 Reviews under `docs/reviews/` are immutable once written (append addenda, don't rewrite historical
 prose). New idea/TODO files belong in `pannaverse/docs/backlog/`, not at this repo's root.
