@@ -106,6 +106,24 @@ shot_types <- c(13L, 14L, 15L, 16L)
 # tracking so rebound possessions stay in one chain (pannadata#76).
 keeper_rebound_types <- c(10L, 11L, 41L, 50L)
 
+# Failed duel/contest touches from the team that does NOT currently have the
+# ball must also not end the attacking team's possession. Take-On (3), Tackle
+# (7), Good Skill / take-on class (42), Aerial (44), Challenge i.e. Opta's
+# "dribbled past" marker (45), and Att One-On-One (83) are all logged for
+# BOTH sides of a contested-ball duel. When such a row's team_id differs from
+# the current possessor (prev_team) AND its outcome is a FAILURE (outcome !=
+# 1), the non-possessing team's attempt to win the ball back failed, so
+# possession never actually changed hands — it must not trigger the
+# team-change split below. (Example: Tchouameni's "1-on-1 — Fail" (type 83)
+# vs Spain, France v Spain WC 2026-07-14, shipped as its own phantom 1-event
+# "lost_possession" chain even though Spain never lost the ball.) A row that
+# WINS the duel (outcome == 1) is deliberately left to split normally: the
+# winning team's own NEXT event still differs from prev_team and starts a new
+# chain correctly, so genuine turnovers via a won tackle/take-on are
+# unaffected — only the failed contest row itself is suppressed. Same
+# transparency mechanism as keeper rebounds above (pannadata#76).
+duel_contest_types <- c(3L, 7L, 42L, 44L, 45L, 83L)
+
 # Equity/WPA joins land on chain events by (match_id, event_id). Only chain
 # events that survive panna's SPADL conversion carry equity/wpa — SPADL drops
 # non-gameplay events and merges duel pairs, so a *healthy* join matches ~84-86%
@@ -165,12 +183,18 @@ for (comp in blog_comps) {
     # has team_id != prev_team and triggers a split, so genuine turnovers are
     # preserved (pannadata#76).
     is_keeper_rebound <- events$type_id[i] %in% keeper_rebound_types
+    # See duel_contest_types comment above: only a FAILED contest row from the
+    # non-possessing team is transparent; a won duel still splits normally.
+    is_failed_duel <- events$type_id[i] %in% duel_contest_types &&
+      events$outcome[i] != 1 &&
+      events$team_id[i] != prev_team
+    is_transparent <- is_keeper_rebound || is_failed_duel
     new_chain <- events$match_id[i] != prev_match ||
-      (!is_keeper_rebound && events$team_id[i] != prev_team && events$team_id[i] != "") ||
+      (!is_transparent && events$team_id[i] != prev_team && events$team_id[i] != "") ||
       events$type_id[i] %in% dead_ball_types
     if (new_chain) chain_n <- chain_n + 1L
     events$chain_number[i] <- chain_n
-    if (!is_keeper_rebound) prev_team <- events$team_id[i]
+    if (!is_transparent) prev_team <- events$team_id[i]
     prev_match <- events$match_id[i]
   }
 

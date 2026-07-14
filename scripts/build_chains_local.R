@@ -37,6 +37,23 @@ dead_ball_types <- c(2L, 4L, 5L, 6L, 17L, 55L, 56L, 57L, 70L, 80L, 81L)
 non_play_types <- c(18L, 19L, 24L, 27L, 28L, 30L, 32L, 34L, 37L, 40L, 43L, 65L, 68L)
 shot_types <- c(13L, 14L, 15L, 16L)
 
+# Failed duel/contest touches from the team that does NOT currently have the
+# ball must not end the attacking team's possession. Take-On (3), Tackle (7),
+# Good Skill / take-on class (42), Aerial (44), Challenge i.e. Opta's
+# "dribbled past" marker (45), and Att One-On-One (83) are logged for BOTH
+# sides of a contested-ball duel. When such a row's team_id differs from the
+# current possessor (prev_team) AND its outcome is a FAILURE (outcome != 1),
+# the non-possessing team's attempt to win the ball back failed, so
+# possession never actually changed hands — it must not trigger the
+# team-change split below. A row that WINS the duel (outcome == 1) is left to
+# split normally: the winning team's own NEXT event still differs from
+# prev_team and starts a new chain correctly, so genuine turnovers via a won
+# tackle/take-on are unaffected — only the failed contest row itself is
+# suppressed. Same fix as build_chains_ci.R, which additionally carries
+# keeper-rebound transparency (pannadata#76) that this local script never
+# had ported to it — that gap is pre-existing and out of scope here.
+duel_contest_types <- c(3L, 7L, 42L, 44L, 45L, 83L)
+
 for (comp in blog_comps) {
   event_file <- file.path(opta_dir, paste0("events_", comp, ".parquet"))
   if (!file.exists(event_file)) { cat("SKIP:", comp, "(file not found)\n"); next }
@@ -59,12 +76,18 @@ for (comp in blog_comps) {
   prev_team <- ""
   prev_match <- ""
   for (i in seq_len(nrow(events))) {
+    # See duel_contest_types comment above: only a FAILED contest row from
+    # the non-possessing team is transparent; a won duel still splits
+    # normally.
+    is_failed_duel <- events$type_id[i] %in% duel_contest_types &&
+      events$outcome[i] != 1 &&
+      events$team_id[i] != prev_team
     new_chain <- events$match_id[i] != prev_match ||
-      (events$team_id[i] != prev_team && events$team_id[i] != "") ||
+      (!is_failed_duel && events$team_id[i] != prev_team && events$team_id[i] != "") ||
       events$type_id[i] %in% dead_ball_types
     if (new_chain) chain_n <- chain_n + 1L
     events$chain_number[i] <- chain_n
-    prev_team <- events$team_id[i]
+    if (!is_failed_duel) prev_team <- events$team_id[i]
     prev_match <- events$match_id[i]
   }
 
