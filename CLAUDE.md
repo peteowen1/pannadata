@@ -1,16 +1,17 @@
 # CLAUDE.md — pannadata
 
-Data repository for the pannaverse ecosystem. Stores cached match data from three sources, managed via GitHub Releases (not git-tracked).
+Data repository for the pannaverse ecosystem. Stores cached match data managed via GitHub Releases (not git-tracked).
 
 ## Data Sources
 
 | Source | Scraper | Environment | Schedule | Release Tag |
 |--------|---------|-------------|----------|-------------|
 | **Opta** ⭐ | Python (`scripts/opta/`) | GitHub Actions | 5 AM UTC daily | `opta-latest` |
-| Understat (deprecated) | R (`scripts/understat/`) | (disabled — workflow `.disabled`) | — | `understat-latest` |
-| FBref (deprecated) | R (`scripts/fbref/`) | (disabled — workflow `.disabled`; Oracle VM scrape also retired) | — | `fbref-latest` |
 
-As of 2026-04-18 the project consolidated on Opta. Understat and FBref scrape workflows are disabled (`.disabled` extension) and slated for archival; their code remains in the repo for reference but does not run on a schedule. Build new features against Opta only.
+As of 2026-04-18 the project consolidated on Opta. The retired Understat/FBref scrapers and their
+disabled workflows were removed from the repo 2026-07-14 (git history is the archive); their last
+published data remains on the `understat-latest` / `fbref-latest` releases. Build new features
+against Opta only.
 
 ## Directory Structure
 
@@ -27,18 +28,11 @@ data/
 │   ├── events_consolidated/  # Merged event files
 │   ├── models/           # Legacy model copies (canonical source: pannamodels package)
 │   └── opta_*.parquet    # Consolidated player stats, shots, lineups
-├── fbref/
-│   ├── defense/          # Defensive stats per league/season
-│   ├── events/           # Match events (RDS per match)
-│   └── metadata/         # League/season metadata
-└── understat/
-    ├── events/           # Match events (parquet per season)
-    ├── metadata/         # League metadata
-    ├── roster/           # Player rosters
-    └── understat_*.parquet  # Consolidated files
 ```
 
-**Data is NOT in git** — the `data/` directory is gitignored. All data is stored in GitHub Releases and downloaded via `panna::pb_download_source()`.
+(Local `data/fbref/` and `data/understat/` trees may linger from old downloads — retired, safe to delete.)
+
+**Data is NOT in git** — the `data/` directory is gitignored. All data is stored in GitHub Releases and downloaded via `panna::pb_download_opta()`.
 
 ## Scripts
 
@@ -50,7 +44,7 @@ cd scripts/opta && pip install -r requirements.txt
 python scrape_opta.py
 ```
 
-Understat/FBref scrapers (`scripts/understat/`, `scripts/fbref/`) are retired — code kept for reference only, do not run.
+Understat/FBref scrapers were removed 2026-07-14 (retired 2026-04-18; recover from git history if ever needed).
 
 ### Blog Data
 

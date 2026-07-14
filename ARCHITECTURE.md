@@ -20,25 +20,18 @@ pipelines.
 flowchart TD
     subgraph APIs["Data Sources"]
         OPTA["Opta / TheAnalyst API\n15 leagues, 2013+"]
-        UNDER["Understat\n6 leagues, 2014+"]
-        FBREF["FBref\n8 comps, 2017+"]
     end
 
     subgraph Scrapers["Scraping Layer"]
         S_OPTA["scrape_opta.py\n(Python, GHA 5 AM UTC)"]
-        S_UNDER["scrape_understat.R\n(R via panna, GHA 7 AM UTC)"]
-        S_FBREF["scrape_fbref.R\n(R via panna, Oracle VM 6 AM UTC)"]
     end
 
     subgraph Manifests["Incremental Tracking"]
         M_OPTA["opta-manifest.parquet\nPer-match table flags"]
-        M_UNDER["understat-manifest.parquet\nPer-league max ID"]
     end
 
     subgraph Storage["Local Storage (gitignored)"]
         RAW_OPTA["data/opta/\n{table}/{league}/{season}.parquet"]
-        RAW_UNDER["data/understat/\n{table}/{league}/{season}.parquet"]
-        RAW_FBREF["data/fbref/\n{table}/{league}/{season}.parquet"]
     end
 
     subgraph Consolidation["Consolidation"]
@@ -48,21 +41,16 @@ flowchart TD
 
     subgraph Releases["GitHub Releases"]
         REL_OPTA["opta-latest"]
-        REL_UNDER["understat-latest"]
-        REL_FBREF["fbref-latest"]
+        REL_LEGACY["understat-latest / fbref-latest\n(frozen legacy data)"]
     end
 
     OPTA --> S_OPTA
-    UNDER --> S_UNDER
-    FBREF --> S_FBREF
-
     S_OPTA <-->|"check/update"| M_OPTA
-    S_UNDER <-->|"check/update"| M_UNDER
-
     S_OPTA --> RAW_OPTA --> C_OPTA --> C_CONSOL --> REL_OPTA
-    S_UNDER --> RAW_UNDER --> REL_UNDER
-    S_FBREF --> RAW_FBREF --> REL_FBREF
 ```
+
+> Understat/FBref scraping lanes were retired 2026-04-18 and their code removed 2026-07-14;
+> their final published data stays frozen on `understat-latest` / `fbref-latest`.
 
 ## Data Sources
 
@@ -96,38 +84,24 @@ flowchart TD
 | `competition_metadata.py` | League tiers (1-5) and aliases for `--tier` CLI filter. |
 | `seasons.json` | Cache of Opta season UUIDs mapped from league codes. |
 
-### Understat
+### Understat / FBref (retired)
 
-- **Language**: R (via panna package functions)
-- **Schedule**: GitHub Actions daily at 7 AM UTC
-- **Coverage**: 6 leagues from 2014+ (ENG, ESP, GER, ITA, FRA, RUS)
-- **Metrics**: xG, xGChain, xGBuildup, shot-level coordinates
-
-**Key detail**: Understat IDs are interleaved across leagues (not sequential per league), so the scraper tracks per-league max IDs in the manifest for efficient incremental updates.
-
-### FBref
-
-- **Language**: R (via panna package functions)
-- **Schedule**: Oracle Cloud VM cron at 6 AM UTC (FBref blocks GitHub Actions IPs)
-- **Coverage**: 8 competitions from 2017+ (Big 5, UCL, UEL, cups)
-- **Rate limit**: 4s between requests
+Retired 2026-04-18; scraper code removed 2026-07-14 (git history is the archive). Final data
+frozen on `understat-latest` (6 leagues 2014+, xG/xGChain/xGBuildup) and `fbref-latest`
+(8 comps 2017+). Nothing schedules or consumes them in the live pipeline.
 
 ## Key Patterns
 
 ### Manifest-Based Incremental Updates
 
-All scrapers avoid re-downloading already-scraped data:
+The scraper avoids re-downloading already-scraped data:
 
 1. Download manifest from GitHub Releases at workflow start
 2. Check manifest during scraping to skip known matches
 3. Update manifest with new results
 4. Re-upload manifest with consolidated data
 
-**Opta manifest** tracks per-match flags: `has_player_stats`, `has_shots`, `has_match_events`, `has_lineups`, `event_unavailable`. A match is only skipped if all required data types are present.
-
-**Understat manifest** tracks per-league max ID. Uses `--lookback N` and `--max-misses` params to control scan range.
-
-Both maintain `.parquet.backup` files for corruption recovery.
+**Opta manifest** tracks per-match flags: `has_player_stats`, `has_shots`, `has_match_events`, `has_lineups`, `event_unavailable`. A match is only skipped if all required data types are present. A `.parquet.backup` file is maintained for corruption recovery.
 
 ### Streaming Consolidation (Opta)
 
