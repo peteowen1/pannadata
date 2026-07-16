@@ -93,8 +93,14 @@ source("scripts/league_config.R")
 # Deliberately NOT added to BLOG_COMP_TO_CODE — that map also drives
 # ratings/player-details/standings steps where a tournament doesn't belong.
 # Same local-extension precedent as rebuild_match_stats.R's build_shard call.
-blog_comps <- c(BLOG_COMPS, "World_Cup")
-comp_to_code <- c(BLOG_COMP_TO_CODE, World_Cup = "WC")
+# Override-safe (config-override pattern, mirrors panna's pipeline scripts):
+# callers can set `blog_comps`/`comp_to_code` before sourcing to scope a run
+# to a single comp (e.g. a WC-only historical backfill) without touching
+# every other league's chains file.
+if (!exists("blog_comps", inherits = FALSE)) {
+  blog_comps <- c(BLOG_COMPS, "World_Cup")
+  comp_to_code <- c(BLOG_COMP_TO_CODE, World_Cup = "WC")
+}
 dead_ball_types <- c(2L, 4L, 5L, 6L, 17L, 55L, 56L, 57L, 70L, 80L, 81L)
 non_play_types <- c(18L, 19L, 24L, 27L, 28L, 30L, 32L, 34L, 37L, 40L, 43L, 65L, 68L)
 shot_types <- c(13L, 14L, 15L, 16L)
@@ -140,6 +146,16 @@ MIN_JOIN_MATCH_FRAC <- 0.80
 # upload; this list is raised as a hard error after the loop.
 join_failures <- character(0)
 
+# Comps where every scraped season is intentionally kept, even once the
+# combined events file crosses the 200k-row threshold below. The guard exists
+# to bound memory on 20+-season club-league files (EPL/Bundesliga/etc, where
+# only the latest season is blog-relevant); World_Cup is different — after the
+# 2026-07-16 historical backfill it spans 7 tournaments (~844k rows total,
+# ~115-155k each) and every tournament is individually blog-relevant, not just
+# the latest. Without this exemption the guard silently collapsed WC chains to
+# 2026 only, discarding the 2002-2022 backfill.
+KEEP_ALL_SEASONS_COMPS <- c("World_Cup")
+
 for (comp in blog_comps) {
   event_file <- file.path(src_dir, paste0("events_", comp, ".parquet"))
 
@@ -161,7 +177,7 @@ for (comp in blog_comps) {
   tryCatch({
   events <- normalize_keys(read_parquet(event_file))
   seasons <- sort(unique(events$season), decreasing = TRUE)
-  if (nrow(events) > 200000 && length(seasons) > 1) {
+  if (nrow(events) > 200000 && length(seasons) > 1 && !(comp %in% KEEP_ALL_SEASONS_COMPS)) {
     events <- events |> filter(season == seasons[1])
   }
   cat(nrow(events), " events (", seasons[1], ") ... ", sep = "")
