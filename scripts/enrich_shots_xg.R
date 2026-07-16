@@ -43,7 +43,10 @@ features <- data.frame(
   is_header          = as.integer(grepl("head", bp)),
   is_right_foot      = as.integer(grepl("right", bp)),
   is_left_foot       = as.integer(grepl("left", bp)),
-  is_open_play       = as.integer(grepl("open", si)),
+  # panna's NULL-situation branch defaults to open play (xg_model.R:57-62);
+  # replicate per-row for NA/empty. The other situation flags need no special
+  # case: grepl() on NA returns FALSE, matching canonical 0L. (pannadata#101)
+  is_open_play       = as.integer(is.na(si) | si == "" | grepl("open", si)),
   is_set_piece       = as.integer(grepl("set", si)),
   is_corner          = as.integer(grepl("corner", si)),
   is_direct_freekick = as.integer(grepl("free", si)),
