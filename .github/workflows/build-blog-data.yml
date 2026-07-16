@@ -329,6 +329,8 @@ jobs:
 
       - name: Build match-shots (xG from enriched source)
         continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           if [ -f source/opta_shot_events.parquet ]; then
             Rscript -e '
@@ -347,6 +349,46 @@ jobs:
                 pt <- lu |> distinct(match_id, player_id, team_id, team_name) |> rename(lu_tid=team_id, lu_tn=team_name)
                 shots <- shots |> left_join(pt, by=c("match_id","player_id"))
               }
+              # period_id (1=H1, 2=H2, 3/4=ET, 5=shootout) disambiguates H1
+              # stoppage-time minutes from H2 minutes of the same number, e.g.
+              # H1 46-prime vs H2 46-prime (pannadata#84). Not present on
+              # opta_shot_events.parquet itself, but IS on the raw match_events
+              # feed (events_<comp>.parquet) — carry it through via a
+              # (match_id, event_id) join, the same key backfill_goalmouth.py
+              # uses. Download+process one comp at a time and delete
+              # immediately (mirrors build_chains_ci.R per-comp discipline) so
+              # this adds no peak-disk cost ahead of the chains step below —
+              # whichever comps this leaves cached, chains skips re-downloading.
+              SHOT_TYPE_IDS <- c(13L, 14L, 15L, 16L)
+              period_parts <- lapply(BLOG_SHOT_COMPS, function(comp) {
+                f <- paste0("source/events_", comp, ".parquet")
+                fetched <- !file.exists(f)
+                if (fetched) {
+                  system2("gh", c("release", "download", "opta-latest", "-p",
+                    paste0("events_", comp, ".parquet"), "-D", "source"),
+                    stdout = FALSE, stderr = FALSE)
+                }
+                if (!file.exists(f)) return(NULL)
+                out <- tryCatch(
+                  read_parquet(f, col_select = c("match_id","event_id","type_id","period_id")) |>
+                    filter(type_id %in% SHOT_TYPE_IDS, !is.na(period_id)) |>
+                    select(match_id, event_id, period_id),
+                  error = function(e) { cat("  WARN: failed reading", f, ":", conditionMessage(e), "\n"); NULL }
+                )
+                if (fetched) unlink(f)
+                out
+              })
+              period_lookup <- bind_rows(period_parts)
+              if (nrow(period_lookup) > 0) {
+                period_lookup <- period_lookup |> distinct(match_id, event_id, period_id) |>
+                  mutate(match_id = as.character(match_id), event_id = as.numeric(event_id))
+              } else {
+                period_lookup <- tibble::tibble(match_id = character(), event_id = numeric(), period_id = integer())
+              }
+              cat("period_id lookup:", nrow(period_lookup), "event rows across", length(BLOG_SHOT_COMPS), "comp(s)\n")
+              shots <- shots |>
+                mutate(match_id = as.character(match_id), event_id = as.numeric(event_id)) |>
+                left_join(period_lookup, by = c("match_id","event_id"))
               ms <- shots |> transmute(match_id,
                 team_id = if ("lu_tid" %in% names(shots)) coalesce(team_id, lu_tid) else team_id,
                 team_name = if ("lu_tn" %in% names(shots)) lu_tn else NA_character_,
@@ -355,10 +397,12 @@ jobs:
                 is_goal = type_id == 16L,
                 situation = if ("situation" %in% names(shots)) as.character(situation) else NA_character_,
                 body_part = if ("body_part" %in% names(shots)) as.character(body_part) else NA_character_,
+                period_id = as.integer(period_id),
                 xg = if (has_xg) round(xg, 3) else NA_real_) |>
                 filter(!is.na(match_id)) |> arrange(match_id, minute, second)
               write_parquet(ms, "blog/match-shots.parquet")
-              cat("match-shots:", nrow(ms), "shots", if(has_xg) "with xG" else "(no xG)", "\n")
+              cat("match-shots:", nrow(ms), "shots", if(has_xg) "with xG" else "(no xG)",
+                  "| period_id coverage:", round(100 * mean(!is.na(ms$period_id)), 1), "%\n")
             '
           else
             echo "::notice::Skipping match-shots — source file not available"
