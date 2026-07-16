@@ -75,6 +75,36 @@ player_teams <- lineups |>
   distinct(match_id, player_id, team_id, team_name) |>
   rename(lineup_team_id = team_id, lineup_team_name = team_name)
 
+# period_id (1=H1, 2=H2, 3/4=ET, 5=shootout) disambiguates H1 stoppage-time
+# minutes from H2 minutes of the same number, e.g. H1 46' vs H2 46' (pannadata#84).
+# Not present on opta_shot_events.parquet itself, but IS on the raw match_events
+# feed (events_consolidated) — carry it through via a (match_id, event_id) join,
+# the same key backfill_goalmouth.py uses to backfill goalmouth placement.
+events_dir <- if (dir.exists("source/events_consolidated")) {
+  "source/events_consolidated"
+} else if (dir.exists("data/opta/events_consolidated")) {
+  "data/opta/events_consolidated"
+} else {
+  NA_character_
+}
+SHOT_TYPE_IDS <- c(13, 14, 15, 16)  # miss, post, saved, goal — same as backfill_goalmouth.py
+if (!is.na(events_dir)) {
+  # Filter pushdown to blog_comps + shot type_ids before collect() — scanning
+  # the unfiltered dataset (all 100+ scraped competitions, ~80M+ event rows)
+  # took 9+ minutes and was still running; scoping to what shots actually need
+  # cuts it to ~1.2M rows in a few seconds.
+  period_lookup <- open_dataset(events_dir) |>
+    filter(competition %in% blog_comps, type_id %in% SHOT_TYPE_IDS, !is.na(period_id)) |>
+    select(match_id, event_id, period_id) |>
+    distinct(match_id, event_id, period_id) |>
+    collect() |>
+    mutate(match_id = as.character(match_id), event_id = as.numeric(event_id))
+  cat("  period_id lookup:", nrow(period_lookup), "event rows from", events_dir, "\n")
+} else {
+  period_lookup <- tibble::tibble(match_id = character(), event_id = numeric(), period_id = numeric())
+  cat("  WARNING: events_consolidated not found — match-shots will lack period_id\n")
+}
+
 shots_filtered <- shots |> filter(competition %in% blog_comps)
 has_team_id <- "team_id" %in% names(shots_filtered)
 
@@ -124,7 +154,9 @@ if (file.exists(xg_model_path)) {
 }
 
 shots_enriched <- shots_filtered |>
-  left_join(player_teams, by = c("match_id", "player_id"))
+  mutate(match_id = as.character(match_id), event_id = as.numeric(event_id)) |>
+  left_join(player_teams, by = c("match_id", "player_id")) |>
+  left_join(period_lookup, by = c("match_id", "event_id"))
 
 match_shots <- shots_enriched |>
   transmute(
@@ -138,10 +170,15 @@ match_shots <- shots_enriched |>
     y = round(y, 1),
     type_id = as.integer(type_id),
     is_goal = type_id == 16L,
+    period_id = as.integer(period_id),
     xg = round(xg, 3)
   ) |>
   filter(!is.na(match_id)) |>
   arrange(match_id, minute, second)
+
+n_period <- sum(!is.na(match_shots$period_id))
+cat("  period_id coverage:", n_period, "/", nrow(match_shots), "shots (",
+    round(100 * n_period / nrow(match_shots), 1), "%)\n")
 
 write_parquet(match_shots, "blog/match-shots.parquet")
 cat("  match-shots:", nrow(match_shots), "shot events\n")

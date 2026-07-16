@@ -93,8 +93,14 @@ source("scripts/league_config.R")
 # Deliberately NOT added to BLOG_COMP_TO_CODE — that map also drives
 # ratings/player-details/standings steps where a tournament doesn't belong.
 # Same local-extension precedent as rebuild_match_stats.R's build_shard call.
-blog_comps <- c(BLOG_COMPS, "World_Cup")
-comp_to_code <- c(BLOG_COMP_TO_CODE, World_Cup = "WC")
+# Override-safe (config-override pattern, mirrors panna's pipeline scripts):
+# callers can set `blog_comps`/`comp_to_code` before sourcing to scope a run
+# to a single comp (e.g. a WC-only historical backfill) without touching
+# every other league's chains file.
+if (!exists("blog_comps", inherits = FALSE)) {
+  blog_comps <- c(BLOG_COMPS, "World_Cup")
+  comp_to_code <- c(BLOG_COMP_TO_CODE, World_Cup = "WC")
+}
 dead_ball_types <- c(2L, 4L, 5L, 6L, 17L, 55L, 56L, 57L, 70L, 80L, 81L)
 non_play_types <- c(18L, 19L, 24L, 27L, 28L, 30L, 32L, 34L, 37L, 40L, 43L, 65L, 68L)
 shot_types <- c(13L, 14L, 15L, 16L)
@@ -105,6 +111,24 @@ shot_types <- c(13L, 14L, 15L, 16L)
 # mislabelled "lost_possession"). Treat them as transparent to possession
 # tracking so rebound possessions stay in one chain (pannadata#76).
 keeper_rebound_types <- c(10L, 11L, 41L, 50L)
+
+# Failed duel/contest touches from the team that does NOT currently have the
+# ball must also not end the attacking team's possession. Take-On (3), Tackle
+# (7), Good Skill / take-on class (42), Aerial (44), Challenge i.e. Opta's
+# "dribbled past" marker (45), and Att One-On-One (83) are all logged for
+# BOTH sides of a contested-ball duel. When such a row's team_id differs from
+# the current possessor (prev_team) AND its outcome is a FAILURE (outcome !=
+# 1), the non-possessing team's attempt to win the ball back failed, so
+# possession never actually changed hands — it must not trigger the
+# team-change split below. (Example: Tchouameni's "1-on-1 — Fail" (type 83)
+# vs Spain, France v Spain WC 2026-07-14, shipped as its own phantom 1-event
+# "lost_possession" chain even though Spain never lost the ball.) A row that
+# WINS the duel (outcome == 1) is deliberately left to split normally: the
+# winning team's own NEXT event still differs from prev_team and starts a new
+# chain correctly, so genuine turnovers via a won tackle/take-on are
+# unaffected — only the failed contest row itself is suppressed. Same
+# transparency mechanism as keeper rebounds above (pannadata#76).
+duel_contest_types <- c(3L, 7L, 42L, 44L, 45L, 83L)
 
 # Equity/WPA joins land on chain events by (match_id, event_id). Only chain
 # events that survive panna's SPADL conversion carry equity/wpa — SPADL drops
@@ -121,6 +145,16 @@ MIN_JOIN_MATCH_FRAC <- 0.80
 # Comps whose equity/wpa join breached a guard. Healthy comps still build and
 # upload; this list is raised as a hard error after the loop.
 join_failures <- character(0)
+
+# Comps where every scraped season is intentionally kept, even once the
+# combined events file crosses the 200k-row threshold below. The guard exists
+# to bound memory on 20+-season club-league files (EPL/Bundesliga/etc, where
+# only the latest season is blog-relevant); World_Cup is different — after the
+# 2026-07-16 historical backfill it spans 7 tournaments (~844k rows total,
+# ~115-155k each) and every tournament is individually blog-relevant, not just
+# the latest. Without this exemption the guard silently collapsed WC chains to
+# 2026 only, discarding the 2002-2022 backfill.
+KEEP_ALL_SEASONS_COMPS <- c("World_Cup")
 
 for (comp in blog_comps) {
   event_file <- file.path(src_dir, paste0("events_", comp, ".parquet"))
@@ -143,7 +177,7 @@ for (comp in blog_comps) {
   tryCatch({
   events <- normalize_keys(read_parquet(event_file))
   seasons <- sort(unique(events$season), decreasing = TRUE)
-  if (nrow(events) > 200000 && length(seasons) > 1) {
+  if (nrow(events) > 200000 && length(seasons) > 1 && !(comp %in% KEEP_ALL_SEASONS_COMPS)) {
     events <- events |> filter(season == seasons[1])
   }
   cat(nrow(events), " events (", seasons[1], ") ... ", sep = "")
@@ -165,12 +199,18 @@ for (comp in blog_comps) {
     # has team_id != prev_team and triggers a split, so genuine turnovers are
     # preserved (pannadata#76).
     is_keeper_rebound <- events$type_id[i] %in% keeper_rebound_types
+    # See duel_contest_types comment above: only a FAILED contest row from the
+    # non-possessing team is transparent; a won duel still splits normally.
+    is_failed_duel <- events$type_id[i] %in% duel_contest_types &&
+      events$outcome[i] != 1 &&
+      events$team_id[i] != prev_team
+    is_transparent <- is_keeper_rebound || is_failed_duel
     new_chain <- events$match_id[i] != prev_match ||
-      (!is_keeper_rebound && events$team_id[i] != prev_team && events$team_id[i] != "") ||
+      (!is_transparent && events$team_id[i] != prev_team && events$team_id[i] != "") ||
       events$type_id[i] %in% dead_ball_types
     if (new_chain) chain_n <- chain_n + 1L
     events$chain_number[i] <- chain_n
-    if (!is_keeper_rebound) prev_team <- events$team_id[i]
+    if (!is_transparent) prev_team <- events$team_id[i]
     prev_match <- events$match_id[i]
   }
 

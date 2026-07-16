@@ -1,0 +1,29 @@
+name: Versebus Bash Tests
+
+# Runs scripts/tests/test_versebus.sh (ECOSYSTEM-FIX-PLAN.md Section 4) on
+# any change to the bash versebus mirror or its consumer. Additive CI --
+# does not touch the scrape workflow itself.
+
+on:
+  push:
+    paths:
+      - 'scripts/versebus.sh'
+      - 'scripts/tests/test_versebus.sh'
+      - '.github/workflows/daily-opta-scrape.yml'
+      - '.github/workflows/versebus-tests.yml'
+  pull_request:
+    paths:
+      - 'scripts/versebus.sh'
+      - 'scripts/tests/test_versebus.sh'
+      - '.github/workflows/daily-opta-scrape.yml'
+      - '.github/workflows/versebus-tests.yml'
+
+jobs:
+  bash-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Run versebus.sh tests
+        run: bash scripts/tests/test_versebus.sh
