@@ -370,9 +370,12 @@ jobs:
                 }
                 if (!file.exists(f)) return(NULL)
                 out <- tryCatch(
+                  # Cast per-part BEFORE bind_rows: event_id arrives as double in
+                  # some comps' shards and bit64::integer64 in others, and
+                  # bind_rows() refuses to combine those (broke the build 2026-07-16).
                   read_parquet(f, col_select = c("match_id","event_id","type_id","period_id")) |>
                     filter(type_id %in% SHOT_TYPE_IDS, !is.na(period_id)) |>
-                    select(match_id, event_id, period_id),
+                    transmute(match_id = as.character(match_id), event_id = as.numeric(event_id), period_id),
                   error = function(e) { cat("  WARN: failed reading", f, ":", conditionMessage(e), "\n"); NULL }
                 )
                 if (fetched) unlink(f)
