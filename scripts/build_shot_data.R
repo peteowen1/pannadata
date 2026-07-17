@@ -56,7 +56,13 @@ xg_model_path <- "source/xg_model.rds"
 if (file.exists(xg_model_path)) {
   library(xgboost)
   xg_model <- readRDS(xg_model_path)
-  cat("Loaded xG model:", length(xg_model$panna_metadata$feature_cols), "features\n")
+  penalty_xg <- xg_model$panna_metadata$penalty_xg
+  if (is.null(penalty_xg)) {
+    stop("xg_model.rds panna_metadata lacks penalty_xg (pre-panna#91 artifact) -- ",
+         "republish the model from panna::fit_xg_model()")
+  }
+  cat("Loaded xG model:", length(xg_model$panna_metadata$feature_cols),
+      "features | penalty_xg:", penalty_xg, "\n")
   distance_to_goal <- sqrt((100 - panna_shots$x)^2 + (50 - panna_shots$y)^2)
   dist_to_goal_line <- pmax(100 - panna_shots$x, 0.1)
   angle_left  <- atan2(50 - 6 - panna_shots$y, dist_to_goal_line)
@@ -81,15 +87,15 @@ if (file.exists(xg_model_path)) {
   # location, which the model reads as ~0.97 — meaningless. Surface as NA.
   is_og <- panna_shots$type_id == 16L & !is.na(panna_shots$x) & panna_shots$x < 50
   model_xg[is_og] <- NA_real_
-  # Penalty override: panna's xG model is penalty-free → fix to 0.80 (== panna::PENALTY_XG,
-  # the value panna's own xg_model.R:475 applies — keep these locked).
+  # Penalty override: panna's xG model is penalty-free → fix to the artifact's
+  # panna_metadata$penalty_xg (single-sourced from panna::PENALTY_XG, panna#91).
   is_pen <- !is.na(panna_shots$situation) & tolower(panna_shots$situation) == "penalty"
-  model_xg[is_pen] <- 0.80
+  model_xg[is_pen] <- penalty_xg
   # Prefer the canonical source xG where present (already OG/penalty-guarded by
   # enrich_shots_xg.R), model-fill the rest.
   panna_shots$xg <- coalesce(source_xg, model_xg)
   cat("xG:", round(sum(panna_shots$xg, na.rm = TRUE), 1), "total across", nrow(panna_shots),
-      "shots (", sum(is.na(source_xg)), "model-filled,", sum(is_pen), "pens@0.80,",
+      "shots (", sum(is.na(source_xg)), "model-filled,", sum(is_pen), paste0("pens@", penalty_xg, ","),
       sum(is_og), "OG->NA)\n")
 } else if (!all(is.na(source_xg))) {
   panna_shots$xg <- source_xg

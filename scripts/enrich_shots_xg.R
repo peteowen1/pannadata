@@ -22,7 +22,12 @@ cat("Shots:", nrow(shots), "rows\n")
 
 xg_model <- readRDS(model_path)
 feature_cols <- xg_model$panna_metadata$feature_cols
-cat("Model features:", length(feature_cols), "\n")
+penalty_xg <- xg_model$panna_metadata$penalty_xg
+if (is.null(penalty_xg)) {
+  stop("xg_model.rds panna_metadata lacks penalty_xg (pre-panna#91 artifact) -- ",
+       "republish the model from panna::fit_xg_model()")
+}
+cat("Model features:", length(feature_cols), "| penalty_xg:", penalty_xg, "\n")
 
 # Build features (replicates panna::.create_shot_features)
 distance_to_goal <- sqrt((100 - shots$x)^2 + (50 - shots$y)^2)
@@ -102,12 +107,13 @@ if ("type_id" %in% names(shots)) {
 # carry no shot-geometry signal), so a spot kick scores ~0.33 geometric xG --
 # meaningless. The EPV pipeline overrides penalties to a fixed conversion rate;
 # replicate that here so the blog shot map and team/league xG totals use the
-# right value. 0.80 == panna::PENALTY_XG (panna constants.R:349 / xg_model.R:475).
+# right value. The value rides in the model artifact's panna_metadata$penalty_xg
+# (single-sourced from panna::PENALTY_XG at training time -- panna#91).
 if ("situation" %in% names(shots)) {
   is_pen <- !is.na(shots$situation) & tolower(shots$situation) == "penalty"
   n_pen <- sum(is_pen)
-  shots$xg[is_pen] <- 0.80  # == panna::PENALTY_XG
-  cat("Penalty override: set xG = 0.80 on", n_pen, "penalty shot(s)\n")
+  shots$xg[is_pen] <- penalty_xg
+  cat("Penalty override: set xG =", penalty_xg, "on", n_pen, "penalty shot(s)\n")
 } else {
   cat("::warning:: no situation column -- skipping penalty xG override\n")
 }
