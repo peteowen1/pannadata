@@ -130,6 +130,40 @@ if [ -f "$out_carry" ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# 3b. Canonical asset name: the release asset must be uploaded as
+#     bus_manifest.json even when out_manifest_path has a different basename
+#     (gh names assets by file basename; a models_manifest.json out_path
+#     shipped under the wrong asset name 2026-07-17 before this guard).
+# ---------------------------------------------------------------------------
+captured_upload="$tmpdir/captured_upload_path"
+gh() {
+  if [ "$1" = "release" ] && [ "$2" = "download" ]; then
+    return 1  # no previous manifest
+  elif [ "$1" = "release" ] && [ "$2" = "upload" ]; then
+    echo "$4" > "$captured_upload"  # args: release upload <tag> <file> --repo ...
+    return 0
+  fi
+  echo "unexpected gh invocation in phase 3b: $*" >&2
+  return 1
+}
+
+out_oddname="$tmpdir/models_manifest.json"
+check "vb_sh_manifest_last succeeds with a non-canonical out_path basename" \
+  vb_sh_manifest_last "test/fixture" "test-tag" 0 "$out_oddname" "$tmpdir/a.parquet"
+check "non-canonical out_path still writes the caller's local copy" \
+  test -f "$out_oddname"
+if [ -f "$captured_upload" ]; then
+  uploaded_base=$(basename "$(cat "$captured_upload")")
+  if [ "$uploaded_base" = "bus_manifest.json" ]; then
+    pass "uploaded asset basename is bus_manifest.json regardless of out_path"
+  else
+    fail "uploaded asset basename is '$uploaded_base', expected bus_manifest.json"
+  fi
+else
+  fail "mock gh never captured an upload path in phase 3b"
+fi
+
+# ---------------------------------------------------------------------------
 # 4. YAML ordering regression guard (grep-based, no yaml lib dependency):
 #    daily-opta-scrape.yml must upload opta-manifest.parquet AFTER the
 #    opta_*.parquet loop, and bus_manifest.json's own call must come after
