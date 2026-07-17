@@ -12,7 +12,7 @@
 # (bus_manifest.json, schema_version 1) -- identical shape to the JSON
 # R/versebus.R's vb_write_manifest() produces, so a strict R consumer reading
 # a tag this script published sees the same contract.
-VERSEBUS_SH_VERSION="1.0.0"
+VERSEBUS_SH_VERSION="1.1.0"
 
 # vb_sh_upload_all <repo> <tag> <file> [<file> ...]
 # Uploads each file with `gh release upload --clobber`, one at a time.
@@ -67,6 +67,12 @@ vb_sh_verify() {
 }
 
 # vb_sh_manifest_last <repo> <tag> <upload_errors> <out_manifest_path> <file> [<file> ...]
+# out_manifest_path is only where the manifest JSON is written LOCALLY; the
+# release asset is ALWAYS uploaded as bus_manifest.json (gh release upload
+# names assets by file basename, so a caller passing e.g.
+# models_manifest.json would otherwise publish under the wrong name and no
+# consumer would ever find the manifest — this exact miss shipped and was
+# caught live 2026-07-17).
 # Refuses (non-zero exit, no manifest write/upload) when upload_errors != 0
 # -- the manifest-last gate: the previous manifest remains the commit
 # record so consumers keep seeing the last consistent snapshot. Builds
@@ -123,7 +129,13 @@ vb_sh_manifest_last() {
       producer: {repo: $repo, workflow: $workflow, run_id: $run_id, run_attempt: $run_attempt},
       assets: $assets, notes: ""}' > "$out_path" || { rm -rf "$tmpdir"; return 1; }
 
-  if gh release upload "$tag" "$out_path" --repo "$repo" --clobber; then
+  local upload_src="$out_path"
+  if [ "$(basename "$out_path")" != "bus_manifest.json" ]; then
+    cp "$out_path" "$tmpdir/bus_manifest.json" || { rm -rf "$tmpdir"; return 1; }
+    upload_src="$tmpdir/bus_manifest.json"
+  fi
+
+  if gh release upload "$tag" "$upload_src" --repo "$repo" --clobber; then
     echo "OK bus_manifest.json (generation $generation, $(echo "$entries" | jq 'length') asset(s))"
     rm -rf "$tmpdir"
     return 0
