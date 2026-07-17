@@ -423,7 +423,7 @@ Pre-computed xG, xA, and xPass metrics per player per league-season. Generated b
 | `season` | chr | Season string |
 | `competition` | chr | Competition code |
 
-**Note:** Penalty xG is overridden to 0.76 in the `xg` column (model was not trained on penalties). Penalty shots are excluded from `npxg`.
+**Note:** Penalty xG is overridden to `panna::PENALTY_XG` (0.80, carried in the model artifact's `panna_metadata$penalty_xg` — panna#91) in the `xg` column (model was not trained on penalties). Penalty shots are excluded from `npxg`.
 
 ---
 
