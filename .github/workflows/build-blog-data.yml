@@ -371,8 +371,10 @@ jobs:
                 if (!file.exists(f)) return(NULL)
                 out <- tryCatch(
                   # Cast per-part BEFORE bind_rows: event_id arrives as double in
-                  # some comps' shards and bit64::integer64 in others, and
+                  # the shards of some comps and bit64::integer64 in others, and
                   # bind_rows() refuses to combine those (broke the build 2026-07-16).
+                  # NB this comment lives inside a bash single-quoted Rscript -e
+                  # block — apostrophes are fatal here (found out 2026-07-17).
                   read_parquet(f, col_select = c("match_id","event_id","type_id","period_id")) |>
                     filter(type_id %in% SHOT_TYPE_IDS, !is.na(period_id)) |>
                     transmute(match_id = as.character(match_id), event_id = as.numeric(event_id), period_id),
