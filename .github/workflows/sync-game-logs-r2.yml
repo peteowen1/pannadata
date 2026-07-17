@@ -23,6 +23,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      # Sparse checkout of ONE file: the versebus R2 trio the upload step
+      # sources. This workflow otherwise deliberately runs checkout-free for
+      # speed (the gh downloads below pass --repo explicitly for that reason)
+      # — keep it that way; don't widen this into a full checkout.
+      - name: Checkout versebus.sh only
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            scripts/versebus.sh
+          sparse-checkout-cone-mode: false
+
       - name: Download game-logs from blog-latest
         env:
           GH_TOKEN: ${{ github.token }}
@@ -67,21 +78,22 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           npm install -g wrangler
+          source scripts/versebus.sh
           if ! ls blog/game-logs*.parquet 1>/dev/null 2>&1; then
             echo "::error::No game-logs parquet files to upload"
             exit 1
           fi
+          # P5-A: fail-fast upload + manifest-last (see build-blog-data.yml).
+          # The manifest carry-forward keeps non-game-logs football/ entries
+          # from the last full blog publish, so this partial sync still
+          # describes the whole prefix. upload_errors is captured explicitly
+          # (not left to set -e) so the manifest gate can't be defeated by a
+          # future || true / if-wrap around the upload call.
           upload_errors=0
-          for f in blog/game-logs*.parquet; do
-            if wrangler r2 object put "inthegame-data/football/$(basename "$f")" --file "$f" --cache-control "public, max-age=300" --remote; then
-              echo "Uploaded football/$(basename "$f")"
-            else
-              echo "::error::Failed to upload football/$(basename "$f")"
-              upload_errors=$((upload_errors + 1))
-            fi
-          done
+          vb_sh_r2_upload_all "inthegame-data/football" blog/game-logs*.parquet || upload_errors=1
           if [ "$upload_errors" -gt 0 ]; then
-            echo "::error::$upload_errors upload(s) failed"
+            echo "::error::R2 upload failed (fail-fast) — bus_manifest.json NOT updated; previous manifest remains the commit record"
             exit 1
           fi
+          vb_sh_r2_manifest_last "inthegame-data/football" "$upload_errors" "r2_bus_manifest.json" blog/game-logs*.parquet
           echo "game-logs synced to R2."

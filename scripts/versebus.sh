@@ -12,7 +12,7 @@
 # (bus_manifest.json, schema_version 1) -- identical shape to the JSON
 # R/versebus.R's vb_write_manifest() produces, so a strict R consumer reading
 # a tag this script published sees the same contract.
-VERSEBUS_SH_VERSION="1.1.0"
+VERSEBUS_SH_VERSION="1.2.0"
 
 # vb_sh_upload_all <repo> <tag> <file> [<file> ...]
 # Uploads each file with `gh release upload --clobber`, one at a time.
@@ -141,6 +141,108 @@ vb_sh_manifest_last() {
     return 0
   else
     echo "::error::Failed to upload bus_manifest.json for ${repo}@${tag}" >&2
+    rm -rf "$tmpdir"
+    return 1
+  fi
+}
+
+# --- R2 mirror of the trio (FABLE-VERSEBUS-PHASE5-PLAN P5-A) ----------------
+# Same §1.2 manifest contract as the release functions, for workflows that
+# publish to Cloudflare R2 via wrangler instead of GitHub Releases. R2 has no
+# multi-object transactions; these buy (a) the torn window is never
+# advertised (no manifest for a torn generation), (b) the run is red at the
+# moment of tearing, (c) a re-run heals (puts are idempotent per key). Full
+# atomicity needs reader-side pointer adoption — out of scope per PD4.
+
+# vb_sh_r2_upload_all <bucket-prefix> <file> [<file> ...]
+# Uploads each file to <bucket-prefix>/<basename>. ONE deliberate difference
+# from vb_sh_upload_all: FAIL-FAST — prints "FAIL <name>" and returns 1 on
+# the first error, leaving remaining files un-uploaded (ratified P5-A choice:
+# smallest torn window, and the manifest below is never written for the torn
+# set). Prints "OK <name>" per success. Cache-Control lets browsers/CF cache
+# the object and revalidate via ETag (304, zero bytes) instead of
+# re-downloading megabytes — the blog drops its cache-busting query once
+# objects carry this (blog #388).
+vb_sh_r2_upload_all() {
+  local prefix="$1"; shift
+  local f name
+  for f in "$@"; do
+    [ -f "$f" ] || continue
+    name=$(basename "$f")
+    if wrangler r2 object put "${prefix}/${name}" --file "$f" \
+         --cache-control "public, max-age=300" --remote; then
+      echo "OK $name"
+    else
+      echo "FAIL $name"
+      return 1
+    fi
+  done
+}
+
+# vb_sh_r2_manifest_last <bucket-prefix> <upload_errors> <out_manifest_path> <file> [<file> ...]
+# R2 twin of vb_sh_manifest_last: refuses when upload_errors != 0; builds the
+# §1.2 manifest (sha256/bytes/generation/producer; tag = the bucket-prefix);
+# CARRIES FORWARD entries from the existing <bucket-prefix>/bus_manifest.json
+# whose basename isn't in this call's file list (a partial publish — e.g.
+# sync-game-logs-r2.yml's game-logs* subset — still describes the whole
+# prefix). Uploads LAST, always under the canonical key
+# <bucket-prefix>/bus_manifest.json, with no-cache so readers never act on a
+# stale commit record. Returns non-zero (manifest NOT uploaded) on any
+# internal failure.
+vb_sh_r2_manifest_last() {
+  local prefix="$1" upload_errors="$2" out_path="$3"; shift 3
+
+  if [ "$upload_errors" -ne 0 ]; then
+    echo "::error::vb_sh_r2_manifest_last refusing to update bus_manifest.json for ${prefix} -- ${upload_errors} upload failure(s) this run" >&2
+    return 1
+  fi
+
+  local tmpdir prev_manifest
+  tmpdir=$(mktemp -d) || return 1
+  prev_manifest=""
+  if wrangler r2 object get "${prefix}/bus_manifest.json" \
+       --file "$tmpdir/prev_bus_manifest.json" --remote 2>/dev/null \
+     && [ -s "$tmpdir/prev_bus_manifest.json" ]; then
+    prev_manifest="$tmpdir/prev_bus_manifest.json"
+  fi
+
+  local entries="[]" f name sha bytes entry
+  for f in "$@"; do
+    [ -f "$f" ] || continue
+    name=$(basename "$f")
+    sha=$(sha256sum "$f" | cut -d' ' -f1) || { rm -rf "$tmpdir"; return 1; }
+    bytes=$(stat -c%s "$f") || { rm -rf "$tmpdir"; return 1; }
+    entry=$(jq -n --arg name "$name" --arg sha "$sha" --argjson bytes "$bytes" \
+      '{name: $name, sha256: $sha, bytes: $bytes, rows: null}') || { rm -rf "$tmpdir"; return 1; }
+    entries=$(echo "$entries" | jq --argjson e "$entry" '. + [$e]') || { rm -rf "$tmpdir"; return 1; }
+  done
+
+  if [ -n "$prev_manifest" ]; then
+    entries=$(jq -n --argjson new "$entries" --slurpfile prev "$prev_manifest" '
+      ($new | map(.name)) as $new_names
+      | $new + [$prev[0].assets[]? | select(.name as $n | ($new_names | index($n)) == null)]
+    ') || { rm -rf "$tmpdir"; return 1; }
+  fi
+
+  local generation produced_at
+  generation="$(date -u +%Y%m%dT%H%M%SZ)-r${GITHUB_RUN_ID:-local}"
+  produced_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+  jq -n --arg tag "$prefix" --arg gen "$generation" --arg produced "$produced_at" \
+    --arg repo "${GITHUB_REPOSITORY:-local}" --arg workflow "${GITHUB_WORKFLOW:-local}" \
+    --arg run_id "${GITHUB_RUN_ID:-}" --arg run_attempt "${GITHUB_RUN_ATTEMPT:-}" \
+    --argjson assets "$entries" \
+    '{schema_version: 1, tag: $tag, generation: $gen, produced_at_utc: $produced,
+      producer: {repo: $repo, workflow: $workflow, run_id: $run_id, run_attempt: $run_attempt},
+      assets: $assets, notes: ""}' > "$out_path" || { rm -rf "$tmpdir"; return 1; }
+
+  if wrangler r2 object put "${prefix}/bus_manifest.json" --file "$out_path" \
+       --cache-control "no-cache" --remote; then
+    echo "OK bus_manifest.json (generation $generation, $(echo "$entries" | jq 'length') asset(s))"
+    rm -rf "$tmpdir"
+    return 0
+  else
+    echo "::error::Failed to upload bus_manifest.json for ${prefix}" >&2
     rm -rf "$tmpdir"
     return 1
   fi

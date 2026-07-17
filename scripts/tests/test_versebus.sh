@@ -210,6 +210,97 @@ else
   fail "daily-opta-scrape.yml not found at $workflow"
 fi
 
+# ---------------------------------------------------------------------------
+# 5. R2 trio (P5-A). wrangler is mocked as a shell function, same fixture
+#    style as the gh mock.
+# ---------------------------------------------------------------------------
+echo "more dummy content" > "$tmpdir/b.parquet"
+wrangler_log="$tmpdir/wrangler_invocations"
+: > "$wrangler_log"
+
+# 5a. vb_sh_r2_upload_all is FAIL-FAST: b.parquet upload fails -> return 1,
+#     and a.parquet (later in the list) is never attempted.
+wrangler() {
+  echo "$*" >> "$wrangler_log"
+  case "$*" in
+    *b.parquet*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+check_not "vb_sh_r2_upload_all returns non-zero when an upload fails" \
+  vb_sh_r2_upload_all "bucket/prefix" "$tmpdir/b.parquet" "$tmpdir/a.parquet"
+if grep -q "a.parquet" "$wrangler_log"; then
+  fail "fail-fast: a.parquet was attempted after b.parquet failed"
+else
+  pass "fail-fast: no further uploads attempted after the first failure"
+fi
+
+check "vb_sh_r2_upload_all succeeds when all uploads succeed" \
+  vb_sh_r2_upload_all "bucket/prefix" "$tmpdir/a.parquet"
+
+# 5b. vb_sh_r2_manifest_last refuses when upload_errors != 0.
+out_r2_refused="$tmpdir/r2_refused.json"
+check_not "vb_sh_r2_manifest_last returns non-zero when upload_errors=1" \
+  vb_sh_r2_manifest_last "bucket/prefix" 1 "$out_r2_refused" "$tmpdir/a.parquet"
+check_not "vb_sh_r2_manifest_last does NOT write a manifest when upload_errors=1" \
+  test -f "$out_r2_refused"
+
+# 5c. First publish (no previous manifest on R2): schema-valid, uploaded
+#     under the canonical <prefix>/bus_manifest.json key with no-cache.
+: > "$wrangler_log"
+wrangler() {
+  echo "$*" >> "$wrangler_log"
+  case "$1 $2 $3" in
+    "r2 object get") return 1 ;;   # no previous manifest
+    "r2 object put") return 0 ;;
+  esac
+  return 1
+}
+
+out_r2_fresh="$tmpdir/r2_fresh.json"
+check "vb_sh_r2_manifest_last succeeds on first publish" \
+  vb_sh_r2_manifest_last "bucket/prefix" 0 "$out_r2_fresh" "$tmpdir/a.parquet"
+check "R2 manifest file is written locally" test -f "$out_r2_fresh"
+if [ -f "$out_r2_fresh" ]; then
+  check "R2 manifest schema_version == 1" jq -e '.schema_version == 1' "$out_r2_fresh"
+  check "R2 manifest tag == bucket-prefix" jq -e '.tag == "bucket/prefix"' "$out_r2_fresh"
+  check "R2 manifest has exactly one asset entry" jq -e '(.assets | length) == 1' "$out_r2_fresh"
+fi
+if grep -q "r2 object put bucket/prefix/bus_manifest.json" "$wrangler_log"; then
+  pass "R2 manifest uploaded under canonical <prefix>/bus_manifest.json key"
+else
+  fail "R2 manifest NOT uploaded under canonical key (log: $(cat "$wrangler_log"))"
+fi
+if grep "bus_manifest.json" "$wrangler_log" | grep -q -- "--cache-control no-cache"; then
+  pass "R2 manifest uploaded with no-cache"
+else
+  fail "R2 manifest upload missing no-cache cache-control"
+fi
+
+# 5d. Carry-forward from an existing R2 manifest: a prefix-resident file not
+#     in this call's list survives the merge.
+wrangler() {
+  case "$1 $2 $3" in
+    "r2 object get")
+      # args: r2 object get <key> --file <out> --remote
+      cp "$prev_dir/bus_manifest.json" "$6"
+      return 0 ;;
+    "r2 object put") return 0 ;;
+  esac
+  return 1
+}
+
+out_r2_carry="$tmpdir/r2_carry.json"
+check "vb_sh_r2_manifest_last succeeds with a previous R2 manifest" \
+  vb_sh_r2_manifest_last "bucket/prefix" 0 "$out_r2_carry" "$tmpdir/a.parquet"
+if [ -f "$out_r2_carry" ]; then
+  check "R2 carry-forward: this run's file present" \
+    jq -e '[.assets[].name] | index("a.parquet") != null' "$out_r2_carry"
+  check "R2 carry-forward: previous-manifest-only file survives" \
+    jq -e '[.assets[].name] | index("old_only.parquet") != null' "$out_r2_carry"
+fi
+
 echo ""
 echo "TOTALS: $pass_count passed, $fail_count failed"
 if [ "$fail_count" -gt 0 ]; then
