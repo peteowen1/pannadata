@@ -592,26 +592,26 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           npm install -g wrangler
+          source scripts/versebus.sh
           if ! ls blog/*.parquet 1>/dev/null 2>&1; then
             echo "ERROR: No parquet files found in blog/"
             exit 1
           fi
+          # P5-A (FABLE-VERSEBUS-PHASE5-PLAN): fail-fast upload, then
+          # bus_manifest.json LAST — a torn publish is never advertised and
+          # the run is red at the moment of tearing. The expected-artifact
+          # gate below still guards builds that silently SKIPPED (a different
+          # failure class from uploads that FAILED). Cache-control (blog #388)
+          # now lives in vb_sh_r2_upload_all. upload_errors is captured
+          # explicitly (not left to set -e) so the manifest gate can't be
+          # defeated by a future || true / if-wrap around the upload call.
           upload_errors=0
-          for f in blog/*.parquet; do
-            # Cache-Control lets browsers/CF cache the parquet and revalidate via
-            # ETag (304, zero bytes) instead of re-downloading megabytes — the blog
-            # drops its cache-busting query once objects carry this (blog #388).
-            if wrangler r2 object put "inthegame-data/football/$(basename $f)" --file "$f" --cache-control "public, max-age=300" --remote; then
-              echo "Uploaded football/$(basename $f)"
-            else
-              echo "ERROR: Failed to upload football/$(basename $f)"
-              upload_errors=$((upload_errors + 1))
-            fi
-          done
+          vb_sh_r2_upload_all "inthegame-data/football" blog/*.parquet || upload_errors=1
           if [ "$upload_errors" -gt 0 ]; then
-            echo "ERROR: $upload_errors upload(s) failed"
+            echo "::error::R2 upload failed (fail-fast) — bus_manifest.json NOT updated; previous manifest remains the commit record"
             exit 1
           fi
+          vb_sh_r2_manifest_last "inthegame-data/football" "$upload_errors" "r2_bus_manifest.json" blog/*.parquet
 
       # Expected-artifact manifest gate. Many build steps run with
       # continue-on-error and `exit 0` on missing inputs, so a never-built
