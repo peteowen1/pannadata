@@ -223,6 +223,25 @@ class PlayerLineup:
     sub_off_minute: int = 0
 
 
+def _to_int_or_0(value) -> int:
+    """int(value), falling back to 0 for anything that won't convert.
+
+    Thinner historical Opta feeds (first hit: Euro 1980) occasionally emit a
+    non-numeric placeholder (the literal string "Unknown") for a stat/field
+    that's numeric on every other row. Silently keeping the raw value there
+    (as one sibling of this fix used to) turns the eventual pandas column
+    mixed int/str, which crashes at to_parquet() time with a confusing
+    schema-inference error far from the actual bad row -- so every stat/field
+    that feeds a numeric column goes through this instead. TypeError is
+    caught alongside ValueError in case a stat's "value" key is ever present
+    but JSON null (int(None) raises TypeError, not ValueError).
+    """
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return 0
+
+
 class OptaScraper:
     """Scrapes Opta data from TheAnalyst API"""
 
@@ -819,15 +838,14 @@ class OptaScraper:
                         continue
                     # Non-numeric values (e.g. the literal "Unknown") appear
                     # on thinner feeds from older tournaments (first hit:
-                    # Euro 1980). Unlike extract_all_player_stats() below,
-                    # this dict feeds straight into Shot() fields and one
-                    # arithmetic expression (attPenGoal + attPenMiss) further
-                    # down, so a raw string here would just move the crash
-                    # (or silently corrupt a shot count) instead of avoiding
-                    # it — fall back to 0, not the string.
+                    # Euro 1980) — see _to_int_or_0(). This dict feeds
+                    # straight into Shot() fields and one arithmetic
+                    # expression (attPenGoal + attPenMiss) further down, so a
+                    # raw string here would just move the crash (or silently
+                    # corrupt a shot count) instead of avoiding it.
                     try:
                         stats[s["type"]] = int(s.get("value", 0))
-                    except ValueError:
+                    except (ValueError, TypeError):
                         stats[s["type"]] = 0
                         non_numeric += 1
                 if missing_type > 0:
@@ -910,7 +928,12 @@ class OptaScraper:
                     "player_name": player.get("matchName", ""),
                     "first_name": player.get("firstName", ""),
                     "last_name": player.get("lastName", ""),
-                    "shirt_number": player.get("shirtNumber", 0),
+                    # Coerced like the stat loop below: a raw pass-through
+                    # (int default 0, string when non-numeric) is the exact
+                    # same mixed-type-column bug the "Unknown" formationPlace
+                    # stat hit at to_parquet() time — review catch, found
+                    # live in this same field.
+                    "shirt_number": _to_int_or_0(player.get("shirtNumber", 0)),
                     "position": player.get("position", ""),
                     "position_side": player.get("positionSide", ""),
                     "formation_place": player.get("formationPlace", ""),
@@ -933,7 +956,7 @@ class OptaScraper:
                     stat_value = s.get("value", 0)
                     try:
                         row[stat_name] = int(stat_value)
-                    except ValueError:
+                    except (ValueError, TypeError):
                         # Falls back to 0, NOT the raw string: keeping "Unknown"
                         # here was the actual root cause of a to_parquet() crash
                         # on Euro 1980 ("Conversion failed for column
@@ -1209,15 +1232,23 @@ class OptaScraper:
                 # so the two unguarded int() calls below (minsPlayed,
                 # gameStarted) can't crash on a non-numeric "Unknown" value
                 # from a thin historical feed (first hit: Euro 1980,
-                # elsewhere in this same class of stat-value bug).
+                # elsewhere in this same class of stat-value bug). Warned
+                # (not silent) so a corrupt stat is distinguishable in the
+                # log from a genuinely-missing one — both would otherwise
+                # look identical to the mins_played==0 reconstruction logic
+                # below (review catch).
                 stats = {}
+                non_numeric = 0
                 for s in player.get("stat", []):
                     if "type" not in s:
                         continue
                     try:
                         stats[s["type"]] = int(s.get("value", 0))
-                    except ValueError:
+                    except (ValueError, TypeError):
                         stats[s["type"]] = 0
+                        non_numeric += 1
+                if non_numeric > 0:
+                    print(f"  Warning: {non_numeric} non-numeric stat value(s) coerced to 0 for player {player.get('matchName', '?')} in match {match_id}")
                 mins_played = stats.get("minsPlayed", 0)
 
                 # Determine if starter:
@@ -1262,7 +1293,7 @@ class OptaScraper:
                     position=position,
                     position_side=player.get("positionSide", ""),
                     formation_place=formation_place,
-                    shirt_number=int(player.get("shirtNumber", 0)),
+                    shirt_number=_to_int_or_0(player.get("shirtNumber", 0)),
                     is_starter=is_starter,
                     minutes_played=mins_played,
                     sub_on_minute=sub_on,
