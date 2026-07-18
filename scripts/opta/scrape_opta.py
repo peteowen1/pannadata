@@ -494,7 +494,7 @@ def is_future_season(season_name: str) -> bool:
     current_month = current_date.month
 
     # Extract year(s) from season name
-    years = re.findall(r'20\d\d', season_name)
+    years = re.findall(r'(?:19|20)\d\d', season_name)
 
     if not years:
         return False  # Can't determine, assume not future
@@ -688,7 +688,7 @@ def get_season_date_range(season_name: str) -> tuple:
         return [(f"{yr}-01-01", f"{yr}-12-31")]
 
     # Extract year(s) from season name
-    years = re.findall(r'20\d\d', season_name)
+    years = re.findall(r'(?:19|20)\d\d', season_name)
 
     if len(years) >= 2:
         # League format: 2024-2025 or 2024/2025

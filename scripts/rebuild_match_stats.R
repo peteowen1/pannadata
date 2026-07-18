@@ -77,3 +77,12 @@ for (comp in names(comp_to_code)) {
 # belong. Ships all WC seasons (historical + 2026); the blog page filters
 # by match_date itself, so 2026 rows light up as the tournament is played.
 build_shard("World_Cup", "WC")
+
+# Sibling tournament shards (pannadata#98 follow-through; blog consumption
+# tracked in inthegame-blog#451). Same all-seasons pattern as the WC shard;
+# codes match the game-logs league labels (EURO / Copa_America / AFCON) so
+# box-score and value rows agree on naming. Coverage in opta_player_stats:
+# Euros 2000-2024 (all 7), Copa 2001-2024 (9), AFCON 2002-2025 (13).
+build_shard("UEFA_Euros", "EURO")
+build_shard("Copa_America", "Copa_America")
+build_shard("AFCON", "AFCON")
