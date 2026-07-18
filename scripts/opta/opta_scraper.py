@@ -924,6 +924,7 @@ class OptaScraper:
 
                 # Add all stats
                 missing_type = 0
+                non_numeric = 0
                 for s in player.get("stat", []):
                     stat_name = s.get("type")
                     if stat_name is None:
@@ -933,9 +934,20 @@ class OptaScraper:
                     try:
                         row[stat_name] = int(stat_value)
                     except ValueError:
-                        row[stat_name] = stat_value
+                        # Falls back to 0, NOT the raw string: keeping "Unknown"
+                        # here was the actual root cause of a to_parquet() crash
+                        # on Euro 1980 ("Conversion failed for column
+                        # formationPlace with type object") — most rows have a
+                        # real int for this stat_name, so a stray string turns
+                        # the column mixed-type at write time, moving the
+                        # crash rather than avoiding it. Same rationale/fix as
+                        # extract_player_shots() above.
+                        row[stat_name] = 0
+                        non_numeric += 1
                 if missing_type > 0:
                     print(f"  Warning: {missing_type} stat entries missing 'type' for player {row.get('player_name', '?')} in match {match_id}")
+                if non_numeric > 0:
+                    print(f"  Warning: {non_numeric} non-numeric stat value(s) coerced to 0 for player {row.get('player_name', '?')} in match {match_id}")
 
                 rows.append(row)
 
@@ -1192,9 +1204,21 @@ class OptaScraper:
             for player in lineup.get("player", []):
                 player_id = player.get("playerId", "")
 
-                # Get minutes played from stats
-                stats = {s["type"]: s.get("value", 0) for s in player.get("stat", []) if "type" in s}
-                mins_played = int(stats.get("minsPlayed", 0))
+                # Get minutes played from stats. Values coerced to int here
+                # (not left raw like the dict-comprehension version used to)
+                # so the two unguarded int() calls below (minsPlayed,
+                # gameStarted) can't crash on a non-numeric "Unknown" value
+                # from a thin historical feed (first hit: Euro 1980,
+                # elsewhere in this same class of stat-value bug).
+                stats = {}
+                for s in player.get("stat", []):
+                    if "type" not in s:
+                        continue
+                    try:
+                        stats[s["type"]] = int(s.get("value", 0))
+                    except ValueError:
+                        stats[s["type"]] = 0
+                mins_played = stats.get("minsPlayed", 0)
 
                 # Determine if starter:
                 # 1. formationPlace 1-11 (2018+ data)
