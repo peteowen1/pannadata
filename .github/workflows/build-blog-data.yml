@@ -629,8 +629,10 @@ jobs:
       # game-logs*, wc2026_*, shootout-wpa.
       - name: Fail run if expected blog artifacts are missing
         run: |
-          # 13 BLOG_CODES from scripts/league_config.R + the WC shard.
-          HARD_MATCH_STATS="ENG ENG2 ESP FRA GER ITA NED POR SCO TUR UCL UEL UECL WC"
+          # 13 BLOG_CODES from scripts/league_config.R + the 4 tournament
+          # shards (WC/EURO/Copa_America/AFCON — review catch: the siblings
+          # need the same never-built-shard hard-fail the WC shard gets).
+          HARD_MATCH_STATS="ENG ENG2 ESP FRA GER ITA NED POR SCO TUR UCL UEL UECL WC EURO Copa_America AFCON"
           missing=0
           for code in $HARD_MATCH_STATS; do
             f="blog/match-stats-${code}.parquet"
