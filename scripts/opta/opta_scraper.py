@@ -812,13 +812,28 @@ class OptaScraper:
                 # Convert stats list to dict for easier access
                 stats = {}
                 missing_type = 0
+                non_numeric = 0
                 for s in player.get("stat", []):
                     if "type" not in s:
                         missing_type += 1
                         continue
-                    stats[s["type"]] = int(s.get("value", 0))
+                    # Non-numeric values (e.g. the literal "Unknown") appear
+                    # on thinner feeds from older tournaments (first hit:
+                    # Euro 1980). Unlike extract_all_player_stats() below,
+                    # this dict feeds straight into Shot() fields and one
+                    # arithmetic expression (attPenGoal + attPenMiss) further
+                    # down, so a raw string here would just move the crash
+                    # (or silently corrupt a shot count) instead of avoiding
+                    # it — fall back to 0, not the string.
+                    try:
+                        stats[s["type"]] = int(s.get("value", 0))
+                    except ValueError:
+                        stats[s["type"]] = 0
+                        non_numeric += 1
                 if missing_type > 0:
                     print(f"  Warning: {missing_type} stat entries missing 'type' for player {player_name} in match {match_id}")
+                if non_numeric > 0:
+                    print(f"  Warning: {non_numeric} non-numeric stat value(s) coerced to 0 for player {player_name} in match {match_id}")
 
                 # Only include players who took shots
                 total_shots = stats.get("totalScoringAtt", 0)
