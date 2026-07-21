@@ -46,11 +46,11 @@ import argparse
 import os
 import sys
 import tempfile
-import urllib.request
 from datetime import datetime, timezone
 
 import pandas as pd
 import pyarrow.parquet as pq
+import requests
 
 REEP_URL = "https://raw.githubusercontent.com/withqwerty/reep/main/data/people.csv"
 
@@ -197,7 +197,14 @@ def _download_reep(dest_path: str, url: str = REEP_URL) -> bool:
     """Best-effort download of the reep register. Returns False (never
     raises) on any network failure so the caller can proceed opta-only."""
     try:
-        urllib.request.urlretrieve(url, dest_path)
+        # timeout is load-bearing: this runs inside the daily scrape BEFORE the
+        # upload step, and a stalled connection with no timeout would eat the
+        # job's multi-hour budget (continue-on-error only catches exits, not
+        # hangs) and block the next cron via the concurrency lock.
+        resp = requests.get(url, timeout=30)
+        resp.raise_for_status()
+        with open(dest_path, "wb") as f:
+            f.write(resp.content)
         return True
     except Exception as e:  # noqa: BLE001 - genuinely want to swallow all network errors here
         print(f"  WARNING: reep register download failed ({e}) — building opta-only profiles")

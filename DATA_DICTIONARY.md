@@ -105,7 +105,7 @@ Per-player-per-match statistics. **~280 columns** covering every aspect of match
 |--------|------|-------------|
 | `match_id` | int | Opta match ID |
 | `match_date` | date | Match date |
-| `player_id` | int | Opta player ID |
+| `player_id` | chr | Opta player ID (alphanumeric, e.g. `5ilkkfbsss0bxd6ttdlqg0uz9` — verified against the parquet schema 2026-07-21; was mis-documented as int) |
 | `player_name` | chr | Player name |
 | `team_id` | int | Team ID |
 | `team_name` | chr | Team name |
