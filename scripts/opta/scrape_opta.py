@@ -735,7 +735,7 @@ def get_season_date_range(season_name: str) -> tuple:
 def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
                   season_id: str, complete_matches: set, unavailable_matches: set,
                   force_rescrape: bool = False, retry_unavailable: bool = False,
-                  scrape_types: list = None):
+                  scrape_types: list = None, include_future: bool = False):
     """Scrape a full season of data for a competition with all data types.
 
     Args:
@@ -816,9 +816,12 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
     all_fixture_records = []
 
     for start_date, end_date in date_ranges:
-        if start_date > today_iso:
+        if start_date > today_iso and not include_future:
             print(f"\nSkipping future window {start_date} to {end_date} (start > {today_iso})")
             continue
+        if start_date > today_iso:
+            print(f"\nFetching future window {start_date} to {end_date} "
+                  f"(--include-future: fixture records only, no played matches expected)")
         print(f"\nFetching {start_date} to {end_date}...")
 
         matches = scraper.get_season_matches(season_id, start_date, end_date)
@@ -1290,7 +1293,8 @@ def main():
                                    unavailable_matches=unavailable_matches,
                                    force_rescrape=args.force,
                                    retry_unavailable=args.retry_unavailable,
-                                   scrape_types=scrape_types)
+                                   scrape_types=scrape_types,
+                                   include_future=args.include_future)
             results.append(result)
         except (requests.RequestException, ValueError, OSError, KeyError,
                 TypeError, AttributeError, IndexError) as e:
