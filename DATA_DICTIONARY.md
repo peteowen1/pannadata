@@ -521,6 +521,35 @@ Pre-trained XGBoost models stored at `data/opta/models/`.
 
 ---
 
+# Panna Ratings Data (ratings-data release)
+
+Player rating outputs from the panna pipeline (`peteowen1/panna`, `data-raw/player-ratings-opta/09_export_ratings.R`), published to the `ratings-data` GitHub Release on this repo — NOT scraped Opta data, included here because `scripts/build_blog_data.R` downloads and joins them into the blog's `ratings.parquet`.
+
+| File | Grain | Description |
+|------|-------|-------------|
+| `seasonal_xrapm.parquet` | player-season | Shrunk RAPM (SPM-prior Bayesian shrinkage). Columns include `xrapm`, `offense`, `defense`, `off_prior`/`def_prior`, `total_minutes`, `season_end_year`. |
+| `seasonal_spm.parquet` | player-season | Statistical Plus-Minus (box-score model), `spm`/`offense_spm`/`defense_spm`. |
+| `seasonal_rapm_raw.parquet` | player-season | **Raw prior-free RAPM** (panna#165) — the un-shrunk ridge RAPM fit each season, published for transparency alongside `seasonal_xrapm.parquet`. |
+| `pooled_rapm_raw.parquet` | player (career, all-history) | **Raw prior-free RAPM**, pooled — a single ridge fit over every splint in the dataset (no season split, no SPM prior). Not the same quantity as `career_panna.parquet`'s decay-weighted trait. |
+| `career_panna.parquet` | player (career trait) | Decay-weighted multi-season xRAPM (365d halflife), shrunk to the career-trait skill-SPM prior — the blog's headline `panna` column. |
+| `player_metadata.parquet` | player | Team/league/position metadata joined onto ratings by `player_id`. |
+
+**Raw RAPM columns** (`seasonal_rapm_raw.parquet` / `pooled_rapm_raw.parquet`):
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `season_end_year` | int | Season end year (`seasonal_rapm_raw.parquet` only — absent from the pooled file). |
+| `player_id` | chr | Opta player ID. |
+| `player_name` | chr | Player name. |
+| `rapm_raw` | num | Raw (prior-free) RAPM rating = `rapm_raw_offense - rapm_raw_defense`. Positive = good. Unlike `xrapm`/`panna`, this is NOT shrunk toward an SPM prior — noisy for low-minute players **by design** (that's the transparency point of panna#165). No minimum-minutes filter is applied at export; filter on `total_minutes` yourself (e.g. 1,800+ for a season grain, 13,500+ career). |
+| `rapm_raw_offense` | num | Raw offensive RAPM component. Positive = good. |
+| `rapm_raw_defense` | num | Raw defensive RAPM component, **sign-flipped to positive = good** at export (internal model convention is negative = good: additive contribution to opponent xG) — same convention as the published `defense` column elsewhere in this table. |
+| `total_minutes` | num | Total minutes played (season, or all-history for the pooled file). |
+
+The synthetic `player_id == "replacement"` row (rapm_matrix.R's pooled <200-min bucket — a model artifact, not a real player) is dropped from both raw-RAPM files at export.
+
+---
+
 # Understat Data Types
 
 ## understat/roster

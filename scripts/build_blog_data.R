@@ -84,6 +84,56 @@ load_latest_snapshot <- function(path, value_col) {
 epr <- load_latest_snapshot("source/opta_epr_weekly.parquet", "epr")
 psr <- load_latest_snapshot("source/opta_psr_weekly.parquet", "psr")
 
+# Raw (prior-free) RAPM — panna#165, Pete's transparency call: publish the
+# un-shrunk signal alongside the shrunk xrapm/panna, clearly labelled so it
+# can't be confused with either. Two OPTIONAL sources from the ratings-data
+# release (panna's 09_export_ratings.R) — both already have the
+# export-boundary conventions applied upstream (replacement-pool row
+# dropped, defense flipped positive = good). Absent until build-blog-data.yml
+# adds a download step for them (not yet wired — see panna#165 handoff), so
+# this degrades gracefully to NA columns rather than failing the build.
+#   source/seasonal_rapm_raw.parquet — per-season raw RAPM (same grain as xrapm)
+#   source/pooled_rapm_raw.parquet   — pooled all-history raw RAPM (career grain)
+seasonal_rapm_raw_path <- "source/seasonal_rapm_raw.parquet"
+rapm_raw_seasonal <- NULL
+if (file.exists(seasonal_rapm_raw_path)) {
+  df <- read_parquet(seasonal_rapm_raw_path)
+  req <- c("season_end_year", dedup_key, "rapm_raw", "rapm_raw_offense", "rapm_raw_defense", "total_minutes")
+  if (all(req %in% names(df))) {
+    rapm_raw_seasonal <- df |>
+      filter(season_end_year == latest_season) |>
+      group_by(.data[[dedup_key]]) |>
+      slice_max(total_minutes, n = 1, with_ties = FALSE) |>
+      ungroup() |>
+      select(all_of(dedup_key), rapm_raw, rapm_raw_offense, rapm_raw_defense)
+    cat("seasonal rapm_raw:", nrow(rapm_raw_seasonal), "players\n")
+  } else {
+    cat("seasonal_rapm_raw.parquet missing required columns - skipping\n")
+  }
+} else {
+  cat("Optional source missing:", seasonal_rapm_raw_path, "- rapm_raw will be NA\n")
+}
+
+pooled_rapm_raw_path <- "source/pooled_rapm_raw.parquet"
+rapm_raw_pooled <- NULL
+if (file.exists(pooled_rapm_raw_path)) {
+  df <- read_parquet(pooled_rapm_raw_path)
+  req <- c(dedup_key, "rapm_raw", "rapm_raw_offense", "rapm_raw_defense", "total_minutes")
+  if (all(req %in% names(df))) {
+    rapm_raw_pooled <- df |>
+      group_by(.data[[dedup_key]]) |>
+      slice_max(total_minutes, n = 1, with_ties = FALSE) |>
+      ungroup() |>
+      select(all_of(dedup_key), rapm_raw_pooled = rapm_raw,
+             rapm_raw_pooled_offense = rapm_raw_offense, rapm_raw_pooled_defense = rapm_raw_defense)
+    cat("pooled rapm_raw:", nrow(rapm_raw_pooled), "players\n")
+  } else {
+    cat("pooled_rapm_raw.parquet missing required columns - skipping\n")
+  }
+} else {
+  cat("Optional source missing:", pooled_rapm_raw_path, "- rapm_raw_pooled will be NA\n")
+}
+
 # Aggregate per-season EPV / WPA / PSV from per-match game-logs.parquet (if present).
 # game-logs.parquet is downloaded into blog/ by the workflow before this script runs.
 # We produce per-90 rates (to match the scale of panna/offense/defense) and join on dedup_key.
@@ -166,6 +216,10 @@ enriched <- left_join(enriched, career, by = dedup_key)
 if (!is.null(epr)) enriched <- left_join(enriched, epr, by = dedup_key)
 if (!is.null(psr)) enriched <- left_join(enriched, psr, by = dedup_key)
 
+# Raw RAPM (optional — present only if the ratings-data raw-RAPM files downloaded).
+if (!is.null(rapm_raw_seasonal)) enriched <- left_join(enriched, rapm_raw_seasonal, by = dedup_key)
+if (!is.null(rapm_raw_pooled)) enriched <- left_join(enriched, rapm_raw_pooled, by = dedup_key)
+
 # Drop non-blog competitions (CAF_CL / Tunisian_Ligue_1) BEFORE ranking, so
 # panna_rank + percentiles are computed over the blog pool only. `%in%` returns
 # FALSE for NA league, so internationals / unmapped (NA league) are kept.
@@ -230,10 +284,17 @@ panna_ratings <- enriched |>
       "epv_aerial", "epv_keeping", "epv_defending",
       "wpa_total", "wpa_as_actor", "wpa_as_receiver",
       "psv", "osv", "dsv", "piero_value_p90"
-    ))
+    )),
+    # Raw (prior-free) RAPM — panna#165, transparency companion to
+    # panna/xrapm/offense/defense above. any_of() so the build still works
+    # before the ratings-data raw-RAPM files are wired into the download step.
+    any_of(c("rapm_raw", "rapm_raw_offense", "rapm_raw_defense",
+             "rapm_raw_pooled", "rapm_raw_pooled_offense", "rapm_raw_pooled_defense"))
   ) |>
   mutate(across(any_of(c("panna", "offense", "defense", "xrapm", "xrapm_offense",
-                         "xrapm_defense", "spm_overall", "epr", "psr")),
+                         "xrapm_defense", "spm_overall", "epr", "psr",
+                         "rapm_raw", "rapm_raw_offense", "rapm_raw_defense",
+                         "rapm_raw_pooled", "rapm_raw_pooled_offense", "rapm_raw_pooled_defense")),
                 \(x) round(x, 4))) |>
   arrange(panna_rank)
 
