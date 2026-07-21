@@ -39,7 +39,8 @@ data/
 │   ├── opta_fixtures.parquet          # Consolidated
 │   ├── opta_match_stats.parquet       # Consolidated (from panna pipeline)
 │   ├── opta_skills.parquet            # Consolidated (from panna pipeline)
-│   └── opta_xmetrics.parquet          # Consolidated (from panna pipeline)
+│   ├── opta_xmetrics.parquet          # Consolidated (from panna pipeline)
+│   └── opta_players.parquet           # Player profiles: dob/nationality/height (pannadata#112)
 ├── understat/
 │   ├── roster/{league}/{season}.parquet
 │   ├── shots/{league}/{season}.parquet
@@ -386,6 +387,54 @@ Match schedule and results. Contains ALL statuses (Played, Fixture, Postponed).
 | `season` | chr | Season string |
 
 Filter with `load_opta_fixtures(league, status = "Fixture")` for upcoming matches.
+
+---
+
+## opta/players
+
+One row per `player_id` — static profile fields (dob/nationality/height), NOT
+per-match data. Built by `scripts/opta/build_player_profiles.py` (pannadata#112)
+from `opta_player_stats.parquet` plus the [reep](https://github.com/withqwerty/reep)
+CC0 register (joined on Opta `player_id` / reep's `key_opta`).
+
+**Why an external register:** the Opta MA1 matchstats/lineup feed does not
+carry dateOfBirth, birthDate, nationality, height, or preferred foot — confirmed
+absent across 234k+ locally-archived raw payloads (2000-2026) and a squads/person
+API probe (403, not entitled). `dob_raw`/`dob_source == "opta"` exist as a
+forward-compatible hook (preferred over reep the moment Opta ever populates it)
+but are empty in practice today. Coverage is therefore capped by reep's overlap
+with our player universe (~17% dob, ~13% nationality as of 2026-07-21 — small
+leagues, historical/retired players, and women's football are under-covered).
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `player_id` | chr | Opta player ID |
+| `player_name` | chr | Latest known display name (see dedup note) |
+| `first_name` | chr | Latest known first name |
+| `last_name` | chr | Latest known last name |
+| `dob` | date | Date of birth, or NA if unknown |
+| `dob_source` | chr | `"opta"` or `"reep"`, or NA |
+| `nationality` | chr | Reep's raw nationality string (Wikidata-derived; may be a heritage nation, not a FIFA team — see build-football-bio.mjs's caveat), or NA |
+| `nationality_source` | chr | `"reep"` or NA (Opta carries no nationality field) |
+| `height_cm` | dbl | Height in cm, or NA |
+| `height_source` | chr | `"reep"` or NA |
+| `n_matches` | int | Number of matches this player_id appears in |
+| `first_match_date` | date | Earliest match_date for this player_id |
+| `last_match_date` | date | Latest match_date for this player_id |
+| `built_at` | chr | ISO timestamp of the build run |
+
+**Dedup rule:** `opta_player_stats.parquet` has one row per player-match. Rows
+are collapsed to one per `player_id` by sorting on `match_date` and taking the
+latest non-null value per column ("latest non-null wins").
+
+**Does NOT solve pannadata#86** (the same real person split across *different*
+Opta `player_id`s, e.g. three separate Messi IDs) — that needs an identity
+crosswalk, out of scope here. This table's grain is one row per Opta
+`player_id`; a future `canonical_player_id` column could join onto it without
+restructuring.
+
+No preferred-foot field exists in either source — omitted rather than shipped
+as an always-empty column.
 
 ---
 

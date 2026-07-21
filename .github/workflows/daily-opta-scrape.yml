@@ -394,6 +394,24 @@ jobs:
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+    # pannadata#112: builds data/opta/opta_players.parquet (one row per
+    # player_id: dob/nationality/height, backed by the reep CC0 register —
+    # Opta's own feed carries none of these, confirmed 2026-07-21). The
+    # `opta_*.parquet` glob in the upload step below picks it up
+    # automatically, same as every other consolidated table. Full rebuild
+    # from opta_player_stats.parquet each run (~seconds for 8.8M rows
+    # locally); best-effort so a reep network hiccup can't fail the scrape.
+    - name: Build player profiles (DOB/nationality/height)
+      continue-on-error: true
+      run: |
+        if [ -f data/opta/opta_player_stats.parquet ]; then
+          python scripts/opta/build_player_profiles.py \
+            --player-stats data/opta/opta_player_stats.parquet \
+            --out data/opta/opta_players.parquet
+        else
+          echo "::notice::No opta_player_stats.parquet — skipping player profile build"
+        fi
+
     - name: Upload to GitHub Releases
       run: |
         source scripts/versebus.sh
