@@ -656,6 +656,11 @@ jobs:
           done
           ls blog/game-logs*.parquet 1>/dev/null 2>&1 || echo "::warning::Optional artifact missing: blog/game-logs*.parquet"
           ls blog/wc2026_*.parquet 1>/dev/null 2>&1 || echo "::warning::Optional artifact missing: blog/wc2026_*.parquet"
+          # Per-tournament chains-WC shards (pannadata#109, additive to the
+          # chains-WC.parquet monolith above). Absence just means the WC comp
+          # failed this run — already covered by the "chains had per-comp
+          # failures" gate below, so this is visibility-only, not a hard fail.
+          ls blog/chains-WC-*.parquet 1>/dev/null 2>&1 || echo "::warning::Optional artifact missing: blog/chains-WC-*.parquet (season shards)"
 
           if [ "$missing" -gt 0 ]; then
             echo "::error::$missing expected blog artifact(s) missing — degraded build shipped stale R2 objects"
