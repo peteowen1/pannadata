@@ -74,7 +74,7 @@ source("scripts/build_chains_ci.R")     # Possession chains with EPV equity
 
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
-| `daily-opta-scrape.yml` | 5 AM UTC / `workflow_dispatch` | Python Opta scraper + consolidate + coverage check → `opta-latest` release. Dispatch supports `leagues` (space-separated, underscored), `seasons`, `recent`, `tier`, `force_rescrape`. Coverage check scopes to dispatched leagues. |
+| `daily-opta-scrape.yml` | 5 AM UTC / `workflow_dispatch` | Python Opta scraper + consolidate + coverage check → `opta-latest` release. Dispatch supports `leagues` (space-separated, underscored), `seasons`, `recent`, `tier`, `force_rescrape`, `include_future` (honour a not-yet-started season given via `seasons` — pre-season fixture pulls; the cron/`recent` paths always filter future seasons). Coverage check scopes to dispatched leagues. |
 | `build-blog-data.yml` | `repository_dispatch` (`predictions-complete`) | Build blog data + run `build_player_positions.R` → Cloudflare R2 |
 | `rebuild-events.yml` | Manual dispatch only | Backfill short `events_consolidated` per comp via `rebuild_events.py` (see Gotchas — this, not `force_rescrape`, is the fix for stale events) |
 | `football-player-meta.yml` | Mondays 5 AM UTC / manual | Player bios (age, nationality) + face-cropped webp headshots (2 variants) → R2. Resumable: HEAD-checks R2 and only fetches new players. To re-crop all, run `node scripts/build-football-headshots.mjs --reprocess` locally — the dispatch has no inputs and never passes that flag |

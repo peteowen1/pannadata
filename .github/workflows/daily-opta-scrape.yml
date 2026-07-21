@@ -29,6 +29,11 @@ on:
         required: false
         type: boolean
         default: false
+      include_future:
+        description: 'Honour a not-yet-started season given via `seasons` (pre-season fixture pull, e.g. 2026-2027 before August). No effect without `seasons`.'
+        required: false
+        type: boolean
+        default: false
       dry_run:
         description: 'Preview the scrape plan + reconcile counts, then exit before any API calls or writes'
         required: false
@@ -124,6 +129,7 @@ jobs:
         INPUT_RECENT: ${{ github.event.inputs.recent || 1 }}
         INPUT_TIER: ${{ github.event.inputs.tier || 2 }}
         INPUT_FORCE: ${{ github.event.inputs.force_rescrape }}
+        INPUT_INCLUDE_FUTURE: ${{ github.event.inputs.include_future }}
         INPUT_DRY_RUN: ${{ github.event.inputs.dry_run }}
       run: |
         cd scripts/opta
@@ -136,6 +142,9 @@ jobs:
         fi
         if [ "$INPUT_FORCE" = "true" ]; then
           ARGS="$ARGS --force"
+        fi
+        if [ "$INPUT_INCLUDE_FUTURE" = "true" ]; then
+          ARGS="$ARGS --include-future"
         fi
         if [ "$INPUT_DRY_RUN" = "true" ]; then
           ARGS="$ARGS --dry-run"

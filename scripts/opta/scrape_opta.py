@@ -1090,6 +1090,11 @@ def main():
                        help="Specific leagues to scrape (default: all)")
     parser.add_argument("--seasons", nargs="+",
                        help="Specific seasons to scrape (e.g., 2024-2025 2023-2024)")
+    parser.add_argument("--include-future", action="store_true",
+                       help="Honour explicitly-listed --seasons that haven't started yet "
+                            "(pre-season fixture pull, e.g. 2026-2027 in July). Only the "
+                            "explicit --seasons path is affected: --recent/default still "
+                            "filter future seasons (the pannadata#60 freeze guard).")
     parser.add_argument("--force", action="store_true",
                        help="Force re-scrape of existing matches")
     parser.add_argument("--retry-unavailable", action="store_true",
@@ -1168,12 +1173,20 @@ def main():
     # Future-season guard for the explicit --seasons path. The --recent/default
     # paths already filtered future seasons before slicing (above); this remains
     # as a guard so an operator-specified future label is dropped unless that's
-    # the intent. (e.g., Club_World_Cup 2029, UEFA_Euros 2028)
-    original_count = len(scrape_plan)
-    scrape_plan = [(l, s, sid) for l, s, sid in scrape_plan if not is_future_season(s)]
-    if len(scrape_plan) < original_count:
-        skipped = original_count - len(scrape_plan)
-        print(f"Filtered out {skipped} future seasons from scrape plan")
+    # the intent — declared via --include-future (pre-season fixture pulls,
+    # e.g. 2026-2027 in July for the blog season sims; panna#160).
+    if not args.include_future:
+        original_count = len(scrape_plan)
+        scrape_plan = [(l, s, sid) for l, s, sid in scrape_plan if not is_future_season(s)]
+        if len(scrape_plan) < original_count:
+            skipped = original_count - len(scrape_plan)
+            print(f"Filtered out {skipped} future seasons from scrape plan "
+                  f"(pass --include-future with explicit --seasons to keep them)")
+    else:
+        future_kept = [s for _, s, _ in scrape_plan if is_future_season(s)]
+        if future_kept:
+            print(f"--include-future: keeping {len(future_kept)} future season(s): "
+                  f"{sorted(set(future_kept))}")
 
     # Filter by tier and sort by priority
     from competition_metadata import get_competition_metadata
