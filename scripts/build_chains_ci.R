@@ -156,6 +156,25 @@ join_failures <- character(0)
 # 2026 only, discarding the 2002-2022 backfill.
 KEEP_ALL_SEASONS_COMPS <- c("World_Cup")
 
+# Comps whose chains file is ALSO sharded per tournament/season for the blog
+# (pannadata#109). chains-WC.parquet crashed mobile Safari/Chrome on WC match
+# pages: 32MB / 1.5M rows spanning all 7+ tournaments kept by
+# KEEP_ALL_SEASONS_COMPS above, vs every OTHER league's chains file at ~3MB
+# (single current season). World Cup is the only comp both exempted from the
+# single-season guard AND large enough to matter today (EURO/Copa_America/AFCON
+# aren't even built into chains yet — see league_config.R). Shards are
+# ADDITIVE: the monolith chains-<CODE>.parquet is still written unchanged
+# below, so match.qmd's existing worker-miss fallback (fetches chains-<league>
+# by name) is unaffected; consumers that legitimately need a whole tournament's
+# worth of matches (world-cup-team.qmd, world-cup-team-stats.qmd — both already
+# hardcode themselves to the current tournament only, see inthegame-blog
+# docs/plans/PERF-AUDIT-MATCH-PAGE-2026-07-19.md) can migrate to
+# chains-<CODE>-<year>.parquet at their own pace. Shard key: World Cup's
+# `season` column is a free-text tournament label (e.g. "2026
+# Canada-Mexico-USA"); the leading 4-digit year is unique per tournament and
+# filename/URL-safe, so shard on that rather than the full label.
+SEASON_SHARD_COMPS <- c("World_Cup")
+
 for (comp in blog_comps) {
   event_file <- file.path(src_dir, paste0("events_", comp, ".parquet"))
 
@@ -349,6 +368,20 @@ for (comp in blog_comps) {
   out_path <- file.path(out_dir, paste0("chains-", league_code, ".parquet"))
   write_parquet(chains, out_path)
   cat(nrow(chains), " chains -> ", out_path, "\n", sep = "")
+
+  # Per-tournament shards (additive — see SEASON_SHARD_COMPS comment above).
+  # shard_year is derived per row directly from `season`, so every row lands
+  # in exactly one shard: the shards partition `chains` exactly (row counts
+  # sum back to nrow(chains), verified in pannadata#109 testing).
+  if (comp %in% SEASON_SHARD_COMPS) {
+    shard_year <- substr(as.character(chains$season), 1, 4)
+    for (yr in sort(unique(shard_year))) {
+      shard <- chains[shard_year == yr, ]
+      shard_path <- file.path(out_dir, paste0("chains-", league_code, "-", yr, ".parquet"))
+      write_parquet(shard, shard_path)
+      cat("  shard ", yr, ": ", nrow(shard), " chains -> ", shard_path, "\n", sep = "")
+    }
+  }
 
   # Free memory before next league
   rm(events, chains, chain_states); gc(verbose = FALSE)

@@ -242,6 +242,22 @@ def _to_int_or_0(value) -> int:
         return 0
 
 
+def _to_str_or_none(value) -> Optional[str]:
+    """str(value) for any truthy scalar, else None.
+
+    Used for fields we've never observed populated (e.g. dateOfBirth — see
+    pannadata#112) but want captured defensively should Opta ever add them.
+    Coercing to str (rather than passing the raw value through) means a
+    column that's None on every row today can't later turn into a mixed
+    str/int/dict object column the moment one payload emits something
+    non-string — the same to_parquet() mixed-type crash class as
+    `_to_int_or_0` guards against for numeric fields (Euro-1980 incident).
+    """
+    if not value:
+        return None
+    return str(value)
+
+
 class OptaScraper:
     """Scrapes Opta data from TheAnalyst API"""
 
@@ -937,6 +953,14 @@ class OptaScraper:
                     "position": player.get("position", ""),
                     "position_side": player.get("positionSide", ""),
                     "formation_place": player.get("formationPlace", ""),
+                    # pannadata#112: the MA1 lineup/player block has never been
+                    # observed to carry dateOfBirth/birthDate (confirmed absent
+                    # across 234k+ locally-archived raw payloads, 2000-2026) —
+                    # this is a forward-compatible capture in case Opta ever
+                    # adds it, not an active data source today. The real DOB
+                    # source is opta_players.parquet, built from the reep
+                    # register by build_player_profiles.py.
+                    "dob_raw": _to_str_or_none(player.get("dateOfBirth") or player.get("birthDate")),
                     "team_id": team_id,
                     "team_name": team_name,
                     "team_position": team_position,

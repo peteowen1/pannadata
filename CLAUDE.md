@@ -65,6 +65,7 @@ source("scripts/build_chains_ci.R")     # Possession chains with EPV equity
 | `game-logs.parquet` | panna step 10b → `blog-latest` pass-through | Per-match EPV+WPA+PSV value metrics (current-season alias, fast default) |
 | `game-logs-<season>.parquet` | panna step 10b per-season → `blog-latest` pass-through | Historical per-season value metrics, fetched on-demand by the blog Value tab (kept per-season, ~6MB each — never concatenated) |
 | `chains-{CODE}.parquet` | `build_chains_ci.R` + equity join | Possession chains with per-action EPV equity |
+| `chains-WC-<year>.parquet` | `build_chains_ci.R`, additive | Per-tournament shard of chains-WC (pannadata#109 — the WC monolith spans all 16 backfilled tournaments 1966-2026, 32MB/1.5M rows, crashed mobile browsers; shards measured ~1.2-4MB each and the monolith is still shipped unchanged for back-compat) |
 | `predictions.parquet` | panna step 10 → `blog-latest` pass-through | Match predictions |
 | `match-stats-{CODE}.parquet` | `rebuild_match_stats.R` (per-league, incl. `match-stats-WC.parquet`) | Per-match team/player box stats for blog match pages |
 | `wc2026_*.parquet` | panna steps 11+12 → `blog-latest` pass-through | WC 2026 sim outputs: `predictions`, `simulation`, `groups`, `team_strength`, `squads`, `knockout_probs` |
@@ -73,7 +74,7 @@ source("scripts/build_chains_ci.R")     # Possession chains with EPV equity
 
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
-| `daily-opta-scrape.yml` | 5 AM UTC / `workflow_dispatch` | Python Opta scraper + consolidate + coverage check → `opta-latest` release. Dispatch supports `leagues` (space-separated, underscored), `seasons`, `recent`, `tier`, `force_rescrape`. Coverage check scopes to dispatched leagues. |
+| `daily-opta-scrape.yml` | 5 AM UTC / `workflow_dispatch` | Python Opta scraper + consolidate + coverage check → `opta-latest` release. Dispatch supports `leagues` (space-separated, underscored), `seasons`, `recent`, `tier`, `force_rescrape`, `include_future` (honour a not-yet-started season given via `seasons` — pre-season fixture pulls; the cron/`recent` paths always filter future seasons). Coverage check scopes to dispatched leagues. |
 | `build-blog-data.yml` | `repository_dispatch` (`predictions-complete`) | Build blog data + run `build_player_positions.R` → Cloudflare R2 |
 | `rebuild-events.yml` | Manual dispatch only | Backfill short `events_consolidated` per comp via `rebuild_events.py` (see Gotchas — this, not `force_rescrape`, is the fix for stale events) |
 | `football-player-meta.yml` | Mondays 5 AM UTC / manual | Player bios (age, nationality) + face-cropped webp headshots (2 variants) → R2. Resumable: HEAD-checks R2 and only fetches new players. To re-crop all, run `node scripts/build-football-headshots.mjs --reprocess` locally — the dispatch has no inputs and never passes that flag |
