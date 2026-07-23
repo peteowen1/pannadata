@@ -100,14 +100,24 @@ cat("xGOT: predicted", sum(predable), "on-target shots;",
     sum(on_target & !has_gm), "on-target missing coords -> NA;",
     sum(!on_target), "off-target -> 0\n")
 
-# Own-goal guard (mirror enrich_shots_xg.R): an own goal is type 16 at x < 50;
-# its placement is meaningless for xGOT. NA, never a fabricated value.
-if ("type_id" %in% names(shots)) {
+# Own-goal guard (mirror enrich_shots_xg.R): its placement is meaningless for
+# xGOT. NA, never a fabricated value. pannadata#105: prefer the real Opta
+# qualifier-28 marker over the x<50 positional heuristic (99.63% agreement
+# measured on the historical backfill; missing-column fallback below).
+if ("is_own_goal" %in% names(shots)) {
+  is_own_goal <- !is.na(shots$is_own_goal) & shots$is_own_goal
+  n_og <- sum(is_own_goal, na.rm = TRUE)
+  if (n_og > 0L) {
+    shots$xgot[is_own_goal] <- NA_real_
+    cat("Own-goal guard: set xGOT = NA on", n_og, "own-goal shot(s) (is_own_goal marker)\n")
+  }
+} else if ("type_id" %in% names(shots)) {
   is_own_goal <- shots$type_id == 16L & !is.na(shots$x) & shots$x < 50
   n_og <- sum(is_own_goal, na.rm = TRUE)
   if (n_og > 0L) {
     shots$xgot[is_own_goal] <- NA_real_
-    cat("Own-goal guard: set xGOT = NA on", n_og, "own-goal shot(s)\n")
+    cat("Own-goal guard: set xGOT = NA on", n_og,
+        "own-goal shot(s) (type_id == 16, x < 50 heuristic -- no is_own_goal column)\n")
   }
 }
 
