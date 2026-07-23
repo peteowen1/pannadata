@@ -1153,7 +1153,20 @@ class OptaScraper:
                     return None
                 # Opta sometimes returns European-locale decimals ("49,8").
                 return float(v.replace(",", ".") if isinstance(v, str) else v)
-            goalmouth_y = _gm(102)
+            # q102 is reliable for on-target-ish shots (Post/Saved/Goal) but
+            # scatters far outside the goal frame for genuine misses (Miss,
+            # type_id 13) -- panna#175/inthegame-blog#489. q231 was validated
+            # as a correct y-coordinate via a natural experiment: Post-hit
+            # shots (which MUST cross the line at the known post positions,
+            # 45.2/54.8) land almost exactly there when read via q231. Prefer
+            # it for Miss shots specifically; fall back to q102 if q231 is
+            # absent (~13.6% of misses) rather than leaving the row NA -- no
+            # worse than the pre-fix behaviour for that residual. On-target
+            # shots keep q102 unchanged (already confirmed reliable there).
+            # No working z/height (q103) replacement exists for misses --
+            # q230 tracks shot distance (a confidence score, not a
+            # coordinate), q147 is too sparse (~13.5% presence) to rely on.
+            goalmouth_y = (_gm(231) if _gm(231) is not None else _gm(102)) if type_id == 13 else _gm(102)
             goalmouth_z = _gm(103)
 
             # Own goal (qualifier 28) — same marker panna's SPADL conversion
