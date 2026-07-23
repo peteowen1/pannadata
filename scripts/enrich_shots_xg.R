@@ -91,16 +91,32 @@ if ("xg" %in% names(shots)) {
 # downstream sum(xg, na.rm = TRUE) ignores them and the shot map can show
 # "OG -- no xG" rather than a fake 0.97. Mirrors panna's "own goals use EPV
 # not xG" convention (panna/CLAUDE.md).
-if ("type_id" %in% names(shots)) {
+#
+# pannadata#105: prefer the real Opta qualifier-28 marker (`is_own_goal`,
+# scraped since the pannadata#105 fix / backfilled onto historical rows) over
+# the x<50 positional heuristic -- the marker also catches legit own-half
+# goals the heuristic would wrongly flag, and misses none the heuristic
+# catches (99.63% agreement measured on the historical backfill; the marker
+# is strictly more precise, not just different). Missing-column fallback for
+# any shots file that predates the backfill.
+if ("is_own_goal" %in% names(shots)) {
+  is_own_goal <- !is.na(shots$is_own_goal) & shots$is_own_goal
+  n_og <- sum(is_own_goal, na.rm = TRUE)
+  if (n_og > 0L) {
+    shots$xg[is_own_goal] <- NA_real_
+    cat("Own-goal guard: set xG = NA on", n_og,
+        "own-goal shot(s) (is_own_goal marker)\n")
+  }
+} else if ("type_id" %in% names(shots)) {
   is_own_goal <- shots$type_id == 16L & !is.na(shots$x) & shots$x < 50
   n_og <- sum(is_own_goal, na.rm = TRUE)
   if (n_og > 0L) {
     shots$xg[is_own_goal] <- NA_real_
     cat("Own-goal guard: set xG = NA on", n_og,
-        "own-goal shot(s) (type_id == 16, x < 50)\n")
+        "own-goal shot(s) (type_id == 16, x < 50 heuristic -- no is_own_goal column)\n")
   }
 } else {
-  cat("::warning:: no type_id column -- skipping own-goal xG guard\n")
+  cat("::warning:: no is_own_goal or type_id column -- skipping own-goal xG guard\n")
 }
 
 # Penalty override. panna's xG model is deliberately penalty-free (penalties

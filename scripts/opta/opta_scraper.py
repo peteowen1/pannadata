@@ -98,6 +98,11 @@ class ShotEvent:
     # shots (Opta projects the crossing point). None when absent -> NaN, never 0.
     goalmouth_y: float = None
     goalmouth_z: float = None
+    # Own goal marker (Opta q28), same qualifier panna's SPADL conversion
+    # already keys off of (add_xgot_to_spadl(), post panna#143/#148). Ships
+    # here so downstream xG/xGOT enrichment can drop the type_id==16 & x<50
+    # positional heuristic (pannadata#105).
+    is_own_goal: bool = False
 
 
 @dataclass
@@ -1143,6 +1148,10 @@ class OptaScraper:
             goalmouth_y = _gm(102)
             goalmouth_z = _gm(103)
 
+            # Own goal (qualifier 28) — same marker panna's SPADL conversion
+            # already trusts (pannadata#105).
+            is_own_goal = 28 in qualifiers
+
             shots.append(ShotEvent(
                 match_id=match_id,
                 event_id=event.get("id", 0),
@@ -1161,6 +1170,7 @@ class OptaScraper:
                 big_chance=big_chance,
                 goalmouth_y=goalmouth_y,
                 goalmouth_z=goalmouth_z,
+                is_own_goal=is_own_goal,
             ))
 
         return shots
