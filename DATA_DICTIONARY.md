@@ -291,6 +291,7 @@ Individual shot-level data with x/y coordinates. Used for xG model training.
 | `big_chance` | lgl | Big chance flag |
 | `goalmouth_y` | num | Goal-line crossing point, horizontal (Opta q102; 0-100 width scale, posts ~45.2/54.8). `NA` if absent. Reliably present 2021-22+; backfilled for history via `scripts/opta/backfill_goalmouth.py`. Feeds the xGOT (post-shot xG) model. |
 | `goalmouth_z` | num | Goal-line crossing point, height (Opta q103; crossbar ~38). `NA` if absent. See `goalmouth_y`. |
+| `is_blocked` | lgl | Shot blocked by an outfield defender before reaching the goal frame (Opta q82). `type_id==15` ("Attempt Saved") is an umbrella for both real keeper saves and these; a blocked shot never crosses the goal-line plane, so its `goalmouth_y`/`goalmouth_z` is a placeholder (typically the frame-height midpoint), not a real crossing point. `NA` if the shot has no matched events row. Backfilled for history via `scripts/opta/backfill_blocked_shots.py`. panna's xGOT model excludes `is_blocked` shots from its on-target population (panna#176). |
 
 ---
 

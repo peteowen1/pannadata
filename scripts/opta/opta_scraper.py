@@ -103,6 +103,14 @@ class ShotEvent:
     # here so downstream xG/xGOT enrichment can drop the type_id==16 & x<50
     # positional heuristic (pannadata#105).
     is_own_goal: bool = False
+    # Blocked-by-defender marker (Opta q82). type_id=15 ("Attempt Saved") is
+    # an umbrella Opta uses for BOTH real keeper saves and shots blocked by
+    # an outfield player before reaching the goal frame — a blocked shot
+    # never crosses the goal-line plane, so its goalmouth_y/z is a
+    # placeholder (typically the frame-height midpoint), not a real
+    # crossing point. panna's xGOT model excludes these from "on target"
+    # (see OPTA_REFERENCE.md's on-target formula; panna#176).
+    is_blocked: bool = False
 
 
 @dataclass
@@ -1152,6 +1160,10 @@ class OptaScraper:
             # already trusts (pannadata#105).
             is_own_goal = 28 in qualifiers
 
+            # Blocked by an outfield defender (qualifier 82) — see ShotEvent
+            # docstring / panna#176.
+            is_blocked = 82 in qualifiers
+
             shots.append(ShotEvent(
                 match_id=match_id,
                 event_id=event.get("id", 0),
@@ -1171,6 +1183,7 @@ class OptaScraper:
                 goalmouth_y=goalmouth_y,
                 goalmouth_z=goalmouth_z,
                 is_own_goal=is_own_goal,
+                is_blocked=is_blocked,
             ))
 
         return shots

@@ -31,6 +31,24 @@ Goalmouth coverage is NOT uniform over history: Opta only reliably carries
 shots). Older shots therefore keep NA — a permanent data fact, not fixable —
 and the xGOT model trains on the complete window (>= GM_COMPLETE_FROM).
 
+IMPORTANT (panna#176): that jump to ~100% coverage is not a pure tracking
+improvement. type_id=15 ("Attempt Saved") is an umbrella for both real
+keeper saves AND shots blocked by an outfield defender (flagged by
+qualifier 82) — a blocked shot never reaches the goal-line plane, so it has
+no real crossing point. Checked on EPL history: q82's presence rate on
+type_id=15 shots is flat at ~53-58% every season back to 2011-12 — blocked
+shots were always flagged the same way, that part never changed. What
+changed, starting mid-2019-20 and complete by 2020-21, is that Opta went
+from omitting 102/103 entirely for a blocked shot (true NA, which is why
+pre-2020 coverage tracked the ~45% "real save" share almost exactly) to
+always filling a value — including a meaningless placeholder
+(goalmouth_z==19, the frame-height midpoint) for shots that structurally
+have nothing to report. So "100% coverage from 2021-22" is real for
+non-blocked shots but synthetic for blocked ones; see
+backfill_blocked_shots.py, which derives `is_blocked` from the same q82
+marker so downstream consumers (xgot_model.R) can exclude these rows
+rather than train on placeholder placement data.
+
 Guards — the script refuses to write when any fails (a one-off repair must
 crash, never impute):
   - events coverage < 50% of shot rows (an id-format break; an expected
