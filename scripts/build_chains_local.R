@@ -54,6 +54,16 @@ shot_types <- c(13L, 14L, 15L, 16L)
 # had ported to it — that gap is pre-existing and out of scope here.
 duel_contest_types <- c(3L, 7L, 42L, 44L, 45L, 83L)
 
+# Vectorized chain numbering (pannadata#111 / FABLE-111 follow-up) -- this
+# script had the exact same per-row loop build_chains_ci.R was fixed for
+# (same shape, up to 200k rows/competition). Reuses the validated
+# compute_chain_numbers() with keeper_rebound_types = integer(0): this
+# script never implemented keeper-rebound transparency (see the comment
+# above), and the empty vector preserves that EXACT pre-existing behavior
+# (type_id %in% integer(0) is always FALSE) rather than silently also
+# fixing that separate, pre-existing gap in the same change.
+source("scripts/chain_numbering.R")
+
 for (comp in blog_comps) {
   event_file <- file.path(opta_dir, paste0("events_", comp, ".parquet"))
   if (!file.exists(event_file)) { cat("SKIP:", comp, "(file not found)\n"); next }
@@ -70,26 +80,9 @@ for (comp in blog_comps) {
     filter(!type_id %in% non_play_types) |>
     arrange(match_id, period_id, minute, second, event_id)
 
-  # Build chain numbers
-  events$chain_number <- NA_integer_
-  chain_n <- 0L
-  prev_team <- ""
-  prev_match <- ""
-  for (i in seq_len(nrow(events))) {
-    # See duel_contest_types comment above: only a FAILED contest row from
-    # the non-possessing team is transparent; a won duel still splits
-    # normally.
-    is_failed_duel <- events$type_id[i] %in% duel_contest_types &&
-      events$outcome[i] != 1 &&
-      events$team_id[i] != prev_team
-    new_chain <- events$match_id[i] != prev_match ||
-      (!is_failed_duel && events$team_id[i] != prev_team && events$team_id[i] != "") ||
-      events$type_id[i] %in% dead_ball_types
-    if (new_chain) chain_n <- chain_n + 1L
-    events$chain_number[i] <- chain_n
-    if (!is_failed_duel) prev_team <- events$team_id[i]
-    prev_match <- events$match_id[i]
-  }
+  # Build chain numbers (vectorized -- see the source() call above)
+  events$chain_number <- compute_chain_numbers(
+    events, dead_ball_types, integer(0), duel_contest_types)
 
   chain_states <- events |>
     group_by(chain_number) |>
