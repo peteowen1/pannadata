@@ -89,6 +89,7 @@ rm(lineups); gc(verbose = FALSE)
 cat("Lineups loaded:", nrow(match_teams), "matches\n\n")
 
 source("scripts/league_config.R")
+source("scripts/chain_numbering.R")
 # World Cup shard for the blog's WC match pages (Territorial/Pass Map; #64).
 # Deliberately NOT added to BLOG_COMP_TO_CODE — that map also drives
 # ratings/player-details/standings steps where a tournament doesn't belong.
@@ -205,33 +206,17 @@ for (comp in blog_comps) {
     filter(!type_id %in% non_play_types) |>
     arrange(match_id, period_id, minute, second, event_id)
 
-  # Build chain numbers
-  events$chain_number <- NA_integer_
-  chain_n <- 0L
-  prev_team <- ""
-  prev_match <- ""
-  for (i in seq_len(nrow(events))) {
-    # A keeper rebound (save/claim/punch/block) must not end the attacking
-    # possession: it neither forces a new chain on the team-change clause nor
-    # advances prev_team. If the original attacker regains the ball the chain
-    # continues; if the defending team actually wins it, their NEXT event still
-    # has team_id != prev_team and triggers a split, so genuine turnovers are
-    # preserved (pannadata#76).
-    is_keeper_rebound <- events$type_id[i] %in% keeper_rebound_types
-    # See duel_contest_types comment above: only a FAILED contest row from the
-    # non-possessing team is transparent; a won duel still splits normally.
-    is_failed_duel <- events$type_id[i] %in% duel_contest_types &&
-      events$outcome[i] != 1 &&
-      events$team_id[i] != prev_team
-    is_transparent <- is_keeper_rebound || is_failed_duel
-    new_chain <- events$match_id[i] != prev_match ||
-      (!is_transparent && events$team_id[i] != prev_team && events$team_id[i] != "") ||
-      events$type_id[i] %in% dead_ball_types
-    if (new_chain) chain_n <- chain_n + 1L
-    events$chain_number[i] <- chain_n
-    if (!is_transparent) prev_team <- events$team_id[i]
-    prev_match <- events$match_id[i]
-  }
+  # Build chain numbers (vectorized -- pannadata#111 / FABLE-111; was a
+  # per-row loop that took ~40 minutes on World_Cup alone. Keeper rebounds
+  # (save/claim/punch/block) and FAILED duel/contest touches from the
+  # non-possessing team are both "transparent": they must not end the
+  # attacking possession (neither force a new chain on the team-change
+  # clause nor advance prev_team) -- see scripts/chain_numbering.R for the
+  # full proof, the deliberate deviation from the original plan sketch, and
+  # the validation record (pannadata#76 is the original motivation for both
+  # transparency rules).
+  events$chain_number <- compute_chain_numbers(
+    events, dead_ball_types, keeper_rebound_types, duel_contest_types)
 
   chain_states <- events |>
     group_by(chain_number) |>
