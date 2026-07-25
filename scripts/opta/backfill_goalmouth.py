@@ -7,6 +7,10 @@ Opta qualifier 102 = goal-mouth y (where the shot crosses the goal-line
 plane, on the 0-100 pitch-width scale; posts ~45.2/54.8) and 103 = z
 (height; crossbar ~38). These are present on EVERY shot — on- and
 off-target — because Opta projects the crossing point even for misses.
+q102 is reliable for on-target-ish shots but scatters for genuine misses
+(type_id 13) — goalmouth_of() prefers q231 for those specifically (see its
+docstring; panna#175/inthegame-blog#489). No working z/height fix exists
+for misses.
 The scraper now captures them on new matches (opta_scraper.ShotEvent), but
 historical shot rows predate that change. The match_events table —
 events_consolidated/events_<comp>.parquet — stores each event's full
@@ -30,6 +34,24 @@ Goalmouth coverage is NOT uniform over history: Opta only reliably carries
 102/103 from the 2021-22 season onward (older feeds have them on ~55% of
 shots). Older shots therefore keep NA — a permanent data fact, not fixable —
 and the xGOT model trains on the complete window (>= GM_COMPLETE_FROM).
+
+IMPORTANT (panna#176): that jump to ~100% coverage is not a pure tracking
+improvement. type_id=15 ("Attempt Saved") is an umbrella for both real
+keeper saves AND shots blocked by an outfield defender (flagged by
+qualifier 82) — a blocked shot never reaches the goal-line plane, so it has
+no real crossing point. Checked on EPL history: q82's presence rate on
+type_id=15 shots is flat at ~53-58% every season back to 2011-12 — blocked
+shots were always flagged the same way, that part never changed. What
+changed, starting mid-2019-20 and complete by 2020-21, is that Opta went
+from omitting 102/103 entirely for a blocked shot (true NA, which is why
+pre-2020 coverage tracked the ~45% "real save" share almost exactly) to
+always filling a value — including a meaningless placeholder
+(goalmouth_z==19, the frame-height midpoint) for shots that structurally
+have nothing to report. So "100% coverage from 2021-22" is real for
+non-blocked shots but synthetic for blocked ones; see
+backfill_blocked_shots.py, which derives `is_blocked` from the same q82
+marker so downstream consumers (xgot_model.R) can exclude these rows
+rather than train on placeholder placement data.
 
 Guards — the script refuses to write when any fails (a one-off repair must
 crash, never impute):
@@ -56,6 +78,7 @@ import pyarrow.dataset as ds
 SHOT_TYPE_IDS = [13, 14, 15, 16]
 ON_TARGET_TYPE_IDS = [15, 16]
 GOAL_TYPE_ID = 16
+MISS_TYPE_ID = 13
 # Opta goalmouth qualifiers (102/103) are only reliably present from the
 # 2021-22 season onward (older feeds carry them on ~55% of shots, missing
 # not-at-random). Seasons ending >= this year form the complete training
@@ -71,11 +94,19 @@ def season_end_year(season):
     return int(max(years)) if years else None
 
 
-def goalmouth_of(qualifier_json):
+def goalmouth_of(qualifier_json, type_id=None):
     """Return (gm_y, gm_z) floats from a shot's qualifier_json, or (None,
     None) when absent. qualifier_json keeps the qualifier VALUE, so 102/103
     carry the coordinate. Malformed JSON raises: a one-off repair must
-    crash, never impute. Blank/missing coordinate -> None (NaN), never 0."""
+    crash, never impute. Blank/missing coordinate -> None (NaN), never 0.
+
+    q102 (y) is reliable for on-target-ish shots (Post/Saved/Goal) but
+    scatters far outside the goal frame for genuine misses (Miss,
+    type_id 13) -- panna#175/inthegame-blog#489. For Miss shots, prefer
+    q231 (validated via a natural experiment: Post-hit shots, which MUST
+    cross the line at the known post positions 45.2/54.8, land almost
+    exactly there when read via q231), falling back to q102 when q231 is
+    absent (~13-30% of misses depending on era) rather than leaving NA."""
     d = json.loads(qualifier_json)
 
     def _f(key):
@@ -87,7 +118,8 @@ def goalmouth_of(qualifier_json):
         # on latin-1/cp1252 responses). A genuinely unparseable value raises.
         return float(v.replace(",", ".") if isinstance(v, str) else v)
 
-    return _f("102"), _f("103")
+    gm_y = (_f("231") if _f("231") is not None else _f("102")) if type_id == MISS_TYPE_ID else _f("102")
+    return gm_y, _f("103")
 
 
 def main():
@@ -121,7 +153,7 @@ def main():
             )
         events = events[~no_quals]
 
-    gm = events["qualifier_json"].map(goalmouth_of)
+    gm = [goalmouth_of(qj, tid) for qj, tid in zip(events["qualifier_json"], events["type_id"])]
     events["gm_y"] = [t[0] for t in gm]
     events["gm_z"] = [t[1] for t in gm]
 
