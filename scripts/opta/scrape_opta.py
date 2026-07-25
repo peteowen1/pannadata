@@ -743,6 +743,29 @@ def get_season_date_range(season_name: str) -> tuple:
     return date_ranges
 
 
+def season_starts_within_lookahead(season_name: str, lookahead_days: int = FIXTURE_LOOKAHEAD_DAYS) -> bool:
+    """True if a not-yet-started season's earliest date window begins within
+    `lookahead_days` of today (pannadata#119).
+
+    is_future_season() filters a season like "2026-2027" out of the scrape
+    plan entirely until August 2026 — but its fixture list (season openers,
+    announced weeks in advance) is exactly the kind of near-term forward-
+    looking row predictions.parquet needs. This lets a season pass the
+    future-season guard once it's close enough to matter, WITHOUT requiring
+    the operator to pass --include-future (reserved for deliberate long-range
+    pre-season pulls, e.g. months-ahead WC2026-style seeding).
+    """
+    try:
+        ranges = get_season_date_range(season_name)
+    except Exception:
+        return False
+    if not ranges:
+        return False
+    earliest_start = min(datetime.strptime(r[0], "%Y-%m-%d").date() for r in ranges)
+    days_ahead = (earliest_start - datetime.now().date()).days
+    return 0 <= days_ahead <= lookahead_days
+
+
 def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
                   season_id: str, complete_matches: set, unavailable_matches: set,
                   force_rescrape: bool = False, retry_unavailable: bool = False,
@@ -1178,6 +1201,13 @@ def main():
                 reverse=True,
             )
             seasons = sorted_seasons[:args.recent]
+            # Also keep a near-term NEXT season flowing even before it starts
+            # (pannadata#119) — e.g. EPL 2026-2027's fixture list exists and is
+            # announced weeks ahead, but is_future_season() would otherwise
+            # exclude the whole season from the pool until August.
+            near_future = [(s, sid) for s, sid in league_seasons.items()
+                           if is_future_season(s) and season_starts_within_lookahead(s)]
+            seasons = seasons + [x for x in near_future if x not in seasons]
         else:
             # Default: current (most-recent active) season only — same future-
             # season filtering as the --recent path so we never default onto a
@@ -1187,18 +1217,24 @@ def main():
                 reverse=True,
             )
             seasons = sorted_seasons[:1]
+            near_future = [(s, sid) for s, sid in league_seasons.items()
+                           if is_future_season(s) and season_starts_within_lookahead(s)]
+            seasons = seasons + [x for x in near_future if x not in seasons]
 
         for season_name, season_id in seasons:
             scrape_plan.append((league, season_name, season_id))
 
     # Future-season guard for the explicit --seasons path. The --recent/default
-    # paths already filtered future seasons before slicing (above); this remains
-    # as a guard so an operator-specified future label is dropped unless that's
-    # the intent — declared via --include-future (pre-season fixture pulls,
-    # e.g. 2026-2027 in July for the blog season sims; panna#160).
+    # paths already filtered future seasons before slicing (above, modulo the
+    # near-term-lookahead carve-out just added); this remains as a guard so an
+    # operator-specified far-future label is dropped unless that's the intent —
+    # declared via --include-future (long-range pre-season pulls, e.g. WC2026
+    # months ahead, panna#160) — while a near-term one (pannadata#119) passes
+    # through either way.
     if not args.include_future:
         original_count = len(scrape_plan)
-        scrape_plan = [(l, s, sid) for l, s, sid in scrape_plan if not is_future_season(s)]
+        scrape_plan = [(l, s, sid) for l, s, sid in scrape_plan
+                       if not is_future_season(s) or season_starts_within_lookahead(s)]
         if len(scrape_plan) < original_count:
             skipped = original_count - len(scrape_plan)
             print(f"Filtered out {skipped} future seasons from scrape plan "
