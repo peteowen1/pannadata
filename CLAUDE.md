@@ -15,22 +15,19 @@ against Opta only.
 
 ## Directory Structure
 
-```
-data/
-├── opta/
-│   ├── events/           # Goal/sub/card events with event_type set (used for splint boundaries)
-│   ├── match_events/     # ALL raw events with type_id (used for SPADL conversion AND for type_id == 30 period-end markers consumed by panna's extract_period_end_times())
-│   ├── lineups/          # Match lineup data
-│   ├── fixtures/         # Fixture/result data
-│   ├── shots/            # Shot-level data
-│   ├── shot_events/      # Detailed shot events
-│   ├── xmetrics/         # xG/xA/xPass per player (from panna pipeline)
-│   ├── events_consolidated/  # Merged event files
-│   ├── models/           # Legacy model copies (canonical source: pannamodels package)
-│   └── opta_*.parquet    # Consolidated player stats, shots, lineups
-```
+`ls data/opta/` shows the current layout — it is not listed here, because the
+listing that used to sit in this file had already fallen two directories behind
+what is on disk. What `ls` does **not** tell you, and you need:
 
-(Local `data/fbref/` and `data/understat/` trees may linger from old downloads — retired, safe to delete.)
+- **`events/` vs `match_events/` are not the same thing.** `events/` holds
+  goal/sub/card events with `event_type` set and is what defines **splint
+  boundaries**. `match_events/` holds ALL raw events with `type_id` — used for
+  SPADL conversion *and* for the `type_id == 30` period-end markers that panna's
+  `extract_period_end_times()` consumes.
+- **`models/` is a legacy copy.** The canonical source is the `pannamodels`
+  package.
+- Local `data/fbref/` and `data/understat/` trees may linger from old downloads
+  — retired, safe to delete.
 
 **Data is NOT in git** — the `data/` directory is gitignored. All data is stored in GitHub Releases and downloaded via `panna::pb_download_opta()`.
 
