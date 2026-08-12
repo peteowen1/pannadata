@@ -66,6 +66,7 @@ source("scripts/build_chains_ci.R")     # Possession chains with EPV equity
 | `predictions.parquet` | panna step 10 → `blog-latest` pass-through | Match predictions |
 | `match-stats-{CODE}.parquet` | `rebuild_match_stats.R` (per-league, incl. `match-stats-WC.parquet`) | Per-match team/player box stats for blog match pages |
 | `wc2026_*.parquet` | panna steps 11+12 → `blog-latest` pass-through | WC 2026 sim outputs: `predictions`, `simulation`, `groups`, `team_strength`, `squads`, `knockout_probs` |
+| `wc_history_predictions.parquet` | panna step 12 → `blog-latest` pass-through | Every World Cup's match predictions (2014/2018/2022/2026) with a `season` column, for as-at replay of past tournaments. Separate from `wc2026_predictions` on purpose — the blog's live sim consumes that file wholesale and must see 2026 alone. **The WC download loop in `build-blog-data.yml` is an exhaustive name list, not a glob**: a new WC export added upstream but not to that list reaches `blog-latest` and stops, never landing in `blog/` and so never reaching R2 — a build that goes green and ships nothing. |
 
 ## GitHub Actions
 
