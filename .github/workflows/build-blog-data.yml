@@ -132,9 +132,17 @@ jobs:
             echo "::warning::action_equity.parquet not available — chains will lack equity"
           fi
 
-          # World Cup 2026 blog data (panna step 12 → blog-latest). Optional —
+          # World Cup blog data (panna step 12 → blog-latest). Optional —
           # passed straight through to R2 football/ for the blog's WC section.
-          for wcf in wc2026_predictions wc2026_simulation wc2026_groups wc2026_team_strength wc2026_squads wc2026_knockout_probs; do
+          # This list is EXHAUSTIVE, not a glob: a file panna publishes but that
+          # is missing here reaches the release and stops there, never landing in
+          # blog/ and so never reaching R2. Add new WC exports here too, or they
+          # ship a build that looks green and changes nothing.
+          # wc_history_predictions carries all four tournaments (2014/2018/2022/
+          # 2026) with a season column, for as-at replay of past World Cups; it is
+          # deliberately separate from wc2026_predictions, which the live sim
+          # consumes wholesale and must stay 2026-only.
+          for wcf in wc2026_predictions wc_history_predictions wc2026_simulation wc2026_groups wc2026_team_strength wc2026_squads wc2026_knockout_probs; do
             if gh release download blog-latest -p "${wcf}.parquet" -D blog/; then
               echo "Downloaded ${wcf}.parquet"
             else
