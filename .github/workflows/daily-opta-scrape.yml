@@ -701,6 +701,33 @@ jobs:
     # standings could be 5-6 days stale. WORKFLOW_PAT is a cross-repo PAT with
     # workflow scope (already configured for the reverse direction in
     # predictions-pipeline.yml). See pannadata#28 / inthegame-blog#189.
+    # Current club squads (pannadata#123). Lives here, not in
+    # build-blog-data.yml, because that workflow has neither a Python setup nor
+    # OPTA_OUTLET_ID -- this is the only workflow that talks to the live feed.
+    #
+    # continue-on-error, deliberately: squads.parquet is a side artifact. The
+    # scrape's own output and the downstream predictions dispatch must not be
+    # held hostage to it, and build_squads.py refuses to write a partial file
+    # rather than shipping a club with nobody in it -- so a bad day here leaves
+    # yesterday's squads on the release, which is the right failure.
+    - name: Build current club squads
+      continue-on-error: true
+      env:
+        OPTA_OUTLET_ID: ${{ secrets.OPTA_OUTLET_ID }}
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        mkdir -p opta
+        if ! python scripts/opta/build_squads.py --out opta/squads.parquet; then
+          echo "::warning::build_squads.py refused to write -- keeping the previous squads.parquet on opta-latest"
+          exit 0
+        fi
+        if [ ! -f opta/squads.parquet ]; then
+          echo "::warning::squads.parquet not produced"
+          exit 0
+        fi
+        echo "Built opta/squads.parquet ($(stat -c %s opta/squads.parquet) bytes)"
+        gh release upload opta-latest opta/squads.parquet --clobber
+
     - name: Trigger panna predictions pipeline
       if: success()
       env:
