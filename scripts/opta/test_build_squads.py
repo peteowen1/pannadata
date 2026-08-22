@@ -11,6 +11,7 @@ test drives fetch_competition() with a stubbed scraper.
 """
 import pytest
 
+import build_squads
 from build_squads import fetch_competition, MIN_SQUAD, MIN_CLUBS
 
 
@@ -102,3 +103,59 @@ def test_player_without_an_id_is_reported():
     rows, problems = fetch_competition(FakeScraper(squads), "EPL")
     assert any("no id" in p for p in problems)
     assert all(r["player_id"] is not None for r in rows)
+
+
+# --- main(): the refuse-to-write contract -----------------------------------
+# The guards inside fetch_competition() are covered above, but main() is what
+# the workflow actually calls (`if ! python scripts/opta/build_squads.py`), and
+# it owns the two decisions that matter most: the cross-squad duplicate check,
+# and whether a guard failure is allowed to write anyway. Neither was exercised
+# until now, so a regression there would ship a row-multiplying or partial file
+# with CI green.
+
+def _run_main(monkeypatch, tmp_path, squads, extra_argv=()):
+    out = tmp_path / "squads.parquet"
+    monkeypatch.setattr(build_squads, "OptaScraper", lambda *a, **k: FakeScraper(squads))
+    monkeypatch.setattr(build_squads.sys, "argv",
+                        ["build_squads.py", "--comps", "EPL", "--out", str(out), *extra_argv])
+    return build_squads.main(), out
+
+
+def test_main_refuses_to_write_when_a_player_is_in_two_squads(monkeypatch, tmp_path):
+    # A player in two squads multiplies his rows on the ratings join. Observed
+    # 0 on the live feed, but a cross-league loan is exactly how it arrives.
+    squads = _full_league()
+    dup = squads[0]["person"][0]["id"]
+    squads[1]["person"][0]["id"] = dup
+    rc, out = _run_main(monkeypatch, tmp_path, squads)
+    assert rc != 0
+    assert not out.exists()
+
+
+def test_main_refuses_to_write_a_partial_file_by_default(monkeypatch, tmp_path):
+    squads = _full_league()
+    squads.append(_club("Thin", MIN_SQUAD - 1, cid="cThin", start=9000))
+    rc, out = _run_main(monkeypatch, tmp_path, squads)
+    assert rc != 0
+    assert not out.exists()
+
+
+def test_main_allow_partial_is_opt_in_only(monkeypatch, tmp_path):
+    # --allow-partial must stay a deliberate choice; if it ever becomes the
+    # default, a club with nobody in it reaches the site silently.
+    squads = _full_league()
+    squads.append(_club("Thin", MIN_SQUAD - 1, cid="cThin", start=9000))
+    rc, out = _run_main(monkeypatch, tmp_path, squads, extra_argv=("--allow-partial",))
+    assert rc == 0
+    assert out.exists()
+
+
+def test_main_writes_on_a_clean_run(monkeypatch, tmp_path):
+    rc, out = _run_main(monkeypatch, tmp_path, _full_league())
+    assert rc == 0
+    assert out.exists()
+    import pandas as pd
+    df = pd.read_parquet(out)
+    assert set(["player_id", "team", "team_id", "league", "position",
+                "season", "build_id"]).issubset(df.columns)
+    assert df["player_id"].is_unique
