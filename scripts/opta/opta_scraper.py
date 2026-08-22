@@ -829,6 +829,49 @@ class OptaScraper:
         params = {}
         return self._fetch(endpoint, params)
 
+    def get_squads(self, tmcl: str) -> Optional[Dict]:
+        """Get current squad membership for a tournament calendar.
+
+        The `squads` feed is the authoritative answer to "who is at this club
+        RIGHT NOW". It is not derivable from match data: a player's club in
+        ratings.parquet comes from wherever he was last rated, so a summer
+        transfer only shows up once he has played for the new club -- weeks
+        into the season, which is exactly when it is most wrong (pannadata#123).
+
+        Caller must filter: the response includes coaching staff. Observed on
+        the EPL 2026/2027 calendar, 2026-08-22: 592 `type == "player"` against
+        20 `coach` and 22 `assistant coach`, and those 42 staff entries are
+        exactly the 42 with a null `position`. Publishing them unfiltered would
+        put coaches in the ratings as clubless players.
+        """
+        endpoint = f"squads/{self.PROVIDER_ID}"
+        params = {"tmcl": tmcl}
+        return self._fetch(endpoint, params)
+
+    def get_active_tournament_calendar(self, competition: str) -> Optional[Dict]:
+        """Resolve the CURRENTLY ACTIVE tournament calendar for a competition.
+
+        Returns {"id", "name", "startDate", "endDate"} or None.
+
+        Uses COMPETITIONS, deliberately, rather than competition_ids.json --
+        that file's Premier League entry (2bv3vanywkunm4bzt7i3121l1, latest
+        season 2020) is stale and 404s.
+        """
+        if competition not in self.COMPETITIONS:
+            print(f"Unknown competition: {competition}")
+            return None
+        endpoint = f"tournamentcalendar/{self.PROVIDER_ID}/active"
+        data = self._fetch(endpoint, {"comp": self.COMPETITIONS[competition]})
+        if not data:
+            return None
+        for comp in data.get("competition", []):
+            for tc in comp.get("tournamentCalendar", []):
+                if tc.get("id"):
+                    return {"id": tc["id"], "name": tc.get("name", ""),
+                            "startDate": tc.get("startDate", ""),
+                            "endDate": tc.get("endDate", "")}
+        return None
+
     def get_pass_matrix(self, match_id: str) -> Optional[Dict]:
         """Get pass matrix (passing network) data"""
         endpoint = f"passmatrix/{self.PROVIDER_ID}/{match_id}"

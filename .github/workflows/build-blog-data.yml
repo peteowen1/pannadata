@@ -590,6 +590,36 @@ jobs:
           fi
           echo "Built blog/player-positions.parquet ($(stat -c %s blog/player-positions.parquet) bytes)"
 
+      # Current club squads (pannadata#123). Built by daily-opta-scrape.yml --
+      # that is the only workflow with a Python setup and OPTA_OUTLET_ID -- so
+      # here we only fetch it into blog/ for the R2 upload loop below.
+      #
+      # ratings.parquet's `team` column is end-of-last-season membership and
+      # does not refresh with the ratings, so a summer transfer only appears
+      # once the player has played for his new club. squads.parquet is the
+      # current answer, keyed on the same player_id.
+      #
+      # NOTE for the blog join: it also carries `team_id`. Four of 96 club
+      # names differ between the two files ("AFC Bournemouth"/"Bournemouth",
+      # "Bayer Leverkusen"/"Bayer 04 Leverkusen", "Angers SCO"/"Angers",
+      # "Deportivo de La Coruna"/"Deportivo de A Coruna"), so anything
+      # GROUPING a club's players across both should join on the id.
+      - name: Fetch current club squads
+        continue-on-error: true
+        env:
+          # Required. gh has no auth state on a runner, so without this the
+          # download fails on auth, the `if !` below catches it, and the step
+          # exits 0 green -- forever, even on days squads.parquet exists and
+          # was built correctly. Every other gh call in this file sets it
+          # per-step; there is no job- or workflow-level env to inherit from.
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release download opta-latest -p "squads.parquet" -D blog/ --clobber; then
+            echo "::warning::squads.parquet not on opta-latest — the blog keeps using ratings.parquet's stale team column"
+            exit 0
+          fi
+          echo "Fetched blog/squads.parquet ($(stat -c %s blog/squads.parquet) bytes)"
+
       - name: Simulate domestic seasons
         continue-on-error: true
         run: |
