@@ -459,8 +459,22 @@ jobs:
               if (!"xg" %in% names(ms) || all(is.na(ms$xg))) {
                 cat("No xG in match-shots — skipping league-xg\n"); q()
               }
-              # Read match-stats per league for match_id → league/season mapping
-              codes <- BLOG_CODES
+              # Read match-stats per league for match_id → league/season mapping.
+              #
+              # WC is appended rather than added to BLOG_CODES (pannadata#82).
+              # league_config.R warns that putting a competition in BLOG_COMPS
+              # "drives match-stats / league-xg and would have wider side
+              # effects" -- it is the same reason World_Cup got its own
+              # BLOG_SHOT_COMPS entry instead. league-xg is the only one of
+              # those effects wanted here, so scope it to this loop.
+              #
+              # Everything this needs already exists: match-stats-WC.parquet
+              # ships with league/season for 899 matches, and all 899 are in
+              # match-shots.parquet carrying model xg. Verified 2026-08-22 --
+              # the aggregation yields 48 teams for 2026, 3-8 matches each
+              # (8 = 3 group + R32 + R16 + QF + SF + final in the 48-team
+              # format), 1.49 xgf per match, and xgf totals balancing xga.
+              codes <- c(BLOG_CODES, "WC")
               meta <- list()
               for (code in codes) {
                 f <- paste0("blog/match-stats-", code, ".parquet")
