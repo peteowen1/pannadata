@@ -73,6 +73,14 @@ def fetch_competition(scraper, comp):
         # coach + 22 assistant coach against 592 players, and those 42 are
         # exactly the entries with a null position. Publishing them unfiltered
         # would put coaches into the ratings join as clubless players.
+        #
+        # NOTE (Pete, 2026-08-22): the staff rows are WANTED eventually --
+        # coach and assistant-coach effects are a candidate RAPM input. They
+        # arrive on the same person id ratings.parquet keys on, and carry a
+        # startDate, so a tenure is datable, which is what a decay-weighted or
+        # as-of design needs. This filter exists because THIS export feeds the
+        # player ratings join, not because the data is unwanted. If you want
+        # staff, add a separate export rather than relaxing this.
         people = [p for p in club.get("person", [])
                   if p.get("type") == "player" and p.get("active") != "no"]
         if len(people) < MIN_SQUAD:
