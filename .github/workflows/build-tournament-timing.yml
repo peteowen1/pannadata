@@ -27,6 +27,14 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Required for the `gh release upload` at the end. Every workflow in this
+    # repo that uploads declares this (daily-opta-scrape, rebuild-events) and
+    # every one that only reads declares `contents: read` -- omitting it means
+    # falling back to the default token scope, which is read-only for repos
+    # created since Feb 2023. The fetch, build and compare would all pass and
+    # only the final upload would 403, after burning the whole run.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v5
 
@@ -78,7 +86,15 @@ jobs:
             echo "::error::build produced no output"; exit 1
           fi
           mkdir -p prev
-          if gh release download blog-latest -p "tournament-events-timing.parquet" -D prev/ --clobber 2>/dev/null; then
+          # Capture stderr rather than discarding it. `2>/dev/null` here would
+          # make an expired token, a 5xx, or rate limiting indistinguishable
+          # from a genuine first run -- all exit non-zero -- so the regression
+          # guard below would silently not run and a bad rebuild would publish
+          # unchecked. That is the failure this workflow exists to prevent,
+          # and the same shape that shipped a tokenless `gh` call in
+          # build-blog-data.yml earlier today: defensive error handling turning
+          # a loud failure into a silent one.
+          if OUT=$(gh release download blog-latest -p "tournament-events-timing.parquet" -D prev/ --clobber 2>&1); then
             Rscript -e '
               suppressMessages(library(arrow))
               new <- read_parquet("data/opta/tournament_events_timing.parquet")
@@ -90,8 +106,11 @@ jobs:
               }
               cat("OK: rebuilt file is not a regression\n")
             '
-          else
+          elif echo "$OUT" | grep -qiE "release not found|no assets|asset.*not found"; then
             echo "::notice::no published file to compare against — first run"
+          else
+            echo "::error::could not read the published file, so the regression guard cannot run: $OUT"
+            exit 1
           fi
 
       - name: Upload to blog-latest
