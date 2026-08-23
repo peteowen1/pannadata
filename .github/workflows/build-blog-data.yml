@@ -115,10 +115,17 @@ jobs:
             echo "::notice::shootout_wpa.parquet not available — shootout WPA absent (no shootouts yet, or step 10d not run)"
           fi
 
-          # Tournament event-timing (slim per-event timing for the cross-tournament
+          # Tournament event-timing (slim per-event data for the cross-tournament
           # cooling/hydration-break analysis — match_id, minute, second, period_id,
-          # type_id + home/away across WC/Euro/AFCON/Copa/Asian Cup/Gold Cup, all
-          # seasons). Pass straight through to R2 as football/tournament-events-timing.parquet.
+          # type_id + home/away + per-event team_id and x/y, across
+          # WC/Euro/AFCON/Copa/Asian Cup/Gold Cup, all seasons). Pass straight
+          # through to R2 as football/tournament-events-timing.parquet.
+          #
+          # NOT built by any workflow: scripts/opta/build_tournament_events_timing.R
+          # is run by hand and its output uploaded to blog-latest. That is why the
+          # published file can silently fall behind -- the 2026-06-19 build held
+          # only 24 of the 104 WC2026 matches, because it was made mid-tournament.
+          # If this panel looks wrong, check the asset's date before the code.
           if gh release download blog-latest -p "tournament-events-timing.parquet" -D blog/; then
             echo "Downloaded tournament-events-timing.parquet"
           else
