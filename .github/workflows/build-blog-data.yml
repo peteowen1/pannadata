@@ -157,6 +157,20 @@ jobs:
             fi
           done
 
+          # Domestic team strength (panna#193) — Tiento for club sides, the
+          # domestic sibling of wc2026_team_strength. Fetched separately from
+          # the WC loop above because it is not a wc2026_ file and its absence
+          # degrades the Team Ratings page, not the World Cup section.
+          #
+          # Subject to the same trap the WC comment describes: panna publishes
+          # it to blog-latest, and if it is not pulled into blog/ here it never
+          # reaches R2 and the build looks green while changing nothing.
+          if gh release download blog-latest -p "team_strength.parquet" -D blog/; then
+            echo "Downloaded team_strength.parquet"
+          else
+            echo "::warning::team_strength.parquet not available — Team Ratings falls back to the top-20 panna sum"
+          fi
+
           # Action WPA (per-action win-probability-added — optional, used by
           # chain builder for blog match-page WPA without worker calls).
           # Sharded per league-season as action_wpa_<league>_<season>.parquet
