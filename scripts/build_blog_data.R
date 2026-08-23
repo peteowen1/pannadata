@@ -205,6 +205,37 @@ meta_cols <- c(dedup_key, setdiff(names(player_meta), c(names(xrapm), "player_na
 enriched <- xrapm |>
   left_join(spm, by = dedup_key) |>
   left_join(player_meta |> select(any_of(meta_cols)), by = dedup_key)
+
+# Current club membership (pannadata#123 / inthegame-blog#566): player_meta's
+# team/league is wherever a player was LAST RATED, so it reads end-of-season —
+# Salah still "Liverpool", Bruno Guimaraes still "Newcastle" — for weeks after
+# a real transfer, exactly when it matters most. squads.parquet (built daily by
+# scripts/opta/build_squads.py from Opta's live squads feed, Big 5 leagues
+# only) answers "who is at this club right now" directly, keyed on the same
+# player_id. Override team/league/add team_id where a squad row exists; a
+# player outside the Big 5 (squads.parquet's current coverage) or missing from
+# this run's feed simply keeps player_meta's value — never worse than before.
+squads_path <- "source/squads.parquet"
+if (file.exists(squads_path) && dedup_key == "player_id") {
+  squads <- read_parquet(squads_path) |>
+    mutate(player_id = as.character(player_id)) |>
+    select(player_id, squad_team = team, squad_team_id = team_id, squad_league = league)
+  enriched <- enriched |>
+    mutate(player_id = as.character(.data[[dedup_key]])) |>
+    left_join(squads, by = "player_id") |>
+    mutate(
+      team_id = squad_team_id,
+      team = ifelse(!is.na(squad_team), squad_team, team),
+      league = ifelse(!is.na(squad_league), squad_league, league)
+    ) |>
+    select(-squad_team, -squad_team_id, -squad_league)
+  n_from_squads <- sum(!is.na(enriched$team_id))
+  cat("Current squads: overrode team/league for", n_from_squads,
+      "of", nrow(enriched), "players (source/squads.parquet)\n")
+} else {
+  cat("::warning::source/squads.parquet absent or dedup_key != player_id — team/league stay end-of-last-rated-season (pannadata#123)\n")
+}
+
 if (!is.null(gl_extra)) {
   enriched <- left_join(enriched, gl_extra, by = dedup_key)
 }
