@@ -1,0 +1,125 @@
+# Rebuild tournament-events-timing.parquet and publish it to blog-latest.
+#
+# MANUAL DISPATCH ONLY, on purpose. The seven competitions here are
+# tournaments -- World Cup, Euros, AFCON, Copa America, Asian Cup, Gold Cup,
+# Club World Cup -- so new data arrives in bursts of about a month every two to
+# four years. A cron would be almost entirely no-op runs.
+#
+# The failure this exists to prevent was not "we needed daily builds". It was
+# that the file was built 2026-06-19, MID-World-Cup, and never rebuilt after
+# the final -- so the blog's cooling-breaks page served 24 of the 104 WC2026
+# matches for two months, with nothing going red. Nothing invoked the script,
+# so rebuilding it meant cloning the repo, having the consolidated events
+# locally, running R, knowing the asset is renamed from underscores to hyphens,
+# and uploading to the right release. That friction is why it did not happen.
+#
+# Run this after a tournament finishes. It is one click.
+name: Build tournament events timing
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build and report, but do not upload to blog-latest"
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # Required for the `gh release upload` at the end. Every workflow in this
+    # repo that uploads declares this (daily-opta-scrape, rebuild-events) and
+    # every one that only reads declares `contents: read` -- omitting it means
+    # falling back to the default token scope, which is read-only for repos
+    # created since Feb 2023. The fetch, build and compare would all pass and
+    # only the final upload would 403, after burning the whole run.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: |
+            any::arrow
+            any::data.table
+
+      # The script reads data/opta/events_consolidated/events_<COMP>.parquet and
+      # data/opta/opta_fixtures.parquet. Neither is in git (release-as-data-bus),
+      # so fetch them. A missing competition file is survivable -- the script
+      # skips it with a message -- but a missing fixtures file silently costs
+      # every home_team/away_team, so that one is fatal here.
+      - name: Fetch consolidated events and fixtures
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p data/opta/events_consolidated
+          for comp in World_Cup UEFA_Euros AFCON Copa_America AFC_Asian_Cup CONCACAF_Gold_Cup Club_World_Cup; do
+            if gh release download opta-latest -p "events_${comp}.parquet" -D data/opta/events_consolidated/ --clobber; then
+              echo "  fetched events_${comp}.parquet"
+            else
+              echo "::warning::events_${comp}.parquet not on opta-latest — that tournament will be skipped"
+            fi
+          done
+          if ! gh release download opta-latest -p "opta_fixtures.parquet" -D data/opta/ --clobber; then
+            echo "::error::opta_fixtures.parquet not available — every home_team/away_team would be NA"
+            exit 1
+          fi
+
+      - name: Build
+        run: Rscript scripts/opta/build_tournament_events_timing.R
+
+      # Guard before publishing. The whole point of this workflow is that the
+      # published file went stale and nobody noticed, so shipping a file that is
+      # SMALLER than the one already live would be the same failure wearing a
+      # different hat.
+      - name: Compare against the published file
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NEW=data/opta/tournament_events_timing.parquet
+          if [ ! -f "$NEW" ]; then
+            echo "::error::build produced no output"; exit 1
+          fi
+          mkdir -p prev
+          # Capture stderr rather than discarding it. `2>/dev/null` here would
+          # make an expired token, a 5xx, or rate limiting indistinguishable
+          # from a genuine first run -- all exit non-zero -- so the regression
+          # guard below would silently not run and a bad rebuild would publish
+          # unchecked. That is the failure this workflow exists to prevent,
+          # and the same shape that shipped a tokenless `gh` call in
+          # build-blog-data.yml earlier today: defensive error handling turning
+          # a loud failure into a silent one.
+          if OUT=$(gh release download blog-latest -p "tournament-events-timing.parquet" -D prev/ --clobber 2>&1); then
+            Rscript -e '
+              suppressMessages(library(arrow))
+              new <- read_parquet("data/opta/tournament_events_timing.parquet")
+              old <- read_parquet("prev/tournament-events-timing.parquet")
+              cat(sprintf("published: %d rows, %d matches\n", nrow(old), length(unique(old$match_id))))
+              cat(sprintf("rebuilt:   %d rows, %d matches\n", nrow(new), length(unique(new$match_id))))
+              if (length(unique(new$match_id)) < length(unique(old$match_id))) {
+                stop("rebuilt file has FEWER matches than the published one -- refusing to publish. Check that every events_<COMP>.parquet downloaded.")
+              }
+              cat("OK: rebuilt file is not a regression\n")
+            '
+          elif echo "$OUT" | grep -qiE "release not found|no assets|asset.*not found"; then
+            echo "::notice::no published file to compare against — first run"
+          else
+            echo "::error::could not read the published file, so the regression guard cannot run: $OUT"
+            exit 1
+          fi
+
+      - name: Upload to blog-latest
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The release asset uses hyphens; the script writes underscores.
+          cp data/opta/tournament_events_timing.parquet tournament-events-timing.parquet
+          gh release upload blog-latest tournament-events-timing.parquet --clobber
+          echo "Uploaded $(stat -c %s tournament-events-timing.parquet) bytes to blog-latest"
+          echo "It reaches R2 on the next build-blog-data run, which passes it straight through."
