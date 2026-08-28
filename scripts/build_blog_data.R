@@ -438,7 +438,8 @@ if (file.exists(lineups_path)) {
   # EPR/PSR snapshots are absent it would write panna/offense into the (created)
   # epr/psr columns, fabricating Piero inputs and corrupting the published
   # parquet. Use the same intersected set on both sides.
-  round_cols <- intersect(c("panna","offense","defense","epr","psr"), names(recov))
+  round_cols <- intersect(c("panna","offense","defense","epr","psr",
+                            "epr_offensive","epr_defensive","osr","dsr"), names(recov))
   recov[round_cols] <- lapply(round_cols, function(cc) round(recov[[cc]], 4))
 
   # Loud floor: 0 recovered means a player_id / match_date join drift (a real run
