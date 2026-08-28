@@ -81,8 +81,8 @@ load_latest_snapshot <- function(path, value_col) {
     ungroup() |>
     select(all_of(dedup_key), all_of(value_col))
 }
-epr <- load_latest_snapshot("source/opta_epr_weekly.parquet", "epr")
-psr <- load_latest_snapshot("source/opta_psr_weekly.parquet", "psr")
+epr <- load_latest_snapshot("source/opta_epr_weekly.parquet", c("epr", "epr_offensive", "epr_defensive"))
+psr <- load_latest_snapshot("source/opta_psr_weekly.parquet", c("psr", "osr", "dsr"))
 
 # Raw (prior-free) RAPM — panna#165, Pete's transparency call: publish the
 # un-shrunk signal alongside the shrunk xrapm/panna, clearly labelled so it
@@ -271,8 +271,10 @@ panna_ratings <- enriched |>
     # Headline = career-trait Panna (career O/D); season xRAPM kept alongside.
     panna, offense, defense, spm_overall,
     # EPR/PSR trait ratings (latest weekly snapshot) — feed the blog's Piero
-    # composite. any_of() so the build still works if the snapshots are absent.
-    any_of(c("epr", "psr")),
+    # composite, plus their offense/defense splits (epr_offensive/epr_defensive
+    # sum to epr; osr/dsr sum to psr, by construction upstream). any_of() so
+    # the build still works if the snapshots are absent.
+    any_of(c("epr", "psr", "epr_offensive", "epr_defensive", "osr", "dsr")),
     xrapm, xrapm_offense, xrapm_defense,
     total_minutes,
     panna_percentile,
@@ -294,6 +296,7 @@ panna_ratings <- enriched |>
   ) |>
   mutate(across(any_of(c("panna", "offense", "defense", "xrapm", "xrapm_offense",
                          "xrapm_defense", "spm_overall", "epr", "psr",
+                         "epr_offensive", "epr_defensive", "osr", "dsr",
                          "rapm_raw", "rapm_raw_offense", "rapm_raw_defense",
                          "rapm_raw_pooled", "rapm_raw_pooled_offense", "rapm_raw_pooled_defense")),
                 \(x) round(x, 4))) |>
@@ -302,7 +305,7 @@ panna_ratings <- enriched |>
 na_spm <- sum(is.na(panna_ratings$spm_overall))
 cat("SPM join:", nrow(panna_ratings) - na_spm, "/", nrow(panna_ratings),
     "matched (", round(100 * na_spm / nrow(panna_ratings), 1), "% missing)\n")
-for (col in c("epr", "psr")) {
+for (col in c("epr", "psr", "epr_offensive", "epr_defensive", "osr", "dsr")) {
   if (col %in% names(panna_ratings)) {
     n_ok <- sum(!is.na(panna_ratings[[col]]))
     cat(toupper(col), "join:", n_ok, "/", nrow(panna_ratings),
