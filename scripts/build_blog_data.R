@@ -205,6 +205,7 @@ meta_cols <- c(dedup_key, setdiff(names(player_meta), c(names(xrapm), "player_na
 enriched <- xrapm |>
   left_join(spm, by = dedup_key) |>
   left_join(player_meta |> select(any_of(meta_cols)), by = dedup_key)
+
 if (!is.null(gl_extra)) {
   enriched <- left_join(enriched, gl_extra, by = dedup_key)
 }
@@ -493,6 +494,56 @@ if (file.exists(lineups_path)) {
   panna_ratings$last_rated_league <- NA_character_
   if (!"last_rated_season" %in% names(panna_ratings))
     panna_ratings$last_rated_season <- latest_season
+}
+
+# Current club membership (pannadata#123 / inthegame-blog#566): player_meta's
+# team/league is wherever a player was LAST RATED, so it reads end-of-season —
+# Salah still "Liverpool", Bruno Guimaraes still "Newcastle" — for weeks after
+# a real transfer, exactly when it matters most. squads.parquet (built daily by
+# scripts/opta/build_squads.py from Opta's live squads feed) answers "who is
+# at this club right now" directly, keyed on the same player_id. Coverage was
+# Big-5 only at #123's original ship; widened to every domestic league panna
+# rates a player in (49 leagues) 2026-08-29 (pannadata#132), after Salah's own
+# real move (to Trabzonspor, Turkish Süper Lig) showed the Big-5-only version
+# still couldn't catch a departure TO a covered-but-non-Big-5 league. Applied
+# here, AFTER the recovery bind_rows above, so it covers BOTH populations in
+# panna_ratings — the active season-rated pool and the ~half of rows that come
+# from recently-active-but-under-minuted recovery, which is exactly the
+# profile of a player who just transferred and hasn't logged minutes at the
+# new club yet (review finding on the first version of this fix, which only
+# touched the active pool). A player outside squads.parquet's coverage (a
+# league panna doesn't rate players in at all, or genuinely retired/departed
+# football) or missing from this run's feed simply keeps the prior value —
+# never worse than before.
+squads_path <- "source/squads.parquet"
+if (file.exists(squads_path) && dedup_key == "player_id") {
+  squads <- read_parquet(squads_path) |>
+    mutate(player_id = as.character(player_id)) |>
+    # Widened to 49 domestic leagues (pannadata#132), including
+    # Tunisian_Ligue_1 -- one of the two comps BLOG_COMP_EXCLUDE drops
+    # earlier (line ~229/434) for ~0% skills coverage / blank leaderboard
+    # rows. Before the widening this override could only ever write a
+    # non-excluded league (Big-5-only squads.parquet never emitted
+    # Tunisian_Ligue_1), so this filter was unreachable dead code; now a
+    # player whose CURRENT squad is in an excluded league must be filtered
+    # here too, or the earlier BLOG_COMP_EXCLUDE filtering gets silently
+    # undone by this override running after it.
+    filter(!league %in% BLOG_COMP_EXCLUDE) |>
+    select(player_id, squad_team = team, squad_league = league)
+  panna_ratings <- panna_ratings |>
+    mutate(player_id = as.character(.data[[dedup_key]]))
+  n_from_squads <- sum(panna_ratings$player_id %in% squads$player_id)
+  panna_ratings <- panna_ratings |>
+    left_join(squads, by = "player_id") |>
+    mutate(
+      team = ifelse(!is.na(squad_team), squad_team, team),
+      league = ifelse(!is.na(squad_league), squad_league, league)
+    ) |>
+    select(-squad_team, -squad_league)
+  cat("Current squads: overrode team/league for", n_from_squads,
+      "of", nrow(panna_ratings), "players (source/squads.parquet)\n")
+} else {
+  cat("::warning::source/squads.parquet absent or dedup_key != player_id — team/league stay end-of-last-rated-season (pannadata#123)\n")
 }
 
 # ── Piero: pool-independent composite player rating ──────────────────────────

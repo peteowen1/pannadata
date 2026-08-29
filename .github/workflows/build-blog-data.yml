@@ -213,6 +213,18 @@ jobs:
             echo "::warning::opta_psr_weekly.parquet not available — Piero's PSR component will be NA"
           fi
 
+          # Current club membership, every domestic league panna rates a player
+          # in (pannadata#123, widened to 49 leagues by #132; originally Big 5
+          # only). build_blog_data.R overrides team/league from this where a
+          # row exists; absence just leaves team/league at
+          # player_metadata.parquet's end-of-last-rated-season value, same as
+          # before this feature shipped.
+          if gh release download opta-latest -p "squads.parquet" -D source/; then
+            echo "Downloaded squads.parquet"
+          else
+            echo "::warning::squads.parquet not available — team/league stay end-of-last-rated-season"
+          fi
+
           # NOTE: opta_player_stats.parquet (247MB) and opta_xmetrics.parquet (10MB) are
           # downloaded lazily by their respective steps to reduce peak memory usage.
 
