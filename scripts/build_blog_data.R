@@ -519,6 +519,16 @@ squads_path <- "source/squads.parquet"
 if (file.exists(squads_path) && dedup_key == "player_id") {
   squads <- read_parquet(squads_path) |>
     mutate(player_id = as.character(player_id)) |>
+    # Widened to 49 domestic leagues (pannadata#132), including
+    # Tunisian_Ligue_1 -- one of the two comps BLOG_COMP_EXCLUDE drops
+    # earlier (line ~229/434) for ~0% skills coverage / blank leaderboard
+    # rows. Before the widening this override could only ever write a
+    # non-excluded league (Big-5-only squads.parquet never emitted
+    # Tunisian_Ligue_1), so this filter was unreachable dead code; now a
+    # player whose CURRENT squad is in an excluded league must be filtered
+    # here too, or the earlier BLOG_COMP_EXCLUDE filtering gets silently
+    # undone by this override running after it.
+    filter(!league %in% BLOG_COMP_EXCLUDE) |>
     select(player_id, squad_team = team, squad_league = league)
   panna_ratings <- panna_ratings |>
     mutate(player_id = as.character(.data[[dedup_key]]))
