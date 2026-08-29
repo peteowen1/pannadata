@@ -139,27 +139,34 @@ def _run_main(monkeypatch, tmp_path, squads, extra_argv=()):
     return build_squads.main(), out
 
 
-def test_main_resolves_a_player_in_two_squads_by_keeping_the_earlier_comp(monkeypatch, tmp_path):
+def test_main_resolves_a_repeated_cross_squad_pattern_by_keeping_the_earlier_comp(monkeypatch, tmp_path):
     # A player in two squads would multiply his rows on the ratings join if
     # left unresolved. At Big-5-only scale this never happened in practice and
     # main() refused outright (a cross-league loan was the only plausible
     # cause). Widened to 49 leagues (pannadata#132), a real case surfaced
     # immediately: reserve/feeder-team structures (e.g. Auckland FC senior
     # squad vs "Auckland II" in a separate domestic competition) legitimately
-    # share players. main() now resolves deterministically instead of
-    # refusing: keep the row from whichever competition is listed EARLIER in
-    # `--comps`, drop the rest.
+    # share players. main() now auto-resolves this specific shape -- MULTIPLE
+    # players sharing the exact same pair of leagues, which is what makes it
+    # a structural (repeated) relationship rather than an ambiguous one-off --
+    # by keeping the row from whichever competition is listed EARLIER in
+    # `--comps`, dropping the rest. A single (non-repeated) duplicate is a
+    # DIFFERENT case -- see test_main_refuses_a_one_off_cross_squad_duplicate
+    # below -- since it could just as easily be an in-flight transfer, where
+    # keeping the earlier comp would silently keep the WRONG (stale) one.
     out = tmp_path / "squads.parquet"
     senior = _full_league(n_clubs=MIN_CLUBS)
     reserve = _full_league(n_clubs=MIN_CLUBS)
     # Give the reserve league's own players distinct ids (avoid accidental
-    # overlap with senior's), then re-introduce ONE intentional shared id --
-    # the case under test.
+    # overlap with senior's), then re-introduce TWO intentionally shared ids
+    # -- a repeated pattern, the case under test.
     for club in reserve:
         for person in club["person"]:
             person["id"] = "r_" + person["id"]
-    dup = senior[0]["person"][0]["id"]
-    reserve[0]["person"][0]["id"] = dup
+    dup1 = senior[0]["person"][0]["id"]
+    dup2 = senior[0]["person"][1]["id"]
+    reserve[0]["person"][0]["id"] = dup1
+    reserve[0]["person"][1]["id"] = dup2
 
     # Each comp needs its own scraper instance (different squad payload),
     # routed through _DispatchScraper since main() creates one OptaScraper()
@@ -176,9 +183,37 @@ def test_main_resolves_a_player_in_two_squads_by_keeping_the_earlier_comp(monkey
 
     import pandas as pd
     df = pd.read_parquet(out)
-    rows = df[df["player_id"] == dup]
-    assert len(rows) == 1
-    assert rows.iloc[0]["league"] == "SeniorComp"
+    for dup in (dup1, dup2):
+        rows = df[df["player_id"] == dup]
+        assert len(rows) == 1
+        assert rows.iloc[0]["league"] == "SeniorComp"
+
+
+def test_main_refuses_a_one_off_cross_squad_duplicate(monkeypatch, tmp_path):
+    # A SINGLE player_id shared between two squads, with no other player
+    # repeating that same league pair, is NOT auto-resolved -- it looks
+    # exactly like a mid-season loan or an in-flight transfer, where the
+    # earlier-listed competition could easily be the STALE one. Refusing
+    # loudly (rather than confidently guessing) is the safe default here,
+    # matching the pre-#132 behaviour for this specific shape.
+    out = tmp_path / "squads.parquet"
+    senior = _full_league(n_clubs=MIN_CLUBS)
+    reserve = _full_league(n_clubs=MIN_CLUBS)
+    for club in reserve:
+        for person in club["person"]:
+            person["id"] = "r_" + person["id"]
+    dup = senior[0]["person"][0]["id"]
+    reserve[0]["person"][0]["id"] = dup
+
+    scrapers = {"SeniorComp": FakeScraper(senior), "ReserveComp": FakeScraper(reserve)}
+    monkeypatch.setattr(build_squads, "OptaScraper",
+                        lambda *a, **k: _DispatchScraper(scrapers))
+    monkeypatch.setattr(build_squads.sys, "argv",
+                        ["build_squads.py", "--comps", "SeniorComp", "ReserveComp",
+                         "--out", str(out)])
+    rc = build_squads.main()
+    assert rc != 0
+    assert not out.exists()
 
 
 def test_main_refuses_to_write_a_partial_file_by_default(monkeypatch, tmp_path):
@@ -195,6 +230,52 @@ def test_main_allow_partial_is_opt_in_only(monkeypatch, tmp_path):
     squads = _full_league()
     squads.append(_club("Thin", MIN_SQUAD - 1, cid="cThin", start=9000))
     rc, out = _run_main(monkeypatch, tmp_path, squads, extra_argv=("--allow-partial",))
+    assert rc == 0
+    assert out.exists()
+
+
+def test_main_refuses_even_with_allow_partial_when_most_comps_return_nothing(monkeypatch, tmp_path):
+    # --allow-partial exists to absorb ONE flaky/thin league among many, not
+    # to silently ship a badly-degraded file when the feed itself is having a
+    # broad (but not total) outage -- that would sail past the `not all_rows`
+    # check (some comps DID return rows) while covering only a fraction of
+    # what was requested, with nothing louder than a workflow log line
+    # nobody's watching for a continue-on-error step (review finding,
+    # pannadata#132). 3 of 4 comps returning nothing (75% > the 25% floor)
+    # must refuse even with --allow-partial.
+    out = tmp_path / "squads.parquet"
+    ok_squads = _full_league()
+    scrapers = {
+        "OkComp": FakeScraper(ok_squads),
+        "DeadComp1": FakeScraper([], calendar=False),
+        "DeadComp2": FakeScraper([], calendar=False),
+        "DeadComp3": FakeScraper([], calendar=False),
+    }
+    monkeypatch.setattr(build_squads, "OptaScraper",
+                        lambda *a, **k: _DispatchScraper(scrapers))
+    monkeypatch.setattr(build_squads.sys, "argv",
+                        ["build_squads.py", "--comps",
+                         "OkComp", "DeadComp1", "DeadComp2", "DeadComp3",
+                         "--allow-partial", "--out", str(out)])
+    rc = build_squads.main()
+    assert rc != 0
+    assert not out.exists()
+
+
+def test_main_allow_partial_still_writes_when_one_of_many_comps_fails(monkeypatch, tmp_path):
+    # The counterpart to the above: 1 of 5 comps failing (20%, under the 25%
+    # floor) is exactly the "one flaky league" case --allow-partial is FOR,
+    # and must still write.
+    out = tmp_path / "squads.parquet"
+    ok = _full_league()
+    scrapers = {f"OkComp{i}": FakeScraper(ok) for i in range(4)}
+    scrapers["DeadComp"] = FakeScraper([], calendar=False)
+    monkeypatch.setattr(build_squads, "OptaScraper",
+                        lambda *a, **k: _DispatchScraper(scrapers))
+    monkeypatch.setattr(build_squads.sys, "argv",
+                        ["build_squads.py", "--comps", *scrapers.keys(),
+                         "--allow-partial", "--out", str(out)])
+    rc = build_squads.main()
     assert rc == 0
     assert out.exists()
 

@@ -42,13 +42,16 @@ from opta_scraper import OptaScraper  # noqa: E402
 #   duplicate-player_id guard for every club playing in one, since those
 #   players would also appear in their domestic league's squad.
 # - Intl_Friendlies: not a club competition at all.
-# Originally Big-5 only; widened once to 10 (Championship/Eredivisie/
-# Primeira_Liga/Scottish_Premiership/Super_Lig added) then to this full list
-# 2026-08-29 (pannadata#132) after Salah's actual move -- Trabzonspor, Turkish
-# Süper Lig -- turned out to be covered by the first widening, but the
-# underlying complaint ("everyone's team should be up to date") is only
-# actually solved by covering everywhere panna rates players, not one
-# hand-picked batch at a time. Any league NOT in this list still has no squad
+# Originally Big-5 only (EPL/La_Liga/Bundesliga/Serie_A/Ligue_1). Widened
+# directly to this full 49-league list 2026-08-29 (pannadata#132), reported
+# as Salah still showing Liverpool/EPL when his real move was to Trabzonspor
+# (Turkish Süper Lig) -- Super_Lig is in this list, so that specific case is
+# fixed by this same change. The underlying complaint ("everyone's team
+# should be up to date") is only actually solved by covering everywhere
+# panna rates players, not one hand-picked batch at a time -- a first-pass
+# 10-league version (adding just Championship/Eredivisie/Primeira_Liga/
+# Scottish_Premiership/Super_Lig) was smoke-tested but never shipped
+# separately; this list supersedes it. Any league NOT in this list still has no squad
 # row, and the blog falls back to ratings.parquet's `team` -- see the join
 # note in docs/plans/OPTA-SQUADS-2026-08-22.md. At this scale, the daily
 # workflow invocation MUST pass --allow-partial: one thin/flaky league among
@@ -158,11 +161,14 @@ def main():
 
     scraper = OptaScraper()
     all_rows, all_problems = [], []
+    comps_with_zero_rows = []
     for comp in args.comps:
         rows, problems = fetch_competition(scraper, comp)
         print(f"{comp}: {len(rows)} player-rows, {len(problems)} problem(s)")
         all_rows.extend(rows)
         all_problems.extend(problems)
+        if not rows:
+            comps_with_zero_rows.append(comp)
 
     if all_problems:
         print("\nGUARD FAILURES:")
@@ -172,6 +178,25 @@ def main():
             print("\nRefusing to write a partial squad file. A club missing here "
                   "silently empties its panels on the site; rerun, or pass "
                   "--allow-partial deliberately.")
+            return 1
+
+    # --allow-partial is meant to absorb "one flaky/thin league among many",
+    # not "the feed is having a broad outage". Those look identical from a
+    # single comp's guard failure, but not from how MANY comps failed
+    # wholesale in the same run -- a real outage fails many comps at once,
+    # a one-off flake fails one. Refuse regardless of --allow-partial past
+    # this fraction; a total wipeout was already caught by the `not all_rows`
+    # check below, this catches the "mostly wiped out" case that check can't
+    # see.
+    ZERO_ROW_FRACTION_LIMIT = 0.25
+    if args.comps:
+        zero_frac = len(comps_with_zero_rows) / len(args.comps)
+        if zero_frac > ZERO_ROW_FRACTION_LIMIT:
+            print(f"\n{len(comps_with_zero_rows)} of {len(args.comps)} "
+                  f"competitions ({zero_frac:.0%}) returned zero rows -- "
+                  f"that's a suspected feed-wide problem, not an isolated "
+                  f"flaky league. Refusing to write even with --allow-partial: "
+                  f"{', '.join(comps_with_zero_rows)}")
             return 1
 
     if not all_rows:
@@ -189,19 +214,51 @@ def main():
     # (NZ_National_League) share players by design, not by data error -- a
     # dual-registered reserve/feeder-team structure the original guard never
     # anticipated. Refusing the whole file over 3 reserve players would (at
-    # this scale) become a routine failure mode, not a rare alarm. Resolve
-    # deterministically instead: keep whichever squad entry comes from the
-    # EARLIER-listed competition in `--comps`/DEFAULT_COMPS order (senior
-    # leagues are listed before feeder/reserve ones), drop the rest, and log
-    # every resolution so it's visible, not silent -- mirroring the same
-    # "deterministic tie-break, always logged" pattern used for team-name
-    # canonicalization elsewhere in this pipeline (panna#204).
+    # this scale) become a routine failure mode, not a rare alarm.
+    #
+    # But a blind "keep the earlier-listed comp" tie-break is NOT safe for
+    # every duplicate -- that's exactly as likely to be the mid-season-loan /
+    # in-flight-transfer case the ORIGINAL guard existed to catch, and for
+    # THAT case, confidently keeping the earlier (possibly now-stale) comp
+    # is worse than refusing, not better (review finding, pannadata#132).
+    # Distinguish the two by whether the pattern REPEATS: a real feeder/
+    # reserve relationship shows up as multiple different players sharing the
+    # exact same pair of leagues (a structural relationship between two
+    # squads); an in-flight transfer is a one-off, a single player_id whose
+    # league-pair appears nowhere else in this run. Auto-resolve only the
+    # repeated (structural) case, keeping the earlier-listed competition and
+    # logging every resolution; refuse outright on any one-off duplicate, so
+    # a genuinely ambiguous transfer still gets a human's attention instead
+    # of a silently wrong club.
     dupes = df[df.duplicated("player_id", keep=False)]
     if not dupes.empty:
         n = dupes["player_id"].nunique()
-        print(f"\n{n} player_id(s) appear in more than one squad -- resolving "
-              f"by keeping the earlier-listed competition (senior over "
-              f"feeder/reserve):")
+        league_pairs = (
+            dupes.groupby("player_id")["league"]
+            .apply(lambda leagues: tuple(sorted(leagues)))
+        )
+        pair_counts = league_pairs.value_counts()
+        repeated_pairs = set(pair_counts[pair_counts >= 2].index)
+        singleton_pids = league_pairs[~league_pairs.isin(repeated_pairs)].index
+
+        if len(singleton_pids) > 0:
+            print(f"\n{len(singleton_pids)} player_id(s) appear in more than one "
+                  f"squad with NO repeated pattern (not a structural feeder/"
+                  f"reserve relationship -- looks like an in-flight transfer or "
+                  f"a data issue, ambiguous which squad is current):")
+            for pid in singleton_pids:
+                rows_desc = ", ".join(
+                    f"{row['team']} ({row['league']})"
+                    for _, row in dupes[dupes["player_id"] == pid].iterrows())
+                print(f"  - {pid}: {rows_desc}")
+            print("\nRefusing to write: cannot safely guess which squad is "
+                  "current for the player(s) above. Rerun once the feeds "
+                  "agree, or resolve manually.")
+            return 1
+
+        print(f"\n{n} player_id(s) appear in more than one squad, all as part "
+              f"of a repeated (structural) pattern -- resolving by keeping "
+              f"the earlier-listed competition (senior over feeder/reserve):")
         comp_rank = {c: i for i, c in enumerate(args.comps)}
         df["_comp_rank"] = df["league"].map(comp_rank)
         df = df.sort_values(["player_id", "_comp_rank"])
