@@ -32,11 +32,46 @@ import pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from opta_scraper import OptaScraper  # noqa: E402
 
-# Competitions to fetch. The blog rates players across ~15 leagues; the feed is
-# verified for these. Anything not here simply has no squad row, and the blog
-# must fall back to ratings.parquet's `team` rather than showing the player as
-# clubless -- see the join note in docs/plans/OPTA-SQUADS-2026-08-22.md.
-DEFAULT_COMPS = ["EPL", "La_Liga", "Bundesliga", "Serie_A", "Ligue_1"]
+# Competitions to fetch: every DOMESTIC league panna's `ratings.parquet`
+# currently rates ANY player in (measured 2026-08-29 from `last_rated_league`,
+# the freshest-competition signal -- 49 leagues, all already carrying a valid
+# ID in COMPETITIONS below), NOT just league_config.R's smaller blog-display
+# subset (BLOG_COMPS, 10 domestic + 3 continental). Deliberately excludes:
+# - UCL/UEL/Conference_League and other continental cups: not a club's
+#   domestic membership, AND including them would trip this script's own
+#   duplicate-player_id guard for every club playing in one, since those
+#   players would also appear in their domestic league's squad.
+# - Intl_Friendlies: not a club competition at all.
+# Originally Big-5 only; widened once to 10 (Championship/Eredivisie/
+# Primeira_Liga/Scottish_Premiership/Super_Lig added) then to this full list
+# 2026-08-29 (pannadata#132) after Salah's actual move -- Trabzonspor, Turkish
+# Süper Lig -- turned out to be covered by the first widening, but the
+# underlying complaint ("everyone's team should be up to date") is only
+# actually solved by covering everywhere panna rates players, not one
+# hand-picked batch at a time. Any league NOT in this list still has no squad
+# row, and the blog falls back to ratings.parquet's `team` -- see the join
+# note in docs/plans/OPTA-SQUADS-2026-08-22.md. At this scale, the daily
+# workflow invocation MUST pass --allow-partial: one thin/flaky league among
+# 49 refusing its own guard should not hold back the other 48's freshness.
+DEFAULT_COMPS = [
+    # Big-5 + blog's original 5 additions
+    "EPL", "La_Liga", "Bundesliga", "Serie_A", "Ligue_1",
+    "Championship", "Eredivisie", "Primeira_Liga", "Scottish_Premiership",
+    "Super_Lig",
+    # Everywhere else panna rates players, alphabetical
+    "A_League", "Allsvenskan", "Argentine_Liga_Profesional",
+    "Armenian_Premier", "Austrian_Bundesliga", "Azerbaijan_Premier",
+    "Belgian_First_Division", "Bosnian_Premier", "Botola_Pro",
+    "Brazilian_Serie_A", "Bulgarian_First_League", "Croatian_HNL",
+    "Cyprus_First", "Czech_Liga", "Danish_Superliga", "Eliteserien",
+    "Greek_Super_League", "Icelandic_Premier", "Irish_Premier",
+    "Kazakhstan_Premier", "League_One", "League_Two", "Liga_MX",
+    "Ligat_Haal", "Macedonian_First", "Maltese_Premier", "MLS",
+    "NB_I", "NZ_National_League", "Romanian_Liga_I", "Saudi_League",
+    "Serbian_Super_Liga", "Slovak_Liga", "Slovenian_Liga",
+    "Swiss_Super_League", "Tunisian_Ligue_1", "UAE_Pro_League",
+    "Ukrainian_Premier_League", "Veikkausliiga",
+]
 
 # Guards. A squad file with a club missing, or a club with almost nobody in it,
 # silently empties that club's panels on the site -- worse than not publishing.
@@ -146,16 +181,38 @@ def main():
     df = pd.DataFrame(all_rows)
 
     # A player in two squads means the join to ratings.parquet would multiply
-    # his rows. Observed 0 on EPL 2026/2027, but a mid-season loan across two
-    # covered leagues is exactly how it would appear, so assert rather than
-    # assume.
+    # his rows. At Big-5-only scale this genuinely never happened (0 observed
+    # on EPL 2026/2027) and a mid-season loan across two covered leagues was
+    # the only plausible cause, so refusing outright was the safe default.
+    # Widened to 49 leagues (pannadata#132), a REAL case surfaced immediately:
+    # Auckland FC's senior squad (A_League) and reserve side "Auckland II"
+    # (NZ_National_League) share players by design, not by data error -- a
+    # dual-registered reserve/feeder-team structure the original guard never
+    # anticipated. Refusing the whole file over 3 reserve players would (at
+    # this scale) become a routine failure mode, not a rare alarm. Resolve
+    # deterministically instead: keep whichever squad entry comes from the
+    # EARLIER-listed competition in `--comps`/DEFAULT_COMPS order (senior
+    # leagues are listed before feeder/reserve ones), drop the rest, and log
+    # every resolution so it's visible, not silent -- mirroring the same
+    # "deterministic tie-break, always logged" pattern used for team-name
+    # canonicalization elsewhere in this pipeline (panna#204).
     dupes = df[df.duplicated("player_id", keep=False)]
     if not dupes.empty:
         n = dupes["player_id"].nunique()
-        print(f"\n{n} player_id(s) appear in more than one squad, e.g.:")
-        print(dupes.sort_values("player_id").head(6).to_string(index=False))
-        print("Refusing to write: this would multiply rows on the ratings join.")
-        return 1
+        print(f"\n{n} player_id(s) appear in more than one squad -- resolving "
+              f"by keeping the earlier-listed competition (senior over "
+              f"feeder/reserve):")
+        comp_rank = {c: i for i, c in enumerate(args.comps)}
+        df["_comp_rank"] = df["league"].map(comp_rank)
+        df = df.sort_values(["player_id", "_comp_rank"])
+        resolved = df[df["player_id"].isin(dupes["player_id"])]
+        for pid, grp in resolved.groupby("player_id"):
+            kept_row = grp.iloc[0]
+            dropped_desc = ", ".join(
+                f"{row['team']} ({row['league']})" for _, row in grp.iloc[1:].iterrows())
+            kept_desc = f"{kept_row['team']} ({kept_row['league']})"
+            print(f"  - {pid}: kept {kept_desc}, dropped {dropped_desc}")
+        df = df.drop_duplicates(subset="player_id", keep="first").drop(columns="_comp_rank")
 
     df["build_id"] = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)

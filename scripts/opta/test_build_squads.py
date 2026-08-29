@@ -32,6 +32,24 @@ class FakeScraper:
         return {"squad": self._squads}
 
 
+class _DispatchScraper:
+    """Routes get_active_tournament_calendar/get_squads to a per-comp
+    FakeScraper, for tests exercising more than one competition against a
+    single `scraper` instance (matches main()'s real usage: one OptaScraper()
+    instance, fetch_competition() called once per comp)."""
+
+    def __init__(self, scrapers_by_comp):
+        self._scrapers = scrapers_by_comp
+        self._last_comp = None
+
+    def get_active_tournament_calendar(self, comp):
+        self._last_comp = comp
+        return self._scrapers[comp].get_active_tournament_calendar(comp)
+
+    def get_squads(self, tmcl):
+        return self._scrapers[self._last_comp].get_squads(tmcl)
+
+
 def _club(name, n_players, n_coaches=0, n_inactive=0, cid="c1", start=0):
     people = [{"id": f"p{start + i}", "type": "player", "active": "yes",
                "position": "Midfielder"} for i in range(n_players)]
@@ -121,15 +139,46 @@ def _run_main(monkeypatch, tmp_path, squads, extra_argv=()):
     return build_squads.main(), out
 
 
-def test_main_refuses_to_write_when_a_player_is_in_two_squads(monkeypatch, tmp_path):
-    # A player in two squads multiplies his rows on the ratings join. Observed
-    # 0 on the live feed, but a cross-league loan is exactly how it arrives.
-    squads = _full_league()
-    dup = squads[0]["person"][0]["id"]
-    squads[1]["person"][0]["id"] = dup
-    rc, out = _run_main(monkeypatch, tmp_path, squads)
-    assert rc != 0
-    assert not out.exists()
+def test_main_resolves_a_player_in_two_squads_by_keeping_the_earlier_comp(monkeypatch, tmp_path):
+    # A player in two squads would multiply his rows on the ratings join if
+    # left unresolved. At Big-5-only scale this never happened in practice and
+    # main() refused outright (a cross-league loan was the only plausible
+    # cause). Widened to 49 leagues (pannadata#132), a real case surfaced
+    # immediately: reserve/feeder-team structures (e.g. Auckland FC senior
+    # squad vs "Auckland II" in a separate domestic competition) legitimately
+    # share players. main() now resolves deterministically instead of
+    # refusing: keep the row from whichever competition is listed EARLIER in
+    # `--comps`, drop the rest.
+    out = tmp_path / "squads.parquet"
+    senior = _full_league(n_clubs=MIN_CLUBS)
+    reserve = _full_league(n_clubs=MIN_CLUBS)
+    # Give the reserve league's own players distinct ids (avoid accidental
+    # overlap with senior's), then re-introduce ONE intentional shared id --
+    # the case under test.
+    for club in reserve:
+        for person in club["person"]:
+            person["id"] = "r_" + person["id"]
+    dup = senior[0]["person"][0]["id"]
+    reserve[0]["person"][0]["id"] = dup
+
+    # Each comp needs its own scraper instance (different squad payload),
+    # routed through _DispatchScraper since main() creates one OptaScraper()
+    # and calls fetch_competition() with it once per comp.
+    scrapers = {"SeniorComp": FakeScraper(senior), "ReserveComp": FakeScraper(reserve)}
+    monkeypatch.setattr(build_squads, "OptaScraper",
+                        lambda *a, **k: _DispatchScraper(scrapers))
+    monkeypatch.setattr(build_squads.sys, "argv",
+                        ["build_squads.py", "--comps", "SeniorComp", "ReserveComp",
+                         "--out", str(out)])
+    rc = build_squads.main()
+    assert rc == 0
+    assert out.exists()
+
+    import pandas as pd
+    df = pd.read_parquet(out)
+    rows = df[df["player_id"] == dup]
+    assert len(rows) == 1
+    assert rows.iloc[0]["league"] == "SeniorComp"
 
 
 def test_main_refuses_to_write_a_partial_file_by_default(monkeypatch, tmp_path):

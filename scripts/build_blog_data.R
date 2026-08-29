@@ -500,16 +500,21 @@ if (file.exists(lineups_path)) {
 # team/league is wherever a player was LAST RATED, so it reads end-of-season —
 # Salah still "Liverpool", Bruno Guimaraes still "Newcastle" — for weeks after
 # a real transfer, exactly when it matters most. squads.parquet (built daily by
-# scripts/opta/build_squads.py from Opta's live squads feed, Big 5 leagues
-# only) answers "who is at this club right now" directly, keyed on the same
-# player_id. Applied here, AFTER the recovery bind_rows above, so it covers
-# BOTH populations in panna_ratings — the active season-rated pool and the
-# ~half of rows that come from recently-active-but-under-minuted recovery,
-# which is exactly the profile of a player who just transferred and hasn't
-# logged minutes at the new club yet (review finding on the first version of
-# this fix, which only touched the active pool). A player outside the Big 5
-# (squads.parquet's current coverage) or missing from this run's feed simply
-# keeps the prior value — never worse than before.
+# scripts/opta/build_squads.py from Opta's live squads feed) answers "who is
+# at this club right now" directly, keyed on the same player_id. Coverage was
+# Big-5 only at #123's original ship; widened to every domestic league panna
+# rates a player in (49 leagues) 2026-08-29 (pannadata#132), after Salah's own
+# real move (to Trabzonspor, Turkish Süper Lig) showed the Big-5-only version
+# still couldn't catch a departure TO a covered-but-non-Big-5 league. Applied
+# here, AFTER the recovery bind_rows above, so it covers BOTH populations in
+# panna_ratings — the active season-rated pool and the ~half of rows that come
+# from recently-active-but-under-minuted recovery, which is exactly the
+# profile of a player who just transferred and hasn't logged minutes at the
+# new club yet (review finding on the first version of this fix, which only
+# touched the active pool). A player outside squads.parquet's coverage (a
+# league panna doesn't rate players in at all, or genuinely retired/departed
+# football) or missing from this run's feed simply keeps the prior value —
+# never worse than before.
 squads_path <- "source/squads.parquet"
 if (file.exists(squads_path) && dedup_key == "player_id") {
   squads <- read_parquet(squads_path) |>

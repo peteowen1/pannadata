@@ -701,15 +701,25 @@ jobs:
     # standings could be 5-6 days stale. WORKFLOW_PAT is a cross-repo PAT with
     # workflow scope (already configured for the reverse direction in
     # predictions-pipeline.yml). See pannadata#28 / inthegame-blog#189.
-    # Current club squads (pannadata#123). Lives here, not in
-    # build-blog-data.yml, because that workflow has neither a Python setup nor
-    # OPTA_OUTLET_ID -- this is the only workflow that talks to the live feed.
+    # Current club squads (pannadata#123, widened to 49 domestic leagues by
+    # #132). Lives here, not in build-blog-data.yml, because that workflow has
+    # neither a Python setup nor OPTA_OUTLET_ID -- this is the only workflow
+    # that talks to the live feed.
     #
     # continue-on-error, deliberately: squads.parquet is a side artifact. The
     # scrape's own output and the downstream predictions dispatch must not be
-    # held hostage to it, and build_squads.py refuses to write a partial file
-    # rather than shipping a club with nobody in it -- so a bad day here leaves
-    # yesterday's squads on the release, which is the right failure.
+    # held hostage to it.
+    #
+    # --allow-partial, deliberately, as of #132: at 5 leagues the odds of any
+    # one comp having a bad day were low enough that refusing the WHOLE file
+    # on ANY problem was the safer default. At 49 leagues that math flips --
+    # a single thin/flaky league (a smaller top flight sitting close to
+    # MIN_CLUBS, a transient API hiccup) would otherwise block freshness for
+    # the other 48 every time it happens, which is worse than the alternative:
+    # that one league's players simply keep falling back to stale
+    # ratings.parquet data, exactly as every uncovered league already does.
+    # A wholesale failure (e.g. the API itself down) still produces zero rows
+    # and hits the "not produced" guard below, unchanged.
     - name: Build current club squads
       continue-on-error: true
       env:
@@ -717,8 +727,8 @@ jobs:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         mkdir -p opta
-        if ! python scripts/opta/build_squads.py --out opta/squads.parquet; then
-          echo "::warning::build_squads.py refused to write -- keeping the previous squads.parquet on opta-latest"
+        if ! python scripts/opta/build_squads.py --allow-partial --out opta/squads.parquet; then
+          echo "::warning::build_squads.py failed to write -- keeping the previous squads.parquet on opta-latest"
           exit 0
         fi
         if [ ! -f opta/squads.parquet ]; then
