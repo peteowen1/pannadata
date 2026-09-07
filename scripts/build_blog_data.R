@@ -3,6 +3,7 @@ library(dplyr)
 
 # Shared blog league config (BLOG_COMP_EXCLUDE — comps we drop from blog outputs).
 source("scripts/league_config.R")
+source("scripts/quality_gates.R")
 
 # Player ratings - latest season xRAPM + SPM
 for (f in c("source/seasonal_xrapm.parquet", "source/seasonal_spm.parquet", "source/player_metadata.parquet")) {
@@ -321,17 +322,11 @@ for (col in c("epr", "psr", "epr_offensive", "epr_defensive", "osr", "dsr")) {
 # SPM at any minutes, hence the nonzero baseline.
 heavy <- panna_ratings$total_minutes >= 900
 na_spm_heavy <- sum(heavy & is.na(panna_ratings$spm_overall))
-# A RATE needs a denominator big enough to be a rate. Three matchweeks into a
-# season nobody has 900 minutes yet: on 2026-09-04 this gate saw ONE such
-# player, that player had no SPM row, and 1/1 = 100% tripped a threshold set
-# at 15.5% on a full season. The build then failed every day for three days,
-# so nothing reached R2 at all — a false alarm that cost more than the drift
-# it watches for. max(sum(heavy), 1) protects the division from zero but says
-# nothing about whether the ratio means anything.
-#
-# 50 is well below any real mid-season count (thousands) and well above the
-# season-start trickle, so the gate is off exactly while it cannot work and on
-# everywhere it can. It is announced either way: a silently skipped check is
+# The predicate and the reasoning behind its minimum sample live in
+# scripts/quality_gates.R, where they can be tested without running the whole
+# build. Short version: a rate needs a denominator big enough to be a rate, and
+# on 2026-09-04 this one judged a sample of ONE and blocked publishing for
+# three days. It is announced either way below — a silently skipped check is
 # how a gate rots.
 SPM_HEAVY_MIN_N <- 50
 spm_heavy_rate <- na_spm_heavy / max(sum(heavy), 1)
@@ -353,7 +348,7 @@ stopifnot(
   # which is in the thousands from the first matchweek, so it stays meaningful
   # when the heavy-minutes one cannot.
   na_spm / nrow(panna_ratings) < 0.4,
-  sum(heavy) < SPM_HEAVY_MIN_N || spm_heavy_rate < 0.3
+  spm_heavy_join_ok(sum(heavy), na_spm_heavy, min_n = SPM_HEAVY_MIN_N)
 )
 
 # ── Recover recently-active career players (bounded Option B) ─────────────────
