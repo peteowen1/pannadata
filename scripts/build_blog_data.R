@@ -3,6 +3,7 @@ library(dplyr)
 
 # Shared blog league config (BLOG_COMP_EXCLUDE — comps we drop from blog outputs).
 source("scripts/league_config.R")
+source("scripts/quality_gates.R")
 
 # Player ratings - latest season xRAPM + SPM
 for (f in c("source/seasonal_xrapm.parquet", "source/seasonal_spm.parquet", "source/player_metadata.parquet")) {
@@ -321,8 +322,21 @@ for (col in c("epr", "psr", "epr_offensive", "epr_defensive", "osr", "dsr")) {
 # SPM at any minutes, hence the nonzero baseline.
 heavy <- panna_ratings$total_minutes >= 900
 na_spm_heavy <- sum(heavy & is.na(panna_ratings$spm_overall))
+# The predicate and the reasoning behind its minimum sample live in
+# scripts/quality_gates.R, where they can be tested without running the whole
+# build. Short version: a rate needs a denominator big enough to be a rate, and
+# on 2026-09-04 this one judged a sample of ONE and blocked publishing for
+# three days. It is announced either way below — a silently skipped check is
+# how a gate rots.
+SPM_HEAVY_MIN_N <- 50
+spm_heavy_rate <- na_spm_heavy / max(sum(heavy), 1)
 cat("SPM join (900+ min):", sum(heavy) - na_spm_heavy, "/", sum(heavy),
-    "matched (", round(100 * na_spm_heavy / max(sum(heavy), 1), 1), "% missing)\n")
+    "matched (", round(100 * spm_heavy_rate, 1), "% missing)\n")
+if (sum(heavy) < SPM_HEAVY_MIN_N) {
+  cat("  NOTE: only", sum(heavy), "players at 900+ minutes (<", SPM_HEAVY_MIN_N,
+      ") — the heavy-minutes drift gate is SKIPPED this run, which is expected",
+      "at the start of a season. The global gate below still applies.\n")
+}
 stopifnot(
   nrow(panna_ratings) == n_before - n_excl,  # joins didn't fan out (allowing the excluded comps)
   nrow(panna_ratings) > 0,
@@ -330,8 +344,11 @@ stopifnot(
   # Measured baselines on 2026-06-11 (the day MLS/Liga MX/Argentina/Saudi
   # shipped): global 25.1% (mid-season calendar-year leagues carry many
   # players with xRAPM evidence but no SPM row), 900+-minutes 15.5%.
+  # The global gate keeps no minimum: its denominator is every rated player,
+  # which is in the thousands from the first matchweek, so it stays meaningful
+  # when the heavy-minutes one cannot.
   na_spm / nrow(panna_ratings) < 0.4,
-  na_spm_heavy / max(sum(heavy), 1) < 0.3
+  spm_heavy_join_ok(sum(heavy), na_spm_heavy, min_n = SPM_HEAVY_MIN_N)
 )
 
 # ── Recover recently-active career players (bounded Option B) ─────────────────
