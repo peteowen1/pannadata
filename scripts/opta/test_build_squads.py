@@ -189,13 +189,24 @@ def test_main_resolves_a_repeated_cross_squad_pattern_by_keeping_the_earlier_com
         assert rows.iloc[0]["league"] == "SeniorComp"
 
 
-def test_main_refuses_a_one_off_cross_squad_duplicate(monkeypatch, tmp_path):
+def test_main_drops_a_one_off_cross_squad_duplicate_but_writes_everyone_else(monkeypatch, tmp_path):
     # A SINGLE player_id shared between two squads, with no other player
     # repeating that same league pair, is NOT auto-resolved -- it looks
     # exactly like a mid-season loan or an in-flight transfer, where the
-    # earlier-listed competition could easily be the STALE one. Refusing
-    # loudly (rather than confidently guessing) is the safe default here,
-    # matching the pre-#132 behaviour for this specific shape.
+    # earlier-listed competition could easily be the STALE one.
+    #
+    # Originally this refused to write the WHOLE file (pre-#132 behaviour,
+    # matching test_main_refuses_to_write_a_partial_file_by_default's spirit).
+    # At Big-5-only scale that was a rare, genuine alarm. Widened to 49
+    # leagues, some one-off ambiguous transfer became close to guaranteed on
+    # any given day during a transfer window -- confirmed live: this exact
+    # path silently froze squads.parquet for 12+ days (2026-08-30 to 09-10),
+    # masked by the caller's continue-on-error. Refusing the whole file over
+    # one ambiguous player became a routine, near-permanent failure mode
+    # rather than a rare one -- the opposite of what "refuse outright" was
+    # meant to buy. Now drops just the ambiguous player and writes everyone
+    # else, matching how a REPEATED (structural) duplicate is already
+    # resolved rather than blocking the whole file.
     out = tmp_path / "squads.parquet"
     senior = _full_league(n_clubs=MIN_CLUBS)
     reserve = _full_league(n_clubs=MIN_CLUBS)
@@ -212,8 +223,19 @@ def test_main_refuses_a_one_off_cross_squad_duplicate(monkeypatch, tmp_path):
                         ["build_squads.py", "--comps", "SeniorComp", "ReserveComp",
                          "--out", str(out)])
     rc = build_squads.main()
-    assert rc != 0
-    assert not out.exists()
+    assert rc == 0
+    assert out.exists()
+
+    import pandas as pd
+    df = pd.read_parquet(out)
+    # The ambiguous player is dropped from BOTH squads, not kept under either.
+    assert len(df[df["player_id"] == dup]) == 0
+    # Everyone else survives: the dup player_id is dropped from BOTH squads
+    # (one row in each before filtering), so each league loses exactly 1.
+    senior_n = sum(len(c["person"]) for c in senior) - 1
+    reserve_n = sum(len(c["person"]) for c in reserve) - 1
+    assert len(df[df["league"] == "SeniorComp"]) == senior_n
+    assert len(df[df["league"] == "ReserveComp"]) == reserve_n
 
 
 def test_main_refuses_to_write_a_partial_file_by_default(monkeypatch, tmp_path):
