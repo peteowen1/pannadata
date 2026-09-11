@@ -41,6 +41,23 @@ if (!file.exists(career_path)) stop("Required file not found: ", career_path,
 career_panna <- read_parquet(career_path)
 career_missing <- setdiff(c(dedup_key, "panna", "panna_offense", "panna_defense"), names(career_panna))
 if (length(career_missing) > 0) stop("career_panna missing columns: ", paste(career_missing, collapse = ", "))
+# Sign-convention guard (panna#F1, 2026-09-07/11): a career_panna.parquet built before
+# the 2026-09-04 positive=good flip -- or missing the tag entirely -- must not be read
+# as if it were already flipped, or panna_defense ships inverted (elite defenders as
+# the worst in the game). Mirrors panna's .assert_career_panna_sign_convention(); this
+# script has no panna dependency, so the check is inlined rather than shared.
+CAREER_PANNA_SIGN_CONVENTION <- "defense_positive_good"
+if (!"sign_convention" %in% names(career_panna)) {
+  stop("career_panna.parquet has no sign_convention column -- it predates the ",
+       "sign-convention tagging (panna#F1). Regenerate it with panna's ",
+       "data-raw/estimated-skills/09_career_panna.R.")
+}
+career_tag <- unique(career_panna$sign_convention)
+if (!identical(career_tag, CAREER_PANNA_SIGN_CONVENTION)) {
+  stop("career_panna.parquet is tagged '", career_tag, "', expected '",
+       CAREER_PANNA_SIGN_CONVENTION, "' -- reading panna_defense under the wrong ",
+       "sign convention silently inverts it.")
+}
 career <- career_panna |>
   group_by(.data[[dedup_key]]) |>
   slice_max(total_minutes, n = 1, with_ties = FALSE) |>
