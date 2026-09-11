@@ -232,7 +232,6 @@ def main():
     # of a silently wrong club.
     dupes = df[df.duplicated("player_id", keep=False)]
     if not dupes.empty:
-        n = dupes["player_id"].nunique()
         league_pairs = (
             dupes.groupby("player_id")["league"]
             .apply(lambda leagues: tuple(sorted(leagues)))
@@ -241,6 +240,20 @@ def main():
         repeated_pairs = set(pair_counts[pair_counts >= 2].index)
         singleton_pids = league_pairs[~league_pairs.isin(repeated_pairs)].index
 
+        # At 5-league (Big-5) scale, refusing the WHOLE file over one ambiguous
+        # in-flight transfer was the safe default -- it happened rarely enough
+        # to be a real alarm. At 49 leagues in September, an ambiguous transfer
+        # somewhere is close to guaranteed on any given day (confirmed live:
+        # this exact path silently froze squads.parquet for 12+ days, Aug 30 -
+        # Sep 10, masked by the caller's continue-on-error). So the file-wide
+        # refusal became a routine, near-permanent failure mode rather than a
+        # rare one -- the opposite of what "refuse outright" was meant to buy.
+        # Drop just the ambiguous player(s) instead: they fall back to stale
+        # ratings.parquet team data (same degraded-but-honest state any
+        # uncovered league already has) while everyone else stays fresh.
+        # Logged loudly either way, so a human CAN still notice and resolve
+        # manually if they're looking -- it just no longer holds every other
+        # player hostage while they aren't.
         if len(singleton_pids) > 0:
             print(f"\n{len(singleton_pids)} player_id(s) appear in more than one "
                   f"squad with NO repeated pattern (not a structural feeder/"
@@ -251,25 +264,28 @@ def main():
                     f"{row['team']} ({row['league']})"
                     for _, row in dupes[dupes["player_id"] == pid].iterrows())
                 print(f"  - {pid}: {rows_desc}")
-            print("\nRefusing to write: cannot safely guess which squad is "
-                  "current for the player(s) above. Rerun once the feeds "
-                  "agree, or resolve manually.")
-            return 1
+            print(f"\nDropping {len(singleton_pids)} ambiguous player(s) from this "
+                  f"build rather than refusing the whole file -- they fall back "
+                  f"to stale team data until the feeds agree. Rerun to pick them "
+                  f"up once resolved, or resolve manually.")
+            df = df[~df["player_id"].isin(singleton_pids)]
+            dupes = dupes[~dupes["player_id"].isin(singleton_pids)]
 
-        print(f"\n{n} player_id(s) appear in more than one squad, all as part "
-              f"of a repeated (structural) pattern -- resolving by keeping "
-              f"the earlier-listed competition (senior over feeder/reserve):")
-        comp_rank = {c: i for i, c in enumerate(args.comps)}
-        df["_comp_rank"] = df["league"].map(comp_rank)
-        df = df.sort_values(["player_id", "_comp_rank"])
-        resolved = df[df["player_id"].isin(dupes["player_id"])]
-        for pid, grp in resolved.groupby("player_id"):
-            kept_row = grp.iloc[0]
-            dropped_desc = ", ".join(
-                f"{row['team']} ({row['league']})" for _, row in grp.iloc[1:].iterrows())
-            kept_desc = f"{kept_row['team']} ({kept_row['league']})"
-            print(f"  - {pid}: kept {kept_desc}, dropped {dropped_desc}")
-        df = df.drop_duplicates(subset="player_id", keep="first").drop(columns="_comp_rank")
+        if not dupes.empty:
+            print(f"\n{dupes['player_id'].nunique()} player_id(s) appear in more than one squad, "
+                  f"all as part of a repeated (structural) pattern -- resolving by keeping "
+                  f"the earlier-listed competition (senior over feeder/reserve):")
+            comp_rank = {c: i for i, c in enumerate(args.comps)}
+            df["_comp_rank"] = df["league"].map(comp_rank)
+            df = df.sort_values(["player_id", "_comp_rank"])
+            resolved = df[df["player_id"].isin(dupes["player_id"])]
+            for pid, grp in resolved.groupby("player_id"):
+                kept_row = grp.iloc[0]
+                dropped_desc = ", ".join(
+                    f"{row['team']} ({row['league']})" for _, row in grp.iloc[1:].iterrows())
+                kept_desc = f"{kept_row['team']} ({kept_row['league']})"
+                print(f"  - {pid}: kept {kept_desc}, dropped {dropped_desc}")
+            df = df.drop_duplicates(subset="player_id", keep="first").drop(columns="_comp_rank")
 
     df["build_id"] = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
