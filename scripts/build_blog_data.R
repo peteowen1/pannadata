@@ -58,6 +58,28 @@ if (!identical(career_tag, CAREER_PANNA_SIGN_CONVENTION)) {
        CAREER_PANNA_SIGN_CONVENTION, "' -- reading panna_defense under the wrong ",
        "sign convention silently inverts it.")
 }
+# Drop the synthetic replacement-pool row. rapm_matrix.R creates
+# player_id == "replacement" to pool every <200-min player; it is a model
+# artefact, not a person, and panna's own blog exporter drops it
+# (10_export_blog_data.R:62, and panna/CLAUDE.md "Replacement Level filter at
+# export"). career_panna.parquet is NOT filtered upstream the way the
+# rapm_raw files below are, so without this it reaches the published blog
+# file -- confirmed live 2026-09-12: "Replacement Level" was sitting in
+# football/ratings.parquet on R2 with panna = -0.1486 and a nonsense
+# 364,603-minute total, inside the ratings table the site ranks players from.
+# Keyed on player_id where available (the id is literally "replacement");
+# dedup_key can be player_name, where the same row reads "Replacement Level".
+n_before <- nrow(career_panna)
+career_panna <- if ("player_id" %in% names(career_panna)) {
+  career_panna[career_panna$player_id != "replacement", , drop = FALSE]
+} else {
+  career_panna[career_panna$player_name != "Replacement Level", , drop = FALSE]
+}
+n_dropped <- n_before - nrow(career_panna)
+if (n_dropped != 1L) {
+  message("NOTE: expected exactly 1 replacement-pool row in career_panna, dropped ", n_dropped)
+}
+
 career <- career_panna |>
   group_by(.data[[dedup_key]]) |>
   slice_max(total_minutes, n = 1, with_ties = FALSE) |>
