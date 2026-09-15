@@ -664,7 +664,7 @@ if (file.exists(squads_path) && dedup_key == "player_id") {
 # pannaverse/PIERO-POOL-INDEPENDENCE.md in the parent repo).
 #
 # Method (mirrors the JS exactly):
-#   weights panna 0.5 / epr 0.3 / psr 0.2
+#   weights panna 0.4 / psr 0.3 / spmr 0.2 / epr 0.1 (see PIERO_WEIGHTS below)
 #   1. per-metric POPULATION mean/sd over finite values (sd <- 1 if degenerate)
 #   2. z_m = (value - mu_m) / sd_m  (NA where the metric is missing)
 #   3. blend = sum(w_m * z_m) / sum(w_m) over the metrics PRESENT for that row
