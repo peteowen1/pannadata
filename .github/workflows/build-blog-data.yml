@@ -44,6 +44,17 @@ jobs:
           gh release download ratings-data -p "player_metadata.parquet" -D source/ || { echo "ERROR: Failed to download player_metadata.parquet"; exit 1; }
           gh release download ratings-data -p "career_panna.parquet" -D source/ || { echo "ERROR: Failed to download career_panna.parquet"; exit 1; }
 
+          # SPMR (decay-weighted SPM) — feeds Piero at weight 0.20 since
+          # 2026-09-15. OPTIONAL only until the first publish; build_blog_data.R
+          # emits a ::warning:: and reweights the other three if it is absent,
+          # which changes Piero under the same name — so treat a miss here as a
+          # real problem, not routine degradation.
+          if gh release download ratings-data -p "career_spm.parquet" -D source/; then
+            echo "Downloaded career_spm.parquet"
+          else
+            echo "::warning::career_spm.parquet not available — Piero will reweight to ~.53/.40/.13"
+          fi
+
           # Raw prior-free RAPM (panna#165 — optional until the first Opta
           # pipeline run with the raw-RAPM export publishes them; the
           # build_blog_data.R loaders degrade to NA columns when absent)

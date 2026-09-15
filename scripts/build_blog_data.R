@@ -124,6 +124,54 @@ load_latest_snapshot <- function(path, value_col) {
 epr <- load_latest_snapshot("source/opta_epr_weekly.parquet", c("epr", "epr_offensive", "epr_defensive"))
 psr <- load_latest_snapshot("source/opta_psr_weekly.parquet", c("psr", "osr", "dsr"))
 
+# SPMR (decay-weighted SPM) — a CAREER file, not a weekly snapshot, so it loads
+# like career_panna rather than through load_latest_snapshot(). Joined the
+# blog's Piero composite 2026-09-15 at weight 0.20 after a W/D/L multinomial
+# holdout ranked the four traits PSR > panna > SPMR > EPR and found the ladder
+# panna .4 / PSR .3 / SPMR .2 / EPR .1 beat the shipped .5/.3/.2 in 5 of 5
+# held-out seasons (t = -3.89) while putting THREE defenders in the top 50
+# instead of two and keeping goalkeepers out entirely.
+#
+# Why SPMR earns a slot despite adding almost nothing on its own: it correlates
+# 0.912 with panna, so it holds the panna-like structure that keeps keepers off
+# the leaderboard while PSR supplies the prediction gain. An unconstrained
+# optimum (PSR 0.7) scores better still but puts SIX keepers in the top 50.
+# Evidence: pannaverse docs/reviews/PIERO-WEIGHTS-WITH-SPMR-2026-09-15.md.
+#
+# OPTIONAL like EPR/PSR, but the degradation is NOT silent: the Piero blend
+# renormalizes over present metrics, so a missing SPMR silently reweights the
+# other three to .53/.40/.13 -- a different rating under the same name. Say so
+# loudly rather than shipping it unannounced.
+SPMR_SIGN_CONVENTION <- "defense_positive_good"
+spmr_path <- "source/career_spm.parquet"
+spmr <- if (!file.exists(spmr_path)) {
+  cat("::warning::career_spm.parquet ABSENT — Piero drops to panna/psr/epr and\n",
+      "  renormalizes to ~.53/.40/.13, NOT the intended .4/.3/.2/.1 blend.\n", sep = "")
+  NULL
+} else {
+  df <- read_parquet(spmr_path)
+  need <- c(dedup_key, "spmr")
+  if (!all(need %in% names(df))) {
+    stop("career_spm.parquet missing ", paste(setdiff(need, names(df)), collapse = ", "))
+  }
+  # Same guard as career_panna: an untagged or wrongly-tagged file would ship
+  # dspmr inverted. career_rapm.parquet shipped untagged AND inverted for 12
+  # days (panna#F1) precisely because nothing asserted this.
+  if (!"sign_convention" %in% names(df)) {
+    stop("career_spm.parquet has no sign_convention column — regenerate it with ",
+         "panna's data-raw/estimated-skills/09d_spmr.R.")
+  }
+  spmr_tag <- unique(df$sign_convention)
+  if (!identical(spmr_tag, SPMR_SIGN_CONVENTION)) {
+    stop("career_spm.parquet is tagged '", spmr_tag, "', expected '",
+         SPMR_SIGN_CONVENTION, "' — reading dspmr under the wrong sign ",
+         "convention silently inverts it.")
+  }
+  df |>
+    filter(!is.na(.data[[dedup_key]]), .data[[dedup_key]] != "replacement") |>
+    select(all_of(dedup_key), spmr, any_of(c("ospmr", "dspmr")))
+}
+
 # Raw (prior-free) RAPM — panna#165, Pete's transparency call: publish the
 # un-shrunk signal alongside the shrunk xrapm/panna, clearly labelled so it
 # can't be confused with either. Two OPTIONAL sources from the ratings-data
@@ -256,6 +304,7 @@ enriched <- left_join(enriched, career, by = dedup_key)
 # EPR / PSR (optional — present only if the opta-latest snapshots downloaded).
 if (!is.null(epr)) enriched <- left_join(enriched, epr, by = dedup_key)
 if (!is.null(psr)) enriched <- left_join(enriched, psr, by = dedup_key)
+if (!is.null(spmr)) enriched <- left_join(enriched, spmr, by = dedup_key)
 
 # Raw RAPM (optional — present only if the ratings-data raw-RAPM files downloaded).
 if (!is.null(rapm_raw_seasonal)) enriched <- left_join(enriched, rapm_raw_seasonal, by = dedup_key)
@@ -314,7 +363,8 @@ panna_ratings <- enriched |>
     # composite, plus their offense/defense splits (epr_offensive/epr_defensive
     # sum to epr; osr/dsr sum to psr, by construction upstream). any_of() so
     # the build still works if the snapshots are absent.
-    any_of(c("epr", "psr", "epr_offensive", "epr_defensive", "osr", "dsr")),
+    any_of(c("epr", "psr", "epr_offensive", "epr_defensive", "osr", "dsr",
+            "spmr", "ospmr", "dspmr")),
     xrapm, xrapm_offense, xrapm_defense,
     total_minutes,
     panna_percentile,
@@ -337,6 +387,7 @@ panna_ratings <- enriched |>
   mutate(across(any_of(c("panna", "offense", "defense", "xrapm", "xrapm_offense",
                          "xrapm_defense", "spm_overall", "epr", "psr",
                          "epr_offensive", "epr_defensive", "osr", "dsr",
+                         "spmr", "ospmr", "dspmr",
                          "rapm_raw", "rapm_raw_offense", "rapm_raw_defense",
                          "rapm_raw_pooled", "rapm_raw_pooled_offense", "rapm_raw_pooled_defense")),
                 \(x) round(x, 4))) |>
@@ -345,7 +396,8 @@ panna_ratings <- enriched |>
 na_spm <- sum(is.na(panna_ratings$spm_overall))
 cat("SPM join:", nrow(panna_ratings) - na_spm, "/", nrow(panna_ratings),
     "matched (", round(100 * na_spm / nrow(panna_ratings), 1), "% missing)\n")
-for (col in c("epr", "psr", "epr_offensive", "epr_defensive", "osr", "dsr")) {
+for (col in c("epr", "psr", "epr_offensive", "epr_defensive", "osr", "dsr",
+              "spmr", "ospmr", "dspmr")) {
   if (col %in% names(panna_ratings)) {
     n_ok <- sum(!is.na(panna_ratings[[col]]))
     cat(toupper(col), "join:", n_ok, "/", nrow(panna_ratings),
@@ -621,7 +673,13 @@ if (file.exists(squads_path) && dedup_key == "player_id") {
 #   5. piero = ((blend - mu_blend)/sd_blend) * sd_panna + mu_panna, rounded 4dp
 # `panna` here is the CAREER trait (never the season xrapm) — guaranteed because
 # panna_ratings$panna is the career column assembled above.
-PIERO_WEIGHTS <- c(panna = 0.5, epr = 0.3, psr = 0.2)
+# Weights re-derived 2026-09-15 against W/D/L multinomial log-loss with
+# elo_diff present, walk-forward over held-out seasons 2022-2026 (27,113
+# matches). Beat the previous .5/.3/.2 in 5 of 5 seasons (t = -3.89) and puts
+# three defenders in the top 50 instead of two, with no goalkeepers.
+# Full grid, the rejected alternatives and the ranking evidence:
+# pannaverse docs/reviews/PIERO-WEIGHTS-WITH-SPMR-2026-09-15.md
+PIERO_WEIGHTS <- c(panna = 0.4, psr = 0.3, spmr = 0.2, epr = 0.1)
 piero_metrics <- names(PIERO_WEIGHTS)
 
 # Population mean/sd over finite values; sd falls back to 1 (matches JS meanSd:
