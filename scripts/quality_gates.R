@@ -42,3 +42,22 @@ spm_heavy_join_ok <- function(n_heavy, n_missing, min_n = 50, max_rate = 0.3) {
   if (n_heavy < min_n) return(TRUE)
   n_missing / n_heavy < max_rate
 }
+
+#' Is a Piero-input metric's coverage over the final pool acceptable?
+#'
+#' Piero's blend renormalizes over whichever metrics are present, so thin
+#' coverage on one metric doesn't blank Piero for the players it's missing on
+#' -- it silently gives most of the pool a DIFFERENT weighting under the same
+#' column name. build_blog_data.R printed this as a `::warning::` annotation
+#' for a while (2026-09-15, spmr covered 2,754 of 19,167) and nobody acted on
+#' it, because a printed diagnostic is not a check -- see
+#' `spm_heavy_join_ok()`'s own history above for the same lesson learned once
+#' already. This predicate exists so the gate can actually stop the build.
+#'
+#' @param cov_frac Fraction of the final pool with a finite value for the metric.
+#' @param min_frac Minimum acceptable coverage, exclusive of the fail side.
+#' @return TRUE if coverage is acceptable.
+piero_metric_coverage_ok <- function(cov_frac, min_frac = 0.5) {
+  stopifnot(cov_frac >= 0, cov_frac <= 1)
+  cov_frac >= min_frac
+}

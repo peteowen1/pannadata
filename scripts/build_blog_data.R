@@ -746,19 +746,27 @@ cat("Piero:", sum(!is.na(panna_ratings$piero)), "/", nrow(panna_ratings),
 # the coverage report further up runs BEFORE the recency recovery binds
 # thousands more rows, so a metric joined only on the active path looks fine
 # there and is mostly absent here.
+thin_metrics <- character(0)
 for (m in piero_present) {
   cov_frac <- sum(is.finite(panna_ratings[[m]])) / nrow(panna_ratings)
-  if (cov_frac < 0.5) {
+  if (!piero_metric_coverage_ok(cov_frac)) {
     rest <- setdiff(piero_present, m)
     eff <- round(100 * PIERO_WEIGHTS[rest] / sum(PIERO_WEIGHTS[rest]))
-    cat(sprintf(paste0("::warning::Piero metric '%s' covers only %.1f%% of the final ",
+    cat(sprintf(paste0("::error::Piero metric '%s' covers only %.1f%% of the final ",
                        "pool -- the other %.0f%% of players blend at %s instead of the ",
                        "intended weights. Check '%s' is joined on the RECOVERY path ",
                        "too, not just the active one.
 "),
                 m, 100 * cov_frac, 100 * (1 - cov_frac),
                 paste(sprintf("%s %d%%", names(eff), eff), collapse = "/"), m))
+    thin_metrics <- c(thin_metrics, m)
   }
+}
+# A printed diagnostic is not a check (this file's own history, 2026-09-15:
+# spmr covered 2,754 of 19,167 and the build stayed green). Actually stop.
+if (length(thin_metrics) > 0) {
+  stop("Piero metric(s) below the coverage floor: ", paste(thin_metrics, collapse = ", "),
+       " -- see the ::error:: annotation(s) above for the fix.")
 }
 
 # Persist the reference constants so the WC squads build (panna step 12) can
