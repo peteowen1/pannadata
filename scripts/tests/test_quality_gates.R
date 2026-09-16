@@ -60,6 +60,18 @@ local({
   failed <<- before
 })
 
+# --- piero_metric_coverage_ok: the "printed diagnostic is not a check" gate ---
+# 2026-09-15: spmr covered 2,754 of 19,167 (14.4%) and the build stayed green
+# because the check only cat()'d a warning. This predicate is what the fix
+# actually calls to stop() the build -- test it directly against that incident.
+chk("the 2026-09-15 incident (14.4%) -> FAIL", piero_metric_coverage_ok(2754 / 19167), FALSE)
+chk("exactly 50% -> pass (threshold inclusive)", piero_metric_coverage_ok(0.5), TRUE)
+chk("just under 50% -> FAIL", piero_metric_coverage_ok(0.499), FALSE)
+chk("full coverage -> pass", piero_metric_coverage_ok(1), TRUE)
+chk("zero coverage -> FAIL", piero_metric_coverage_ok(0), FALSE)
+chk("out-of-range input is refused",
+    inherits(try(piero_metric_coverage_ok(1.1), silent = TRUE), "try-error"), TRUE)
+
 if (failed > 0L) {
   cat("\n", failed, "check(s) failed\n")
   quit(status = 1L)

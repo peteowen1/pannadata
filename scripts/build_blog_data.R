@@ -538,6 +538,14 @@ if (file.exists(lineups_path)) {
               by = dedup_key)
   if (!is.null(epr)) recov <- left_join(recov, epr, by = dedup_key)
   if (!is.null(psr)) recov <- left_join(recov, psr, by = dedup_key)
+  # spmr MUST be joined here too, not just on the active path. Recovered players
+  # are the MAJORITY of the published pool (16,277 of 19,167 on the 2026-09-15
+  # build), and Piero renormalizes over whichever metrics a row has -- so
+  # omitting it here does not blank their Piero, it silently gives them a
+  # DIFFERENT blend (~.53/.40/.13) from the active players' .4/.3/.2/.1. Two
+  # Pieros in one file under one name, which is the exact divergence
+  # pannaverse/docs/reviews/PIERO-POOL-INDEPENDENCE.md exists to prevent.
+  if (!is.null(spmr)) recov <- left_join(recov, spmr, by = dedup_key)
   if ("league" %in% names(recov))   # honour BLOG_COMP_EXCLUDE for recovered too
     recov <- recov |> filter(is.na(league) | !league %in% BLOG_COMP_EXCLUDE)
   recov <- recov |> select(any_of(names(panna_ratings)))  # bind_rows NA-fills the rest
@@ -547,7 +555,8 @@ if (file.exists(lineups_path)) {
   # epr/psr columns, fabricating Piero inputs and corrupting the published
   # parquet. Use the same intersected set on both sides.
   round_cols <- intersect(c("panna","offense","defense","epr","psr",
-                            "epr_offensive","epr_defensive","osr","dsr"), names(recov))
+                            "epr_offensive","epr_defensive","osr","dsr",
+                            "spmr","ospmr","dspmr"), names(recov))
   recov[round_cols] <- lapply(round_cols, function(cc) round(recov[[cc]], 4))
 
   # Loud floor: 0 recovered means a player_id / match_date join drift (a real run
@@ -727,6 +736,38 @@ cat("Piero:", sum(!is.na(panna_ratings$piero)), "/", nrow(panna_ratings),
     paste(sprintf("%s %d", piero_present,
                   vapply(piero_present, function(m) sum(is.finite(panna_ratings[[m]])), integer(1))),
           collapse = ", "), ")\n")
+
+# Loud floor on per-metric coverage over the FINAL pool (post-recovery).
+# The line above already PRINTED that spmr covered 2,754 of 19,167 on the
+# 2026-09-15 build and nobody acted on it -- a printed diagnostic is not a
+# check. Because the blend renormalizes over present metrics, thin coverage
+# does not blank Piero, it silently gives most of the pool a DIFFERENT
+# weighting from the rest. The active-vs-recovered split is how this happens:
+# the coverage report further up runs BEFORE the recency recovery binds
+# thousands more rows, so a metric joined only on the active path looks fine
+# there and is mostly absent here.
+thin_metrics <- character(0)
+for (m in piero_present) {
+  cov_frac <- sum(is.finite(panna_ratings[[m]])) / nrow(panna_ratings)
+  if (!piero_metric_coverage_ok(cov_frac)) {
+    rest <- setdiff(piero_present, m)
+    eff <- round(100 * PIERO_WEIGHTS[rest] / sum(PIERO_WEIGHTS[rest]))
+    cat(sprintf(paste0("::error::Piero metric '%s' covers only %.1f%% of the final ",
+                       "pool -- the other %.0f%% of players blend at %s instead of the ",
+                       "intended weights. Check '%s' is joined on the RECOVERY path ",
+                       "too, not just the active one.
+"),
+                m, 100 * cov_frac, 100 * (1 - cov_frac),
+                paste(sprintf("%s %d%%", names(eff), eff), collapse = "/"), m))
+    thin_metrics <- c(thin_metrics, m)
+  }
+}
+# A printed diagnostic is not a check (this file's own history, 2026-09-15:
+# spmr covered 2,754 of 19,167 and the build stayed green). Actually stop.
+if (length(thin_metrics) > 0) {
+  stop("Piero metric(s) below the coverage floor: ", paste(thin_metrics, collapse = ", "),
+       " -- see the ::error:: annotation(s) above for the fix.")
+}
 
 # Persist the reference constants so the WC squads build (panna step 12) can
 # recompute Piero for the rare squad players absent from ratings.parquet using
