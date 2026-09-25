@@ -115,6 +115,29 @@ jobs:
             echo "::warning::No per-season game_logs_*.parquet on blog-latest — historical Value tab will be empty"
           fi
 
+          # Net goals by play type (panna 10b, .ng_breakdown()): one row per
+          # player-match-category, and a player-match's rows add up to its
+          # net_goals (gated at 1e-9 before the file is written). Renamed
+          # ng-breakdown-<season>.parquet -> R2 football/ng-breakdown-<season>.parquet
+          # for the player page's "Where their EPV comes from" chart.
+          NGB_SEASONS=0
+          if gh release download blog-latest -p "ng_breakdown_*.parquet" -D blog/; then
+            for f in blog/ng_breakdown_*.parquet; do
+              [ -e "$f" ] || continue
+              season=${f#blog/ng_breakdown_}
+              mv "$f" "blog/ng-breakdown-${season}"
+              NGB_SEASONS=$((NGB_SEASONS + 1))
+            done
+            echo "Downloaded $NGB_SEASONS net-goals breakdown file(s)"
+            # One breakdown per game-logs season. Fewer means a season whose
+            # breakdown was never built; the one on the release may be stale.
+            if [ "$NGB_SEASONS" -lt "$GL_SEASONS" ]; then
+              echo "::warning::Only $NGB_SEASONS net-goals breakdown file(s) for $GL_SEASONS game-logs season(s) — some player-page EPV breakdowns are missing"
+            fi
+          else
+            echo "::warning::No ng_breakdown_*.parquet on blog-latest — player-page EPV breakdown will be empty"
+          fi
+
           # Shootout WPA (per-player penalty-shootout win-prob-added — optional).
           # Pass straight through to R2 as football/shootout-wpa.parquet for the
           # blog. Thin data (~1 kick/player) so it's a small file; absent for
@@ -765,6 +788,7 @@ jobs:
             [ -f "$f" ] || echo "::warning::Optional artifact missing: $f"
           done
           ls blog/game-logs*.parquet 1>/dev/null 2>&1 || echo "::warning::Optional artifact missing: blog/game-logs*.parquet"
+          ls blog/ng-breakdown-*.parquet 1>/dev/null 2>&1 || echo "::warning::Optional artifact missing: blog/ng-breakdown-*.parquet"
           ls blog/wc2026_*.parquet 1>/dev/null 2>&1 || echo "::warning::Optional artifact missing: blog/wc2026_*.parquet"
           # Per-tournament chains-WC shards (pannadata#109, additive to the
           # chains-WC.parquet monolith above). Absence just means the WC comp
