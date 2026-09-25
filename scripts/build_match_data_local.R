@@ -115,35 +115,10 @@ if (file.exists(xg_model_path)) {
   xg_model <- readRDS(xg_model_path)
   cat("  Loaded xG model:", length(xg_model$panna_metadata$feature_cols), "features\n")
 
-  distance_to_goal <- sqrt((100 - shots_filtered$x)^2 + (50 - shots_filtered$y)^2)
-  dist_to_goal_line <- pmax(100 - shots_filtered$x, 0.1)
-  goal_half_w <- 6
-  angle_left  <- atan2(50 - goal_half_w - shots_filtered$y, dist_to_goal_line)
-  angle_right <- atan2(50 + goal_half_w - shots_filtered$y, dist_to_goal_line)
-  angle_to_goal <- abs(angle_right - angle_left)
-
-  bp_lower <- tolower(shots_filtered$body_part)
-  sit_lower <- tolower(shots_filtered$situation)
-
-  features <- data.frame(
-    x = shots_filtered$x, y = shots_filtered$y,
-    distance_to_goal = distance_to_goal, angle_to_goal = angle_to_goal,
-    in_penalty_area = as.integer(shots_filtered$x > 83 & shots_filtered$y > 21 & shots_filtered$y < 79),
-    in_six_yard_box = as.integer(shots_filtered$x > 94 & shots_filtered$y > 37 & shots_filtered$y < 63),
-    is_header = as.integer(grepl("head", bp_lower)),
-    is_right_foot = as.integer(grepl("right", bp_lower)),
-    is_left_foot = as.integer(grepl("left", bp_lower)),
-    is_open_play = as.integer(grepl("open", sit_lower)),
-    is_set_piece = as.integer(grepl("set", sit_lower)),
-    is_corner = as.integer(grepl("corner", sit_lower)),
-    is_direct_freekick = as.integer(grepl("free", sit_lower)),
-    is_big_chance = as.integer(coalesce(shots_filtered$big_chance, 0L))
-  )
-
-  feature_cols <- xg_model$panna_metadata$feature_cols
-  for (col in setdiff(feature_cols, names(features))) features[[col]] <- 0
-  X <- as.matrix(features[, feature_cols, drop = FALSE])
-  X[is.na(X)] <- 0
+  # One shared builder (scripts/xg_features.R), season_num included; stops on
+  # any feature it cannot build rather than zero-filling it.
+  source("scripts/xg_features.R")
+  X <- xg_feature_matrix(shots_filtered, xg_model)
 
   shots_filtered$xg <- round(predict(xg_model$model, X), 3)
   cat("  xG predicted:", round(sum(shots_filtered$xg, na.rm = TRUE)), "total xG across",
