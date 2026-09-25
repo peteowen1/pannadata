@@ -129,6 +129,11 @@ jobs:
               NGB_SEASONS=$((NGB_SEASONS + 1))
             done
             echo "Downloaded $NGB_SEASONS net-goals breakdown file(s)"
+            # One breakdown per game-logs season. Fewer means a season whose
+            # breakdown was never built; the one on the release may be stale.
+            if [ "$NGB_SEASONS" -lt "$GL_SEASONS" ]; then
+              echo "::warning::Only $NGB_SEASONS net-goals breakdown file(s) for $GL_SEASONS game-logs season(s) — some player-page EPV breakdowns are missing"
+            fi
           else
             echo "::warning::No ng_breakdown_*.parquet on blog-latest — player-page EPV breakdown will be empty"
           fi
