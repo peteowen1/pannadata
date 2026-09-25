@@ -120,6 +120,15 @@ jobs:
           # net_goals (gated at 1e-9 before the file is written). Renamed
           # ng-breakdown-<season>.parquet -> R2 football/ng-breakdown-<season>.parquet
           # for the player page's "Where their EPV comes from" chart.
+          # Breakdowns exist from 2015-16 on (the net goals rebuild); the older
+          # game-logs seasons were never rebuilt with one, so compare against
+          # the game-logs seasons from 2015-16 only.
+          GL_NG_SEASONS=0
+          for f in blog/game-logs-*.parquet; do
+            [ -e "$f" ] || continue
+            s=${f#blog/game-logs-}
+            [ "${s:0:4}" -ge 2015 ] 2>/dev/null && GL_NG_SEASONS=$((GL_NG_SEASONS + 1))
+          done
           NGB_SEASONS=0
           if gh release download blog-latest -p "ng_breakdown_*.parquet" -D blog/; then
             for f in blog/ng_breakdown_*.parquet; do
@@ -131,11 +140,32 @@ jobs:
             echo "Downloaded $NGB_SEASONS net-goals breakdown file(s)"
             # One breakdown per game-logs season. Fewer means a season whose
             # breakdown was never built; the one on the release may be stale.
-            if [ "$NGB_SEASONS" -lt "$GL_SEASONS" ]; then
-              echo "::warning::Only $NGB_SEASONS net-goals breakdown file(s) for $GL_SEASONS game-logs season(s) — some player-page EPV breakdowns are missing"
+            if [ "$NGB_SEASONS" -lt "$GL_NG_SEASONS" ]; then
+              echo "::warning::Only $NGB_SEASONS net-goals breakdown file(s) for $GL_NG_SEASONS game-logs season(s) from 2015-16 — some player-page EPV breakdowns are missing"
             fi
           else
             echo "::warning::No ng_breakdown_*.parquet on blog-latest — player-page EPV breakdown will be empty"
+          fi
+
+          # The same breakdown as each player's season totals, sorted by player
+          # in small row groups: this is the file the player page reads (0.35 s,
+          # against 13.7 s for the per-match file). ng_player_breakdown_<season>
+          # -> R2 football/ng-player-breakdown-<season>.parquet. The glob above
+          # (ng_breakdown_*) does not match these names.
+          NGP_SEASONS=0
+          if gh release download blog-latest -p "ng_player_breakdown_*.parquet" -D blog/; then
+            for f in blog/ng_player_breakdown_*.parquet; do
+              [ -e "$f" ] || continue
+              season=${f#blog/ng_player_breakdown_}
+              mv "$f" "blog/ng-player-breakdown-${season}"
+              NGP_SEASONS=$((NGP_SEASONS + 1))
+            done
+            echo "Downloaded $NGP_SEASONS player net-goals breakdown file(s)"
+            if [ "$NGP_SEASONS" -lt "$GL_NG_SEASONS" ]; then
+              echo "::warning::Only $NGP_SEASONS player net-goals breakdown file(s) for $GL_NG_SEASONS game-logs season(s) from 2015-16 — some player-page EPV charts are missing"
+            fi
+          else
+            echo "::warning::No ng_player_breakdown_*.parquet on blog-latest — player-page EPV chart will be empty"
           fi
 
           # Shootout WPA (per-player penalty-shootout win-prob-added — optional).
