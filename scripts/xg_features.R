@@ -37,21 +37,25 @@ xg_season_end_year <- function(season) {
 # Every feature the published xG models can read from a shot row. `shots` needs
 # x, y, body_part, situation and season; big_chance (or is_big_chance) is optional.
 xg_shot_features <- function(shots) {
-  dist_line   <- pmax(100 - shots$x, 0.1)
-  angle_left  <- atan2(50 - 6 - shots$y, dist_line)
-  angle_right <- atan2(50 + 6 - shots$y, dist_line)
+  # Clamped to the pitch first, as panna does: Opta sometimes sends x/y outside
+  # 0-100, and the model was trained on clamped values (review finding).
+  x <- pmin(pmax(shots$x, 0), 100)
+  y <- pmin(pmax(shots$y, 0), 100)
+  dist_line   <- pmax(100 - x, 0.1)
+  angle_left  <- atan2(50 - 6 - y, dist_line)
+  angle_right <- atan2(50 + 6 - y, dist_line)
   bp <- tolower(shots$body_part)
   si <- tolower(shots$situation)
   bc <- if ("big_chance" %in% names(shots)) shots$big_chance else
         if ("is_big_chance" %in% names(shots)) shots$is_big_chance else 0L
   bc <- as.integer(bc); bc[is.na(bc)] <- 0L
   data.frame(
-    x                  = shots$x,
-    y                  = shots$y,
-    distance_to_goal   = sqrt((100 - shots$x)^2 + (50 - shots$y)^2),
+    x                  = x,
+    y                  = y,
+    distance_to_goal   = sqrt((100 - x)^2 + (50 - y)^2),
     angle_to_goal      = abs(angle_right - angle_left),
-    in_penalty_area    = as.integer(shots$x > 83 & shots$y > 21 & shots$y < 79),
-    in_six_yard_box    = as.integer(shots$x > 94 & shots$y > 37 & shots$y < 63),
+    in_penalty_area    = as.integer(x > 83 & y > 21 & y < 79),
+    in_six_yard_box    = as.integer(x > 94 & y > 37 & y < 63),
     is_header          = as.integer(grepl("head", bp)),
     is_right_foot      = as.integer(grepl("right", bp)),
     is_left_foot       = as.integer(grepl("left", bp)),
