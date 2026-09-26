@@ -29,40 +29,10 @@ if (is.null(penalty_xg)) {
 }
 cat("Model features:", length(feature_cols), "| penalty_xg:", penalty_xg, "\n")
 
-# Build features (replicates panna::.create_shot_features)
-distance_to_goal <- sqrt((100 - shots$x)^2 + (50 - shots$y)^2)
-dist_to_goal_line <- pmax(100 - shots$x, 0.1)
-angle_left  <- atan2(50 - 6 - shots$y, dist_to_goal_line)
-angle_right <- atan2(50 + 6 - shots$y, dist_to_goal_line)
-
-bp <- tolower(shots$body_part)
-si <- tolower(shots$situation)
-
-features <- data.frame(
-  x                  = shots$x,
-  y                  = shots$y,
-  distance_to_goal   = distance_to_goal,
-  angle_to_goal      = abs(angle_right - angle_left),
-  in_penalty_area    = as.integer(shots$x > 83 & shots$y > 21 & shots$y < 79),
-  in_six_yard_box    = as.integer(shots$x > 94 & shots$y > 37 & shots$y < 63),
-  is_header          = as.integer(grepl("head", bp)),
-  is_right_foot      = as.integer(grepl("right", bp)),
-  is_left_foot       = as.integer(grepl("left", bp)),
-  # panna's NULL-situation branch defaults to open play (xg_model.R:57-62);
-  # replicate per-row for NA/empty. The other situation flags need no special
-  # case: grepl() on NA returns FALSE, matching canonical 0L. (pannadata#101)
-  is_open_play       = as.integer(is.na(si) | si == "" | grepl("open", si)),
-  is_set_piece       = as.integer(grepl("set", si)),
-  is_corner          = as.integer(grepl("corner", si)),
-  is_direct_freekick = as.integer(grepl("free", si)),
-  is_big_chance      = as.integer(coalesce(if ("big_chance" %in% names(shots)) shots$big_chance else 0L, 0L))
-)
-
-# Fill any missing model features with 0
-for (col in setdiff(feature_cols, names(features))) features[[col]] <- 0
-
-X <- as.matrix(features[, feature_cols, drop = FALSE])
-X[is.na(X)] <- 0
+# Features: one shared builder (scripts/xg_features.R), including season_num,
+# and a hard stop on any feature it cannot build.
+source("scripts/xg_features.R")   # run from the repo root, as every workflow does
+X <- xg_feature_matrix(shots, xg_model)
 
 pred_xg <- round(predict(xg_model$model, X), 3)
 

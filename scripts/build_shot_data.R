@@ -63,25 +63,10 @@ if (file.exists(xg_model_path)) {
   }
   cat("Loaded xG model:", length(xg_model$panna_metadata$feature_cols),
       "features | penalty_xg:", penalty_xg, "\n")
-  distance_to_goal <- sqrt((100 - panna_shots$x)^2 + (50 - panna_shots$y)^2)
-  dist_to_goal_line <- pmax(100 - panna_shots$x, 0.1)
-  angle_left  <- atan2(50 - 6 - panna_shots$y, dist_to_goal_line)
-  angle_right <- atan2(50 + 6 - panna_shots$y, dist_to_goal_line)
-  bp_lower <- tolower(panna_shots$body_part)
-  sit_lower <- tolower(panna_shots$situation)
-  features <- data.frame(
-    x = panna_shots$x, y = panna_shots$y,
-    distance_to_goal = distance_to_goal, angle_to_goal = abs(angle_right - angle_left),
-    in_penalty_area = as.integer(panna_shots$x > 83 & panna_shots$y > 21 & panna_shots$y < 79),
-    in_six_yard_box = as.integer(panna_shots$x > 94 & panna_shots$y > 37 & panna_shots$y < 63),
-    is_header = as.integer(grepl("head", bp_lower)), is_right_foot = as.integer(grepl("right", bp_lower)),
-    is_left_foot = as.integer(grepl("left", bp_lower)), is_open_play = as.integer(grepl("open", sit_lower)),
-    is_set_piece = as.integer(grepl("set", sit_lower)), is_corner = as.integer(grepl("corner", sit_lower)),
-    is_direct_freekick = as.integer(grepl("free", sit_lower)),
-    is_big_chance = panna_shots$big_chance)
-  feature_cols <- xg_model$panna_metadata$feature_cols
-  for (col in setdiff(feature_cols, names(features))) features[[col]] <- 0
-  X <- as.matrix(features[, feature_cols, drop = FALSE]); X[is.na(X)] <- 0
+  # One shared builder (scripts/xg_features.R), season_num included; stops on
+  # any feature it cannot build rather than zero-filling it.
+  source("scripts/xg_features.R")
+  X <- xg_feature_matrix(panna_shots, xg_model)
   model_xg <- round(predict(xg_model$model, X), 3)
   # Own-goal guard: Opta logs an OG as a goal (type_id 16) at the scorer's own-half
   # location, which the model reads as ~0.97 — meaningless. Surface as NA.
