@@ -418,6 +418,22 @@ jobs:
             echo "::notice::Skipping xGOT enrich — shot file or xgot_model.rds unavailable (build_shot_data passes through any existing xgot)"
           fi
 
+      # Weak-foot lookup for the worker's live xG v5 / xGOT v3 (foot_share input):
+      # each player's earlier foot shots and how many were right-footed, matches
+      # before today only. Optional: a failure leaves last run's R2 copy, and the
+      # worker reads a missing table as "too few earlier shots" and says so in
+      # xg_foot_status. See scripts/build_shot_foot_history.R.
+      - name: Build weak-foot table (live xG)
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -f source/opta_shot_events.parquet ] && gh release download opta-latest -p "opta_fixtures.parquet" -D source/ --clobber 2>/dev/null; then
+            Rscript scripts/build_shot_foot_history.R source/opta_shot_events.parquet source/opta_fixtures.parquet blog/shot-foot-history.json
+          else
+            echo "::warning::Skipping weak-foot table: shot events or opta_fixtures.parquet unavailable"
+          fi
+
       - name: Build shot parquet
         run: |
           if [ -f source/opta_shot_events.parquet ]; then
@@ -770,6 +786,10 @@ jobs:
           # defeated by a future || true / if-wrap around the upload call.
           upload_errors=0
           vb_sh_r2_upload_all "inthegame-data/football" blog/*.parquet || upload_errors=1
+          # The live worker's weak-foot table (JSON, not parquet), when built.
+          if [ "$upload_errors" -eq 0 ] && [ -f blog/shot-foot-history.json ]; then
+            vb_sh_r2_upload_all "inthegame-data/football" blog/shot-foot-history.json || upload_errors=1
+          fi
           if [ "$upload_errors" -gt 0 ]; then
             echo "::error::R2 upload failed (fail-fast) — bus_manifest.json NOT updated; previous manifest remains the commit record"
             exit 1
