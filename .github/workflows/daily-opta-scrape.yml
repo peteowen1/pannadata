@@ -49,6 +49,17 @@ concurrency:
   group: opta-latest-writer
   cancel-in-progress: false
 
+# Which models score the stored shot xG / xGOT. "legacy": xg_model / xgot_model,
+# scored from the shot table alone (enrich_shots_xg.R / enrich_shots_xgot.R).
+# "context": xg_model_v5 / xgot_model_v3, scored through panna's own code with the
+# events and each shooter's shot history (score_shots_context.R). Switched in the
+# SAME commit as build-blog-data.yml's copy, on the day the stored rows are
+# rescored and the worker moves (pannaverse docs/plans/XG-VNEXT-2026-09.md).
+env:
+  SHOT_MODELS: legacy
+  # panna commit whose R/ the context scorer loads (the xG v5 wiring, panna#271)
+  PANNA_REF: a981751a3225f15ee6f2a585a8b4b33a2d11e748
+
 jobs:
   scrape:
     runs-on: ubuntu-latest
@@ -347,6 +358,8 @@ jobs:
           any::arrow
           any::dplyr
           any::xgboost
+          any::data.table
+          any::cli
 
     - name: Enrich shots with xG + xGOT
       continue-on-error: true
@@ -377,6 +390,18 @@ jobs:
           else
             echo "::warning::goalmouth backfill skipped/failed — xGOT will no-op this run"
           fi
+          if [ "$SHOT_MODELS" = "context" ]; then
+            # xG v5 + xGOT v3 on the shots without a value, through panna's own
+            # code (events + shot history from this runner's files). It refuses
+            # to write if more than 5% of those shots get no value.
+            if gh release download models -p "xg_model_v5.rds" -p "xgot_model_v3.rds" -D source/ --clobber; then
+              Rscript scripts/score_shots_context.R data/opta/opta_shot_events.parquet data/opta/opta_fixtures.parquet \
+                data/opta/events_consolidated source/xg_model_v5.rds source/xgot_model_v3.rds missing \
+                || echo "::error::context xG/xGOT scoring failed -- new shots ship without xG"
+            else
+              echo "::error::xg_model_v5.rds / xgot_model_v3.rds not available -- new shots ship without xG"
+            fi
+          else
           # Pre-shot xG
           if gh release download models -p "xg_model.rds" -D source/; then
             Rscript scripts/enrich_shots_xg.R data/opta/opta_shot_events.parquet source/xg_model.rds
@@ -389,6 +414,7 @@ jobs:
           else
             echo "::notice::xgot_model.rds not in models release yet — skipping xGOT enrichment"
           fi
+          fi   # SHOT_MODELS
           # Loud signal if shots shipped under-enriched: a high xG NaN rate means an
           # enrich step above silently no-op'd (e.g. model download failed under
           # continue-on-error), so any shots healed this run would ship without xG.
