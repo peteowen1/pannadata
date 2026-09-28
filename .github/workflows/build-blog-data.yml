@@ -5,6 +5,12 @@ on:
   repository_dispatch:
     types: [predictions-complete]
 
+# Which models score the stored shot xG / xGOT: see daily-opta-scrape.yml, which
+# owns the scoring. Flip BOTH files together. Under "context" this build never
+# re-scores (it has no events, and a legacy re-score would mix model vintages).
+env:
+  SHOT_MODELS: legacy
+
 permissions:
   contents: read
 
@@ -347,6 +353,12 @@ jobs:
             exit 0
           fi
 
+          if [ "$SHOT_MODELS" = "context" ]; then
+            # No events on this runner, and a legacy re-score would mix model
+            # vintages in one column: fail loudly and fix it upstream instead.
+            echo "::error::xG coverage is broken (${NAN_PCT}% NaN on latest season) under SHOT_MODELS=context. Re-run daily-opta-scrape.yml (it scores with the events); not re-scoring here."
+            exit 1
+          fi
           echo "::warning::xG coverage is broken (${NAN_PCT}% NaN on latest season) — re-running enrichment"
           if ! gh release download models -p "xg_model.rds" -D source/; then
             echo "::error::xg_model.rds unavailable from models release AND upstream is broken (${NAN_PCT}% NaN). Blog will ship with broken xG until upstream is fixed."
@@ -411,8 +423,12 @@ jobs:
       # never blocks the build. Fixes pannadata#88.
       - name: Enrich shots with xGOT
         continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if [ -f source/opta_shot_events.parquet ] && gh release download models -p "xgot_model.rds" -D source/ 2>/dev/null; then
+          if [ "$SHOT_MODELS" = "context" ]; then
+            echo "::notice::SHOT_MODELS=context: xGOT comes from the daily scrape; not re-scored here"
+          elif [ -f source/opta_shot_events.parquet ] && gh release download models -p "xgot_model.rds" -D source/ 2>/dev/null; then
             Rscript scripts/enrich_shots_xgot.R source/opta_shot_events.parquet source/xgot_model.rds
           else
             echo "::notice::Skipping xGOT enrich — shot file or xgot_model.rds unavailable (build_shot_data passes through any existing xgot)"
