@@ -9,7 +9,7 @@ on:
 # owns the scoring. Flip BOTH files together. Under "context" this build never
 # re-scores (it has no events, and a legacy re-score would mix model vintages).
 env:
-  SHOT_MODELS: legacy
+  SHOT_MODELS: context
 
 permissions:
   contents: read

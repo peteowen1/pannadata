@@ -56,9 +56,9 @@ concurrency:
 # SAME commit as build-blog-data.yml's copy, on the day the stored rows are
 # rescored and the worker moves (pannaverse docs/plans/XG-VNEXT-2026-09.md).
 env:
-  SHOT_MODELS: legacy
+  SHOT_MODELS: context
   # panna commit whose R/ the context scorer loads (the xG v5 wiring, panna#271)
-  PANNA_REF: a981751a3225f15ee6f2a585a8b4b33a2d11e748
+  PANNA_REF: 81e23c2ec84a34fab83dedf106e7adfd5e7a7e33
 
 jobs:
   scrape:
