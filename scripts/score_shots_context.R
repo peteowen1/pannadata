@@ -14,7 +14,7 @@
 # Rows scored: those with no stored value (mode "missing", the daily default; D5 in
 # pannaverse docs/reference/NET-GOALS-DECISION-POINTS.md), or every row (mode
 # "all", the one-time rescore). Scored one competition-season at a time, reading
-# that competition's events file only for the matches that need them.
+# that competition's events file only for the matches with a shot to score.
 #
 # Usage:
 #   Rscript scripts/score_shots_context.R <shots.parquet> <fixtures.parquet> <events_dir> \
@@ -82,7 +82,10 @@ new_xg <- rep(NA_real_, nrow(shots)); new_xgot <- rep(NA_real_, nrow(shots))
 failed <- character(0)
 for (i in seq_len(nrow(groups))) {
   comp <- groups$competition[i]; ssn <- groups$season[i]
-  g <- shots[competition == comp & season == ssn]
+  # only matches with a row to score: a daily run reads and scores the new
+  # matches, not the whole season (each match's context needs only its own events)
+  todo_mids <- unique(shots[competition == comp & season == ssn & .todo == TRUE, match_id])
+  g <- shots[competition == comp & season == ssn & match_id %in% todo_mids]
   label <- paste(comp, ssn)
   res <- tryCatch({
     ev_path <- file.path(ev_dir, paste0("events_", comp, ".parquet"))

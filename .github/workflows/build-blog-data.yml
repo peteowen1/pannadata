@@ -304,6 +304,7 @@ jobs:
           ls -lh blog/ source/
 
       - name: Enrich shot xG (belt-and-suspenders — re-run if upstream is stale)
+        id: enrich_xg
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
@@ -357,6 +358,10 @@ jobs:
             # No events on this runner, and a legacy re-score would mix model
             # vintages in one column: fail loudly and fix it upstream instead.
             echo "::error::xG coverage is broken (${NAN_PCT}% NaN on latest season) under SHOT_MODELS=context. Re-run daily-opta-scrape.yml (it scores with the events); not re-scoring here."
+            # This step is continue-on-error, so its own exit cannot stop the
+            # build: the next step reads this flag and fails the job before
+            # anything is built or uploaded (review finding).
+            echo "context_xg_broken=true" >> "$GITHUB_OUTPUT"
             exit 1
           fi
           echo "::warning::xG coverage is broken (${NAN_PCT}% NaN on latest season) — re-running enrichment"
@@ -386,6 +391,12 @@ jobs:
             exit 1
           fi
           echo "Post-enrichment NaN rate: ${POST_NAN}% (healthy)"
+
+      - name: Stop if stored xG is broken under context models
+        if: steps.enrich_xg.outputs.context_xg_broken == 'true'
+        run: |
+          echo "::error::Stored shot xG is mostly empty and SHOT_MODELS=context cannot re-score it here. Not publishing; re-run daily-opta-scrape.yml first."
+          exit 1
 
       - name: Build ratings parquet
         run: Rscript scripts/build_blog_data.R

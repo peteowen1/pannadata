@@ -395,7 +395,9 @@ jobs:
             # code (events + shot history from this runner's files). It refuses
             # to write if more than 5% of those shots get no value.
             if gh release download models -p "xg_model_v5.rds" -p "xgot_model_v3.rds" -D source/ --clobber; then
-              Rscript scripts/score_shots_context.R data/opta/opta_shot_events.parquet                 data/opta/opta_fixtures.parquet data/opta/events_consolidated                 source/xg_model_v5.rds source/xgot_model_v3.rds missing                 || echo "::error::context xG/xGOT scoring failed -- new shots ship without xG"
+              Rscript scripts/score_shots_context.R data/opta/opta_shot_events.parquet data/opta/opta_fixtures.parquet \
+                data/opta/events_consolidated source/xg_model_v5.rds source/xgot_model_v3.rds missing \
+                || echo "::error::context xG/xGOT scoring failed -- new shots ship without xG"
             else
               echo "::error::xg_model_v5.rds / xgot_model_v3.rds not available -- new shots ship without xG"
             fi
