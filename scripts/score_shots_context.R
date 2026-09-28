@@ -88,41 +88,42 @@ for (i in seq_len(nrow(groups))) {
   g <- shots[competition == comp & season == ssn & match_id %in% todo_mids]
   label <- paste(comp, ssn)
   res <- tryCatch({
-    ev_path <- file.path(ev_dir, paste0("events_", comp, ".parquet"))
-    if (!file.exists(ev_path)) {   # a competition with no event feed: no context for any shot
-      no_ctx_rows <- c(no_ctx_rows, g$.row)
-      stop("no events file ", basename(ev_path))
-    }
-    mids <- unique(g$match_id)
-    ev <- as.data.table(open_dataset(ev_path) |> dplyr::filter(match_id %in% mids) |>
-                          dplyr::select(dplyr::all_of(EV_COLS)) |> dplyr::collect())
     # A context model must never score a shot without its context: v5 never saw
     # one in training and prices it at ~0.95 (69,599 such shots in the training
     # features, mostly matches with no event feed: 6,682 goals, 65,931 v5 xG).
-    # Those shots keep what is stored (or stay blank) and are counted apart.
-    cx <- .shot_context(ev)
-    has_ctx <- paste(g$match_id, as.character(g$event_id)) %in% paste(cx$match_id, cx$event_id)
+    # Those shots keep what is stored (or stay blank) and are counted apart, not
+    # as failures -- including a competition with no events file at all.
+    ev_path <- file.path(ev_dir, paste0("events_", comp, ".parquet"))
+    has_ctx <- rep(FALSE, nrow(g))
+    if (file.exists(ev_path)) {
+      mids <- unique(g$match_id)
+      ev <- as.data.table(open_dataset(ev_path) |> dplyr::filter(match_id %in% mids) |>
+                            dplyr::select(dplyr::all_of(EV_COLS)) |> dplyr::collect())
+      cx <- .shot_context(ev)
+      has_ctx <- paste(g$match_id, as.character(g$event_id)) %in% paste(cx$match_id, cx$event_id)
+    }
     no_ctx_rows <- c(no_ctx_rows, g$.row[!has_ctx])
     g <- g[has_ctx]
-    if (!nrow(g)) stop("no shot here has pre-shot context (no events for these matches)")
-    # SPADL shot rows as panna's scorers read them: coordinates are the shot
-    # table's own (Opta, attacking right), keyed by the Opta event id
-    sp <- data.frame(match_id = g$match_id, original_event_id = as.numeric(g$event_id),
-                     action_type = "shot", start_x = g$x, start_y = g$y, player_id = g$player_id,
-                     is_big_chance = g$big_chance %in% TRUE,
-                     is_penalty = tolower(g$situation) %in% "penalty",
-                     is_own_goal = g$is_own_goal, stringsAsFactors = FALSE)
-    lk <- as.data.frame(g[, intersect(c("match_id", "event_id", "type_id", "body_part", "situation",
-                                        "goalmouth_y", "goalmouth_z", "is_blocked"), names(g)), with = FALSE])
-    lk$event_id <- as.numeric(lk$event_id)   # integer64 in the shot file; SPADL's key is plain numeric
-    out <- list(xg = NULL, xgot = NULL, rows = g$.row)
-    if (any(todo_xg[g$.row]))
-      out$xg <- suppressMessages(add_xg_to_spadl(sp, xg_model, season = ssn, shot_lookup = lk,
-                                                 events = ev, foot_history = fh))$xg
-    if (any(todo_xgot[g$.row]))
-      out$xgot <- suppressMessages(add_xgot_to_spadl(sp, xgot_model, lk, season = ssn,
-                                                     events = ev, foot_history = fh))$xgot
-    out
+    if (!nrow(g)) list(xg = NULL, xgot = NULL, rows = integer(0)) else {
+      # SPADL shot rows as panna's scorers read them: coordinates are the shot
+      # table's own (Opta, attacking right), keyed by the Opta event id
+      sp <- data.frame(match_id = g$match_id, original_event_id = as.numeric(g$event_id),
+                       action_type = "shot", start_x = g$x, start_y = g$y, player_id = g$player_id,
+                       is_big_chance = g$big_chance %in% TRUE,
+                       is_penalty = tolower(g$situation) %in% "penalty",
+                       is_own_goal = g$is_own_goal, stringsAsFactors = FALSE)
+      lk <- as.data.frame(g[, intersect(c("match_id", "event_id", "type_id", "body_part", "situation",
+                                          "goalmouth_y", "goalmouth_z", "is_blocked"), names(g)), with = FALSE])
+      lk$event_id <- as.numeric(lk$event_id)   # integer64 in the shot file; SPADL's key is plain numeric
+      out <- list(xg = NULL, xgot = NULL, rows = g$.row)
+      if (any(todo_xg[g$.row]))
+        out$xg <- suppressMessages(add_xg_to_spadl(sp, xg_model, season = ssn, shot_lookup = lk,
+                                                   events = ev, foot_history = fh))$xg
+      if (any(todo_xgot[g$.row]))
+        out$xgot <- suppressMessages(add_xgot_to_spadl(sp, xgot_model, lk, season = ssn,
+                                                       events = ev, foot_history = fh))$xgot
+      out
+    }
   }, error = function(e) { message("  FAILED ", label, ": ", conditionMessage(e)); NULL })
   if (is.null(res)) { failed <- c(failed, label); next }
   if (!is.null(res$xg)) new_xg[res$rows] <- res$xg
@@ -141,9 +142,9 @@ if (length(failed)) cat("::warning::", length(failed), "competition-season(s) no
 # Shots with no pre-shot context are reported, not failures: their match has no
 # event feed (older seasons, goal-only feeds), and they keep their stored value.
 skip <- seq_len(nrow(shots)) %in% no_ctx_rows
-cat("no pre-shot context (left as stored):", sum(skip & todo_xg), "xG rows,", sum(skip & todo_xgot), "xGOT rows
-")
-share_failed <- 1 - (sum(w_xg) + sum(w_xgot)) / max(1, sum(todo_xg & !skip) + sum(todo_xgot & !skip))
+cat("no pre-shot context (left as stored):", sum(skip & todo_xg), "xG rows,", sum(skip & todo_xgot), "xGOT rows\n")
+n_scorable <- sum(todo_xg & !skip) + sum(todo_xgot & !skip)
+share_failed <- if (n_scorable == 0) 0 else 1 - (sum(w_xg) + sum(w_xgot)) / n_scorable   # all skipped is not a failure
 if (share_failed > 0.05) stop(sprintf("%.1f%% of the shots to score got no value: refusing to write", 100 * share_failed))
 
 shots[, c(".row", ".todo") := NULL]
