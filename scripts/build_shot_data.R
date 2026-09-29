@@ -36,7 +36,9 @@ panna_shots <- opta_shots |>
     body_part,
     situation,
     big_chance = if ("big_chance" %in% names(opta_shots)) as.integer(big_chance) else 0L,
-    season
+    season,
+    # D11: TRUE = thin or goals-only event feed, so no xG by design (the match page says so)
+    thin_feed = if ("thin_feed" %in% names(opta_shots)) as.logical(thin_feed) else NA
   )
 
 stopifnot(nrow(panna_shots) > 0, length(recent_seasons) > 0)
