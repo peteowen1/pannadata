@@ -75,6 +75,7 @@ fx <- unique(as.data.table(read_parquet(fx_path, col_select = c("match_id", "mat
 fh <- .shot_foot_history(merge(shots[, .(player_id, match_id, body_part, is_own_goal)], fx, by = "match_id"))
 
 # ---- score, one competition-season at a time -----------------------------------------
+MIN_PASSES <- 200L   # a full event feed: goals-only feeds have 0-9 passes, full matches 680+ (1st percentile)
 EV_COLS <- c("match_id", "event_id", "type_id", "team_id", "period_id", "minute", "second",
              "outcome", "x", "y", "qualifier_json")
 groups <- unique(shots[.todo == TRUE, .(competition, season)])
@@ -88,11 +89,11 @@ for (i in seq_len(nrow(groups))) {
   g <- shots[competition == comp & season == ssn & match_id %in% todo_mids]
   label <- paste(comp, ssn)
   res <- tryCatch({
-    # A context model must never score a shot without its context: v5 never saw
-    # one in training and prices it at ~0.95 (69,599 such shots in the training
-    # features, mostly matches with no event feed: 6,682 goals, 65,931 v5 xG).
-    # Those shots keep what is stored (or stay blank) and are counted apart, not
-    # as failures -- including a competition with no events file at all.
+    # A context model never scores a shot without its context, nor a shot from a
+    # goals-only or thin feed (below). v5 priced such shots near 1 (69,599 with no
+    # context in its training features: 6,682 goals, 65,931 v5 xG); v5.1 never
+    # trains on them. They keep what is stored (or stay blank) and are counted
+    # apart, not as failures -- including a competition with no events file.
     ev_path <- file.path(ev_dir, paste0("events_", comp, ".parquet"))
     has_ctx <- rep(FALSE, nrow(g))
     if (file.exists(ev_path)) {
@@ -101,6 +102,11 @@ for (i in seq_len(nrow(groups))) {
                             dplyr::select(dplyr::all_of(EV_COLS)) |> dplyr::collect())
       cx <- .shot_context(ev)
       has_ctx <- paste(g$match_id, as.character(g$event_id)) %in% paste(cx$match_id, cx$event_id)
+      # A goals-only or thin feed (fewer than MIN_PASSES passes in the match) is
+      # never scored: its "shots" are nearly all goals, and the models train
+      # only on full feeds (panna xgv_12_feed_passes.R, Pete 2026-09-28).
+      thin <- ev[, .(passes = sum(type_id == 1L)), by = match_id][passes < MIN_PASSES, match_id]
+      has_ctx <- has_ctx & !(g$match_id %in% thin)
     }
     no_ctx_rows <- c(no_ctx_rows, g$.row[!has_ctx])
     g <- g[has_ctx]
