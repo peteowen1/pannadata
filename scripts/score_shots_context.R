@@ -60,7 +60,8 @@ cat("shots:", nrow(shots), "rows\n")
 if (!"xg" %in% names(shots)) shots[, xg := NA_real_]
 if (!"xgot" %in% names(shots)) shots[, xgot := NA_real_]
 # thin_feed: TRUE = the shot's match has a goals-only or thin event feed (below), so it
-# carries no xG / xGOT; FALSE = a full feed; NA = not yet looked at.
+# carries no xG and no xGOT on target (off target stays 0); FALSE = a full feed;
+# NA = not yet looked at.
 if (!"thin_feed" %in% names(shots)) shots[, thin_feed := NA]
 on_target <- shots$type_id %in% c(15L, 16L)
 # Own goals keep no xG or xGOT by design (enrich_shots_xg.R's own-goal guard), so
