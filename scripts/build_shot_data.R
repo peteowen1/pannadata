@@ -76,6 +76,11 @@ if (file.exists(xg_model_path)) {
   # panna_metadata$penalty_xg (single-sourced from panna::PENALTY_XG, panna#91).
   is_pen <- !is.na(panna_shots$situation) & tolower(panna_shots$situation) == "penalty"
   model_xg[is_pen] <- penalty_xg
+  # Thin or goals-only event feed (score_shots_context.R, D11): no xG, so never fill one.
+  if ("thin_feed" %in% names(opta_shots)) {
+    model_xg[opta_shots$thin_feed[opta_shots$competition %in% tracked_leagues &
+      opta_shots$season %in% recent_seasons] %in% TRUE] <- NA_real_
+  }
   # Prefer the canonical source xG where present (already OG/penalty-guarded by
   # enrich_shots_xg.R), model-fill the rest.
   panna_shots$xg <- coalesce(source_xg, model_xg)
