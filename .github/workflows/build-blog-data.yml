@@ -565,7 +565,9 @@ jobs:
                 situation = if ("situation" %in% names(shots)) as.character(situation) else NA_character_,
                 body_part = if ("body_part" %in% names(shots)) as.character(body_part) else NA_character_,
                 period_id = as.integer(period_id),
-                xg = if (has_xg) round(xg, 3) else NA_real_) |>
+                xg = if (has_xg) round(xg, 3) else NA_real_,
+                # D11: TRUE = thin or goals-only event feed, no xG by design
+                thin_feed = if ("thin_feed" %in% names(shots)) as.logical(thin_feed) else NA) |>
                 filter(!is.na(match_id)) |> arrange(match_id, minute, second)
               write_parquet(ms, "blog/match-shots.parquet")
               cat("match-shots:", nrow(ms), "shots", if(has_xg) "with xG" else "(no xG)",
