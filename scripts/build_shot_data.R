@@ -126,10 +126,11 @@ dir.create("blog", showWarnings = FALSE)
 # The blog's player page keeps one player's shots; with the file as one row
 # group it decoded all ~227k rows and downloaded all ~40 MB to do that
 # (~5.5 s). Grouped by player, each row group's min/max on player_name lets
-# the blog's reader (data-loader.js _rowGroupRanges) skip every group that
-# cannot hold the player: on 2026-10-02's file, 23 groups, a one-player read
-# in 10 ms against 350 ms, same 401 shots. .row keeps each player's rows in
-# their existing order.
+# a reader skip every group that cannot hold the player: on 2026-10-02's file,
+# 23 groups, a one-player read in 10 ms against 350 ms, same 401 shots. The
+# blog only gets this once its reader prunes on STRING statistics, which
+# data-loader.js _rowGroupRanges deliberately refuses today (numeric only);
+# tracked on #153. .row keeps each player's rows in their existing order.
 panna_shots <- panna_shots |>
   mutate(.row = row_number()) |>
   arrange(player_name, .row) |>
