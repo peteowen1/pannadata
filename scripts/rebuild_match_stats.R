@@ -59,9 +59,14 @@ build_shard <- function(comp, code) {
       key_passes = as.integer(coalesce(totalAttAssist, 0))
     ) |>
     filter(minsPlayed > 0) |>
-    arrange(match_id, team_name, desc(minsPlayed))
+    # season leads the sort and the file is written in 20,000-row groups
+    # (pannadata#153): the blog reads one league's whole file (124,548 rows for
+    # ENG) and mostly keeps the current season, so per-group min/max on season
+    # lets a reader that asks for one season skip the rest. Within a season the
+    # order is unchanged.
+    arrange(season, match_id, team_name, desc(minsPlayed))
 
-  write_parquet(match_stats, paste0("blog/match-stats-", code, ".parquet"))
+  write_parquet(match_stats, paste0("blog/match-stats-", code, ".parquet"), chunk_size = 20000)
   cat(code, ":", nrow(match_stats), "rows,", length(unique(match_stats$season)), "seasons\n")
   rm(league_stats, match_stats); gc(verbose = FALSE)
   invisible(NULL)

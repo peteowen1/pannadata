@@ -122,5 +122,17 @@ if ("xgot" %in% names(opta_shots)) {
 panna_shots <- panna_shots |> rename(is_big_chance = big_chance)
 
 dir.create("blog", showWarnings = FALSE)
-write_parquet(panna_shots, "blog/shots.parquet")
+# Sorted by player_name and written in 10,000-row groups (pannadata#153).
+# The blog's player page keeps one player's shots; with the file as one row
+# group it decoded all ~227k rows and downloaded all ~40 MB to do that
+# (~5.5 s). Grouped by player, each row group's min/max on player_name lets
+# the blog's reader (data-loader.js _rowGroupRanges) skip every group that
+# cannot hold the player: on 2026-10-02's file, 23 groups, a one-player read
+# in 10 ms against 350 ms, same 401 shots. .row keeps each player's rows in
+# their existing order.
+panna_shots <- panna_shots |>
+  mutate(.row = row_number()) |>
+  arrange(player_name, .row) |>
+  select(-.row)
+write_parquet(panna_shots, "blog/shots.parquet", chunk_size = 10000)
 cat("shots:", nrow(panna_shots), "shots across", length(recent_seasons), "seasons\n")

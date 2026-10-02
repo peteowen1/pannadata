@@ -54,13 +54,18 @@ match_stats <- stats_filtered |>
     key_passes = as.integer(coalesce(totalAttAssist, 0))
   ) |>
   filter(minsPlayed > 0) |>
-  arrange(match_id, team_name, desc(minsPlayed))
+  # season leads the sort and the file is written in 20,000-row groups
+  # (pannadata#153): the blog reads one league's whole file (124,548 rows for
+  # ENG) and mostly keeps the current season, so per-group min/max on season
+  # lets a reader that asks for one season skip the rest. Within a season the
+  # order is unchanged.
+  arrange(season, match_id, team_name, desc(minsPlayed))
 
 for (comp in names(comp_to_code)) {
   code <- comp_to_code[comp]
   league_stats <- match_stats |> filter(league == code)
   if (nrow(league_stats) > 0) {
-    write_parquet(league_stats, paste0("blog/match-stats-", code, ".parquet"))
+    write_parquet(league_stats, paste0("blog/match-stats-", code, ".parquet"), chunk_size = 20000)
     cat("  match-stats-", code, ": ", nrow(league_stats), " rows\n", sep = "")
   }
 }
