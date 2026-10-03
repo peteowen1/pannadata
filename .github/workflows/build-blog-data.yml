@@ -776,6 +776,33 @@ jobs:
           fi
           echo "Fetched blog/squads.parquet ($(stat -c %s blog/squads.parquet) bytes)"
 
+      # Pre-match forecast lock (pannadata#156). predictions.parquet is re-scored
+      # every run, so a played game carries today's view. predictions-locked.parquet
+      # keeps each match's last forecast made BEFORE its match day, append-only.
+      # State = the file already on R2; on the very first run (no file yet) it is
+      # seeded from the predictions-history snapshots.
+      - name: Lock pre-match predictions
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ ! -f blog/predictions.parquet ]; then
+            echo "::notice::Skipping prediction lock - predictions not available"; exit 0
+          fi
+          PREV=NONE
+          CODE=$(curl -sL -o prev-locked.parquet -w '%{http_code}' "https://pub-ee4bf5b599a047f9ac2b9facc1587008.r2.dev/football/predictions-locked.parquet")
+          if [ "$CODE" = "200" ]; then
+            PREV=prev-locked.parquet
+          elif [ "$CODE" != "404" ]; then
+            # A transient failure must not look like "first run": re-seeding would drop locks
+            echo "::error::Could not read previous predictions-locked.parquet (HTTP $CODE) - not overwriting it"; exit 1
+          else
+            echo "::notice::No predictions-locked.parquet on R2 yet - seeding from predictions-history"
+            mkdir -p pred-history
+            gh release download predictions-history -p "predictions_*.parquet" -D pred-history || true
+          fi
+          Rscript scripts/lock_predictions.R blog/predictions.parquet "$PREV" blog/predictions-locked.parquet pred-history
+
       - name: Simulate domestic seasons
         continue-on-error: true
         run: |
@@ -863,7 +890,7 @@ jobs:
           # WARN tier — optional upstream downloads / pass-throughs. Absence is
           # surfaced for visibility but does not fail the run.
           for f in blog/player-positions.parquet blog/player-skills.parquet \
-                   blog/predictions.parquet blog/shootout-wpa.parquet; do
+                   blog/predictions.parquet blog/predictions-locked.parquet blog/shootout-wpa.parquet; do
             [ -f "$f" ] || echo "::warning::Optional artifact missing: $f"
           done
           ls blog/game-logs*.parquet 1>/dev/null 2>&1 || echo "::warning::Optional artifact missing: blog/game-logs*.parquet"

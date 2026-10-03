@@ -158,6 +158,23 @@ leagues <- leagues_with_predictions
 cat("Leagues:", paste(leagues, collapse = ", "), "\n")
 cat("Matches after filtering:", nrow(predictions), "\n\n")
 
+# ── Winning-margin sampler ──────────────────────────────────────────────
+# Margin (>= 1) of a win, given the match is won by `side` (+1 home, -1 away).
+# Goals are independent Poisson(lam_h), Poisson(lam_a); the margin distribution
+# is the joint pmf restricted to that side winning, renormalised. The
+# win/draw/loss outcome itself still comes from the model's prob_H/D/A.
+sample_margin <- function(lam_h, lam_a, side, n) {
+  lam_h <- max(lam_h, 0.05); lam_a <- max(lam_a, 0.05)   # guard NA-free degenerate rows
+  g <- 0:15
+  joint <- outer(dpois(g, lam_h), dpois(g, lam_a))
+  d <- outer(g, g, "-") * side            # margin from the winner's view
+  w <- tapply(joint[d >= 1], d[d >= 1], sum)
+  if (length(w) == 0 || sum(w) <= 0) return(rep(1, n))
+  m <- as.integer(names(w))
+  if (length(m) == 1L) return(rep(m, n))
+  sample(m, n, replace = TRUE, prob = as.numeric(w))
+}
+
 # ── Simulate one season for a league (vectorized) ─────────────────────
 simulate_league <- function(preds, league_standings = NULL, n_sims = N_SIMS) {
   # Source teams from fixtures when available; fall back to standings so the
@@ -195,7 +212,8 @@ simulate_league <- function(preds, league_standings = NULL, n_sims = N_SIMS) {
   away_idx <- team_idx[preds$away_team]
   prob_H <- preds$prob_H
   prob_HD <- preds$prob_H + preds$prob_D
-  gd_match <- preds$pred_home_goals - preds$pred_away_goals  # home perspective
+  lam_h <- preds$pred_home_goals  # expected goals; shape the winning-margin distribution
+  lam_a <- preds$pred_away_goals
 
   # Generate all random numbers at once: n_sims x n_matches
   rand <- matrix(runif(n_sims * n_matches), nrow = n_sims, ncol = n_matches)
@@ -214,7 +232,6 @@ simulate_league <- function(preds, league_standings = NULL, n_sims = N_SIMS) {
   for (m in seq_len(n_matches)) {
     hi <- home_idx[m]
     ai <- away_idx[m]
-    gd_m <- gd_match[m]
 
     hw <- is_home_win[, m]
     dr <- is_draw[, m]
@@ -226,11 +243,22 @@ simulate_league <- function(preds, league_standings = NULL, n_sims = N_SIMS) {
     sim_points[dr, ai] <- sim_points[dr, ai] + 1L
     sim_points[aw, ai] <- sim_points[aw, ai] + 3L
 
-    # Goal difference
-    sim_gd[hw, hi] <- sim_gd[hw, hi] + gd_m
-    sim_gd[hw, ai] <- sim_gd[hw, ai] - gd_m
-    sim_gd[aw, ai] <- sim_gd[aw, ai] - gd_m
-    sim_gd[aw, hi] <- sim_gd[aw, hi] + gd_m
+    # Goal difference (pannadata#155): sample a winning margin consistent with the
+    # drawn outcome. The old code added the signed EXPECTED goal difference
+    # (home - away) whatever the outcome, so an away win for a home favourite
+    # LOWERED the winner's goal difference. Draws add 0.
+    n_hw <- sum(hw)
+    if (n_hw > 0) {
+      marg <- sample_margin(lam_h[m], lam_a[m], +1L, n_hw)
+      sim_gd[hw, hi] <- sim_gd[hw, hi] + marg
+      sim_gd[hw, ai] <- sim_gd[hw, ai] - marg
+    }
+    n_aw <- sum(aw)
+    if (n_aw > 0) {
+      marg <- sample_margin(lam_h[m], lam_a[m], -1L, n_aw)
+      sim_gd[aw, ai] <- sim_gd[aw, ai] + marg
+      sim_gd[aw, hi] <- sim_gd[aw, hi] - marg
+    }
   }
 
   # Add current standings for ranking
