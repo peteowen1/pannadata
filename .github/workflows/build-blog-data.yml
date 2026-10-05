@@ -630,6 +630,18 @@ jobs:
                 group_by(match_id, league, season, team_name) |>
                 summarise(xgf=sum(xg, na.rm=TRUE), .groups="drop") |>
                 group_by(match_id) |> mutate(xga=sum(xgf)-xgf) |> ungroup()
+              # Per-match team xG, one small file per league (~200 KB for ENG,
+              # all seasons): the inthegame-blog team page draws a rolling xG
+              # for/against chart from it, joining match_id to the match-stats
+              # shard it already loads for dates and home/away. This is the
+              # same tmx the season sum below uses, kept instead of discarded.
+              # A side with no shots has no row; the page reads its xgf as 0.
+              for (code in unique(tmx$league)) {
+                write_parquet(tmx |> filter(league == code) |>
+                    transmute(match_id, season, team_name, xgf=round(xgf, 3), xga=round(xga, 3)),
+                  paste0("blog/team-match-xg-", code, ".parquet"))
+              }
+              cat("team-match-xg:", nrow(tmx), "rows in", length(unique(tmx$league)), "league files\n")
               lxg <- tmx |> group_by(league, season, team_name) |>
                 summarise(matches=n(), xgf=round(sum(xgf),1), xga=round(sum(xga),1),
                   xgd=round(sum(xgf)-sum(xga),1), .groups="drop")
