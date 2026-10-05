@@ -857,6 +857,13 @@ jobs:
             echo "::notice::Skipping cup simulations — predictions not available"
           fi
 
+      - name: Strip oversized R metadata from parquets
+        # Browsers download a parquet's whole footer before any data; a grouped
+        # data frame put 37.6 MB of R attributes into shots.parquet's (blog,
+        # 2026-10-06). Rewrites only files whose footer is over 1 MB.
+        continue-on-error: true
+        run: Rscript scripts/strip_parquet_r_metadata.R blog
+
       - name: Upload to R2
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_TOKEN }}
