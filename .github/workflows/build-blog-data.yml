@@ -789,6 +789,29 @@ jobs:
           fi
           echo "Fetched blog/squads.parquet ($(stat -c %s blog/squads.parquet) bytes)"
 
+      # Recent predictions only (inthegame-blog site speed, 2026-10-05).
+      # predictions.parquet holds every league and season (59,613 rows, 48
+      # seasons, 2.4 MB, one row group), and the football hub, matches and match
+      # pages read all of it to show recent weeks. This writes the rows from the
+      # last 450 days (~8,400 rows) to a separate file; the full file is
+      # unchanged and stays the source for anything that needs history. Runs
+      # after the xG enrichment so both files carry xg_home / xg_away.
+      - name: Recent predictions
+        continue-on-error: true
+        run: |
+          if [ ! -f blog/predictions.parquet ]; then
+            echo "::notice::Skipping recent predictions - predictions not available"; exit 0
+          fi
+          Rscript -e '
+            library(arrow); library(dplyr)
+            pred <- read_parquet("blog/predictions.parquet")
+            day <- as.Date(substr(as.character(pred$match_date), 1, 10))
+            recent <- pred[!is.na(day) & day >= Sys.Date() - 450, ]
+            if (nrow(recent) < 100) stop("only ", nrow(recent), " recent prediction rows - not writing a thin file")
+            write_parquet(recent, "blog/predictions-recent.parquet")
+            cat("predictions-recent:", nrow(recent), "of", nrow(pred), "rows, since", format(Sys.Date() - 450), "\n")
+          '
+
       # Pre-match forecast lock (pannadata#156). predictions.parquet is re-scored
       # every run, so a played game carries today's view. predictions-locked.parquet
       # keeps each match's last forecast made BEFORE its match day, append-only.
