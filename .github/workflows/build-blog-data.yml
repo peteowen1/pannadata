@@ -637,6 +637,19 @@ jobs:
                 ungroup() |> arrange(league, desc(xgd))
               write_parquet(latest, "blog/league-xg.parquet")
               cat("league-xg:", nrow(latest), "rows from per-match xG\n")
+              # Per-match team xG, one small file per league (~200 KB for ENG,
+              # all seasons): the inthegame-blog team page draws a rolling xG
+              # for/against chart from it, joining match_id to the match-stats
+              # shard it already loads for dates and home/away. Written after
+              # league-xg.parquet so a failure here cannot stop that file. Same
+              # tmx the season sum uses, kept instead of discarded.
+              # A side with no shots has no row; the page reads its xgf as 0.
+              for (code in unique(tmx$league)) {
+                write_parquet(tmx |> filter(league == code) |>
+                    transmute(match_id, season, team_name, xgf=round(xgf, 3), xga=round(xga, 3)),
+                  paste0("blog/team-match-xg-", code, ".parquet"))
+              }
+              cat("team-match-xg:", nrow(tmx), "rows in", length(unique(tmx$league)), "league files\n")
             '
           else
             echo "::notice::Skipping league-xg — match-shots not available"
