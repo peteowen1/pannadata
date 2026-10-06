@@ -76,17 +76,32 @@ todo_xg   <- if (is.null(xg_model)) rep(FALSE, nrow(shots)) else !og & !known_th
 has_gm    <- !is.na(shots$goalmouth_y) & !is.na(shots$goalmouth_z)
 todo_xgot <- if (is.null(xgot_model)) rep(FALSE, nrow(shots)) else !og & !known_thin & on_target & has_gm & (mode == "all" | is.na(shots$xgot))
 # Direct corners (panna#277) scored before the fixed values existed still carry the
-# model's ~0.85. Re-score any whose stored value is not the constant; once they hold
-# it they drop out, so this costs nothing after the first run. Box rule only: the
-# shot table has no qualifiers, and panna's own code adds the q263 check when it scores.
+# model's ~0.85. Their value is a constant, so set it on the stored rows directly
+# rather than re-scoring them: no model or events needed, and a row that holds the
+# constant is never picked again. Box rule only, since the shot table has no
+# qualifiers; new shots get panna's full rule (q263 too) when they are scored.
+# Blocked shots are left alone: panna gives them no on-target xGOT.
+write_shots <- function(shots) {
+  tmp <- paste0(shot_path, ".tmp"); write_parquet(shots, tmp)
+  if (file.exists(shot_path)) invisible(file.remove(shot_path))
+  invisible(file.rename(tmp, shot_path))
+  cat("Written:", shot_path, "(", round(file.size(shot_path) / 1e6, 1), "MB)\n")
+}
 dc <- !og & !known_thin & .is_direct_corner(shots$x, shots$y, shots$situation)
-stale_xg   <- if (is.null(xg_model)) FALSE else dc & !(round(shots$xg, 3) %in% DIRECT_CORNER_XG)
-stale_xgot <- if (is.null(xgot_model)) FALSE else dc & on_target & has_gm & !(round(shots$xgot, 3) %in% DIRECT_CORNER_XGOT)
-cat("direct corners to re-score: xG", sum(stale_xg & !todo_xg), "| xGOT", sum(stale_xgot & !todo_xgot), "\n")
-todo_xg <- todo_xg | stale_xg; todo_xgot <- todo_xgot | stale_xgot
+fix_xg   <- if (is.null(xg_model)) FALSE else dc & !is.na(shots$xg) & round(shots$xg, 3) != DIRECT_CORNER_XG
+fix_xgot <- if (is.null(xgot_model)) FALSE else dc & on_target & has_gm & !(if ("is_blocked" %in% names(shots)) shots$is_blocked %in% TRUE else FALSE) &
+  !is.na(shots$xgot) & round(shots$xgot, 3) != DIRECT_CORNER_XGOT
+shots[fix_xg, xg := DIRECT_CORNER_XG]
+shots[fix_xgot, xgot := DIRECT_CORNER_XGOT]
+n_fixed <- sum(fix_xg) + sum(fix_xgot)
+cat("direct corners set to the fixed value: xG", sum(fix_xg), "| xGOT", sum(fix_xgot), "\n")
 shots[, `:=`(.row = .I, .todo = todo_xg | todo_xgot)]
 cat("to score: xG", sum(todo_xg), "| xGOT", sum(todo_xgot), "\n")
-if (!any(shots$.todo)) { cat("nothing to score\n"); quit(status = 0) }
+if (!any(shots$.todo)) {
+  cat("nothing to score\n")
+  if (n_fixed > 0) { shots[, c(".row", ".todo") := NULL]; write_shots(shots) }
+  quit(status = 0)
+}
 
 # weak-foot history: every shooter's earlier foot shots, from the whole shot file
 fx <- unique(as.data.table(read_parquet(fx_path, col_select = c("match_id", "match_date"))), by = "match_id")
@@ -187,7 +202,4 @@ share_failed <- if (n_scorable == 0) 0 else 1 - (sum(w_xg) + sum(w_xgot)) / n_sc
 if (share_failed > 0.05) stop(sprintf("%.1f%% of the shots to score got no value: refusing to write", 100 * share_failed))
 
 shots[, c(".row", ".todo") := NULL]
-tmp <- paste0(shot_path, ".tmp"); write_parquet(shots, tmp)
-if (file.exists(shot_path)) invisible(file.remove(shot_path))
-invisible(file.rename(tmp, shot_path))
-cat("Written:", shot_path, "(", round(file.size(shot_path) / 1e6, 1), "MB)\n")
+write_shots(shots)
