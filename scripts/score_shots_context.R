@@ -75,6 +75,15 @@ todo_xg   <- if (is.null(xg_model)) rep(FALSE, nrow(shots)) else !og & !known_th
 # xGOT is only ever set on on-target shots with goal-mouth coordinates; off-target is 0
 has_gm    <- !is.na(shots$goalmouth_y) & !is.na(shots$goalmouth_z)
 todo_xgot <- if (is.null(xgot_model)) rep(FALSE, nrow(shots)) else !og & !known_thin & on_target & has_gm & (mode == "all" | is.na(shots$xgot))
+# Direct corners (panna#277) scored before the fixed values existed still carry the
+# model's ~0.85. Re-score any whose stored value is not the constant; once they hold
+# it they drop out, so this costs nothing after the first run. Box rule only: the
+# shot table has no qualifiers, and panna's own code adds the q263 check when it scores.
+dc <- !og & !known_thin & .is_direct_corner(shots$x, shots$y, shots$situation)
+stale_xg   <- if (is.null(xg_model)) FALSE else dc & !(round(shots$xg, 3) %in% DIRECT_CORNER_XG)
+stale_xgot <- if (is.null(xgot_model)) FALSE else dc & on_target & has_gm & !(round(shots$xgot, 3) %in% DIRECT_CORNER_XGOT)
+cat("direct corners to re-score: xG", sum(stale_xg & !todo_xg), "| xGOT", sum(stale_xgot & !todo_xgot), "\n")
+todo_xg <- todo_xg | stale_xg; todo_xgot <- todo_xgot | stale_xgot
 shots[, `:=`(.row = .I, .todo = todo_xg | todo_xgot)]
 cat("to score: xG", sum(todo_xg), "| xGOT", sum(todo_xgot), "\n")
 if (!any(shots$.todo)) { cat("nothing to score\n"); quit(status = 0) }
