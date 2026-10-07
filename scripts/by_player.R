@@ -1,5 +1,5 @@
 # Per-player copies of the football blog parquets, per-team copies of
-# match-stats (one row group per club, for /football/team), and a small player index
+# match-stats (sorted by club, each club in one row group, for /football/team), and a small player index
 # (pannadata#164), for /football/player.
 #
 # The page filters match-stats-<CODE>.parquet and game-logs.parquet on one
@@ -24,8 +24,17 @@ suppressPackageStartupMessages(library(arrow))
 # never split a key value (a key with more than `rows` rows gets a group of its
 # own; rows = 1 gives one group per key). SNAPPY, as every football blog
 # parquet: the blog loads plain hyparquet with no other codecs. Logs the
-# row-group count and rows per group; returns the group count.
-write_parquet_packed <- function(df, path, by, rows = 1500L) {
+# row-group count, rows per group and footer size; returns the group count.
+#
+# The footer is the hidden cost: a browser downloads all of it before any row,
+# and it grows with row groups x columns (ENG2 match-stats in 1,500-row groups:
+# 431 KB of footer to read a 63 KB group; one group per UEL club: 1.5 MB). So
+# min/max statistics are written for the key column only (the one pages filter
+# on; ~1/3 of the footer otherwise), groups default to 5,000 rows (footer plus
+# one group was smallest there, measured on ENG/ENG2/UEL 2026-10-07), and a
+# footer over `max_footer` stops the write: strip_parquet_r_metadata.R rewrites
+# any file whose footer is over 1 MB, re-chunking it and losing the layout.
+write_parquet_packed <- function(df, path, by, rows = 5000L, max_footer = 900000) {
   df <- as.data.frame(df)
   key <- by[1]
   if (!key %in% names(df)) stop(path, ": key column ", key, " missing")
@@ -46,7 +55,8 @@ write_parquet_packed <- function(df, path, by, rows = 1500L) {
   ends <- cumsum(sizes); starts <- c(1L, head(ends, -1L) + 1L)
   tbl <- arrow::arrow_table(df)
   sink <- arrow::FileOutputStream$create(path)
-  props <- arrow::ParquetWriterProperties$create(names(df), compression = "snappy")
+  props <- arrow::ParquetWriterProperties$create(names(df), compression = "snappy",
+                                                 write_statistics = stats::setNames(names(df) == key, names(df)))
   writer <- arrow::ParquetFileWriter$create(tbl$schema, sink, properties = props)
   for (i in seq_along(starts)) {
     writer$WriteTable(tbl[starts[i]:ends[i], ], chunk_size = sizes[i])
@@ -57,24 +67,29 @@ write_parquet_packed <- function(df, path, by, rows = 1500L) {
   n_rg <- rdr$num_row_groups
   if (n_rg != length(sizes)) stop(sprintf("%s: wrote %d row groups, expected %d", path, n_rg, length(sizes)))
   if (rdr$num_rows != nrow(df)) stop(sprintf("%s: %d rows written, expected %d", path, rdr$num_rows, nrow(df)))
-  cat(sprintf("%s: %d rows, %d distinct %s, %d row groups (rows per group: min %d, median %d, max %d; largest %s %d rows), %.2f MB\n",
+  con <- file(path, "rb"); seek(con, file.size(path) - 8L)
+  footer <- readBin(con, "integer", 1L, size = 4L, endian = "little"); close(con)
+  if (footer > max_footer) stop(sprintf("%s: footer is %d bytes (limit %d) with %d row groups; raise `rows`", path, footer, as.integer(max_footer), n_rg))
+  cat(sprintf("%s: %d rows, %d distinct %s, %d row groups (rows per group: min %d, median %d, max %d; largest %s %d rows), footer %d KB, %.2f MB\n",
               path, nrow(df), length(run$lengths), key, n_rg, min(sizes), as.integer(stats::median(sizes)), max(sizes),
-              key, max(run$lengths), file.info(path)$size / 1024^2))
+              key, max(run$lengths), footer %/% 1024L, file.info(path)$size / 1024^2))
   invisible(n_rg)
 }
 
-write_parquet_by_player <- function(df, path, by = "player_id", rows = 1500L) {
+write_parquet_by_player <- function(df, path, by = "player_id", rows = 5000L) {
   if (by[1] != "player_id") stop(path, ": by-player file needs player_id as the first sort key")
   write_parquet_packed(df, path, by = by, rows = rows)
 }
 
 # match-stats-<CODE>-by-team.parquet (pannadata#164 comment 6028785255), for
-# /football/team: one row group per club, holding every row of every match
-# that club played (both teams' rows: the xG trend and goals against need the
-# opponent's), with `for_team` = the club's team_name. Each match appears
-# twice, so the file is about twice the original, but a for_team filter reads
-# one club's group (about 1/20 of the league) instead of the whole shard
-# (124,548 rows for ENG). Same pattern as torpdata's write_chain_events_by_team.
+# /football/team: every row of every match a club played (both teams' rows:
+# the xG trend and goals against need the opponent's), with `for_team` = the
+# club's team_name, sorted by for_team. Each match appears twice, so the file
+# is about twice the original, but a for_team filter reads one row group
+# instead of the whole shard (124,548 rows for ENG). Same idea as torpdata's
+# write_chain_events_by_team, except that small clubs share a group (never
+# splitting one): one group per club gave UEL 376 groups and a 1.5 MB footer,
+# more than the page saved. A club with over 5,000 rows has a group to itself.
 # /football/match keeps reading the original, which is grouped by match.
 write_match_stats_by_team <- function(ms, path) {
   ms <- as.data.frame(ms)
@@ -87,10 +102,9 @@ write_match_stats_by_team <- function(ms, path) {
   out <- merge(pairs, ms, by = "match_id", sort = FALSE)
   out <- out[, c("for_team", names(ms))]
   teams <- sort(unique(ms$team_name), method = "radix")
-  n_rg <- write_parquet_packed(out, path, by = c("for_team", "season", "match_date", "match_id", "team_name", "player_id"), rows = 1L)
-  if (n_rg != length(teams)) stop(sprintf("%s: %d row groups for %d clubs", path, n_rg, length(teams)))
   if (nrow(out) != 2L * nrow(ms)) stop(sprintf("%s: %d rows, expected 2 x %d (each match under both clubs)", path, nrow(out), nrow(ms)))
-  cat(sprintf("%s: %d clubs = %d row groups; %d rows = 2 x %d\n", path, length(teams), n_rg, nrow(out), nrow(ms)))
+  n_rg <- write_parquet_packed(out, path, by = c("for_team", "season", "match_date", "match_id", "team_name", "player_id"))
+  cat(sprintf("%s: %d clubs in %d row groups, each club in exactly one; %d rows = 2 x %d\n", path, length(teams), n_rg, nrow(out), nrow(ms)))
   invisible(n_rg)
 }
 
