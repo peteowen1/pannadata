@@ -857,6 +857,13 @@ jobs:
             echo "::notice::Skipping cup simulations — predictions not available"
           fi
 
+      # Per-player copies of match-stats-<CODE> and game-logs for
+      # /football/player (pannadata#164, scripts/by_player.R). Additive: the
+      # originals are untouched, and a failure leaves the page on them.
+      - name: Build per-player and per-team copies of match-stats and game-logs
+        continue-on-error: true
+        run: Rscript scripts/by_player.R blog
+
       - name: Strip oversized R metadata from parquets
         # Browsers download a parquet's whole footer before any data; a grouped
         # data frame put 37.6 MB of R attributes into shots.parquet's (blog,
