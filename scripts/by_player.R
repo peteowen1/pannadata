@@ -54,6 +54,10 @@ write_parquet_packed <- function(df, path, by, rows = 5000L, max_footer = 900000
   sizes <- as.integer(tapply(run$lengths, grp, sum))
   ends <- cumsum(sizes); starts <- c(1L, head(ends, -1L) + 1L)
   tbl <- arrow::arrow_table(df)
+  # Drop R's attribute metadata (footer key "r"), as strip_parquet_r_metadata.R
+  # does: torpdata's game-stats carried 8.7 MB of it (2026-10-07), which would
+  # trip max_footer below. Browsers never read it.
+  tbl$metadata$r <- NULL
   sink <- arrow::FileOutputStream$create(path)
   props <- arrow::ParquetWriterProperties$create(names(df), compression = "snappy",
                                                  write_statistics = stats::setNames(names(df) == key, names(df)))
