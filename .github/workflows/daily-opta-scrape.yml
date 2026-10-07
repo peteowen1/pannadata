@@ -57,8 +57,12 @@ concurrency:
 # rescored and the worker moves (pannaverse docs/plans/XG-VNEXT-2026-09.md).
 env:
   SHOT_MODELS: context
-  # panna commit whose R/ the context scorer loads (the xG v5 wiring, panna#271)
-  PANNA_REF: 81e23c2ec84a34fab83dedf106e7adfd5e7a7e33
+  # panna commit whose R/ the context scorer loads. Must include every panna
+  # function score_shots_context.R calls: 81e23c2 (the xG v5 wiring, panna#271)
+  # predated .is_direct_corner() (panna#277/#278), so the 2026-10-06 scrape
+  # died with "could not find function" and shipped new shots without xG.
+  # Bump this whenever score_shots_context.R starts calling something newer.
+  PANNA_REF: 9dfa1b9d5767392391a9dd12f83ac3d4b5b22fb3
 
 jobs:
   scrape:
