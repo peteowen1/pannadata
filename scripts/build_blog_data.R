@@ -800,6 +800,17 @@ if (requireNamespace("jsonlite", quietly = TRUE)) {
 write_parquet(panna_ratings, "blog/ratings.parquet")
 cat("ratings:", nrow(panna_ratings), "players (season", latest_season, ")\n")
 
+# player-index.parquet (pannadata#164): player_id, player_name, league from the
+# same rows as ratings.parquet, so /football/player can start its league reads
+# without waiting for the full ratings file. Optional: a failure warns and the
+# page keeps reading ratings.parquet for the name and league.
+source("scripts/by_player.R")
+tryCatch(write_player_index(panna_ratings, "blog/player-index.parquet"),
+         error = function(e) {
+           unlink("blog/player-index.parquet")
+           message("::warning::blog/player-index.parquet NOT written (the page falls back to ratings.parquet): ", conditionMessage(e))
+         })
+
 # NOTE: Shot data, match-stats, match-shots, league-xg, and chains are built
 # by dedicated workflow steps in build-blog-data.yml — not here.
 # This script only builds ratings.parquet.
