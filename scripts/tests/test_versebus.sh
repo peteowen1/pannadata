@@ -127,6 +127,8 @@ gh() {
   echo "unexpected gh invocation: $*" >&2
   return 1
 }
+# Keep a copy so a section can swap in a one-off gh and switch back.
+eval "$(declare -f gh | sed '1s/^gh /gh_fake /')"
 fake_reset
 
 # ---------------------------------------------------------------------------
@@ -462,6 +464,27 @@ rc=0; VB_SH_ASSETS_JSON="" vb_sh_restore "test/fixture" "test-tag" a.parquet "$t
 FAKE_DOWNLOAD_TRUNC=0; FAKE_LIST_FAIL=1
 rc=0; VB_SH_ASSETS_JSON="" vb_sh_restore "test/fixture" "test-tag" a.parquet "$tmpdir/r6g" >/dev/null 2>&1 || rc=$?
 [ "$rc" -eq 1 ] && pass "restore returns 1 when the listing fails (never 'absent')" || fail "restore returned $rc on a listing failure, expected 1"
+# A listing jq can't parse (the 2026-10-08 dev dry run: jq died with
+# "Argument list too long" and the old code read that as absent).
+FAKE_LIST_FAIL=0
+rc=0; VB_SH_ASSETS_JSON="not json" vb_sh_restore "test/fixture" "test-tag" a.parquet "$tmpdir/r6g" >/dev/null 2>&1 || rc=$?
+[ "$rc" -eq 1 ] && pass "restore returns 1 when jq fails on the listing (never 'absent')" || fail "restore returned $rc when jq failed, expected 1"
+
+# 6g2. The listing is trimmed to the fields used, so it stays far below the
+#      128 KB per-variable limit even for opta-latest's 134 assets.
+#      This fake returns the raw release object (with an uploader per asset,
+#      as GitHub does) and applies the caller's --jq, like gh api.
+gh() {
+  command jq -c '{assets: map(. + {uploader: {login: "x", id: 1}, label: ""})}' "$FAKE_DIR/assets.json" \
+    | command jq -c "$4"
+}
+listing=$(vb_sh_list_assets "test/fixture" "test-tag")
+if command jq -e 'length == 1 and all(.[]; (keys | sort) == ["created_at","id","name","size","state"])' <<<"$listing" >/dev/null; then
+  pass "vb_sh_list_assets keeps only id/name/size/state/created_at"
+else
+  fail "vb_sh_list_assets returned extra or missing fields: $listing"
+fi
+gh() { gh_fake "$@"; }
 
 # 6h. vb_sh_upload_all keeps the OK/FAIL line format panna's epv-pipeline.yml
 #     greps ('^FAIL').

@@ -24,9 +24,14 @@ VERSEBUS_SH_VERSION="1.3.0"
 VB_SH_TMP_PREFIX="vbnew-"
 
 # vb_sh_list_assets <repo> <tag>
-# Prints the release's asset array as JSON. Non-zero if it can't be fetched.
+# Prints the release's asset array as JSON, trimmed to the fields used here.
+# Non-zero if it can't be fetched. Trimmed because the full listing carries
+# an uploader object per asset: opta-latest's 134 assets came to more than
+# Linux's 128 KB limit for one environment string, and a caller that
+# exported it broke every later exec ("Argument list too long", 2026-10-08).
+# Keep VB_SH_ASSETS_JSON a plain shell variable; never export it.
 vb_sh_list_assets() {
-  gh api "repos/$1/releases/tags/$2" --jq '.assets'
+  gh api "repos/$1/releases/tags/$2" --jq '[.assets[] | {id, name, size, state, created_at}]'
 }
 
 # vb_sh_safe_upload <repo> <tag> <file>
@@ -64,8 +69,10 @@ vb_sh_safe_upload() {
   new_id=""
   for attempt in 1 2 3 4 5; do
     if assets=$(vb_sh_list_assets "$repo" "$tag"); then
+      # A jq failure leaves new_id empty, which only ever means "keep the old
+      # asset" -- never a delete.
       new_id=$(jq -r --arg n "$tmpname" --argjson s "$size" \
-        '.[] | select(.name == $n and .state == "uploaded" and .size == $s) | .id' <<<"$assets" | head -1)
+        'first(.[] | select(.name == $n and .state == "uploaded" and .size == $s) | .id) // empty' <<<"$assets") || new_id=""
       [ -n "$new_id" ] && break
     fi
     [ "$attempt" -lt 5 ] && sleep $((attempt * 3))
@@ -77,8 +84,11 @@ vb_sh_safe_upload() {
 
   # Delete the old asset and any stale temp copies of it. A failed delete of
   # the real <name> stops here: the rename below would collide with it.
-  old_ids=$(jq -r --arg n "$name" --arg t "$tmpname" --arg p "$VB_SH_TMP_PREFIX" \
-    '.[] | select(.name == $n or (.name != $t and (.name | startswith($p)) and (.name | endswith("--" + $n)))) | "\(.id) \(.name)"' <<<"$assets")
+  if ! old_ids=$(jq -r --arg n "$name" --arg t "$tmpname" --arg p "$VB_SH_TMP_PREFIX" \
+    '.[] | select(.name == $n or (.name != $t and (.name | startswith($p)) and (.name | endswith("--" + $n)))) | "\(.id) \(.name)"' <<<"$assets"); then
+    echo "FAIL $name could not read the listing to find the old asset; new copy left as $tmpname"
+    return 1
+  fi
   while read -r id old_name; do
     [ -n "$id" ] || continue
     if ! gh api -X DELETE "repos/${repo}/releases/assets/${id}" >/dev/null; then
@@ -118,16 +128,18 @@ vb_sh_restore() {
   if [ -z "$assets" ]; then
     assets=$(vb_sh_list_assets "$repo" "$tag") || return 1
   fi
+  # Every jq failure here returns 1: an empty answer from a broken jq must
+  # never read as "absent" (it did once, see vb_sh_list_assets).
   src=$(jq -r --arg n "$name" \
-    '[.[] | select(.state == "uploaded" and .name == $n)] | .[0].name // empty' <<<"$assets")
+    '[.[] | select(.state == "uploaded" and .name == $n)] | .[0].name // empty' <<<"$assets") || return 1
   if [ -z "$src" ]; then
     src=$(jq -r --arg n "$name" --arg p "$VB_SH_TMP_PREFIX" \
       '[.[] | select(.state == "uploaded" and (.name | startswith($p)) and (.name | endswith("--" + $n)))]
-       | sort_by(.created_at) | last | .name // empty' <<<"$assets")
+       | sort_by(.created_at) | last | .name // empty' <<<"$assets") || return 1
     [ -n "$src" ] && echo "::warning::$name is missing from ${repo}@${tag}; restoring the unswapped upload $src" >&2
   fi
   [ -n "$src" ] || return 2
-  want=$(jq -r --arg n "$src" '[.[] | select(.name == $n)] | .[0].size' <<<"$assets")
+  want=$(jq -r --arg n "$src" '[.[] | select(.name == $n)] | .[0].size' <<<"$assets") || return 1
 
   mkdir -p "$dir" || return 1
   for attempt in 1 2 3; do

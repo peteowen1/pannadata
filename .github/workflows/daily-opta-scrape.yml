@@ -126,8 +126,10 @@ jobs:
           echo "::error::Could not list opta-latest assets -- refusing to run on a possibly incomplete restore"
           exit 1
         fi
-        export VB_SH_ASSETS_JSON
-        echo "opta-latest lists $(jq length <<<"$VB_SH_ASSETS_JSON") assets"
+        # Not exported: the listing goes to vb_sh_restore in this same shell,
+        # and a big exported variable breaks every later exec.
+        n_assets=$(jq length <<<"$VB_SH_ASSETS_JSON")
+        echo "opta-latest lists $n_assets assets"
 
         CORE="opta_player_stats.parquet opta_shots.parquet opta_shot_events.parquet opta_events.parquet opta_lineups.parquet opta_fixtures.parquet event_less_match_ids.parquet"
 
