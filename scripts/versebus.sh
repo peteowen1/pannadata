@@ -12,13 +12,142 @@
 # (bus_manifest.json, schema_version 1) -- identical shape to the JSON
 # R/versebus.R's vb_write_manifest() produces, so a strict R consumer reading
 # a tag this script published sees the same contract.
-VERSEBUS_SH_VERSION="1.2.0"
+VERSEBUS_SH_VERSION="1.3.0"
+
+# Never `gh release upload --clobber`: clobber DELETES the existing asset
+# before it uploads, so an upload that then fails (wheather, 2026-09-17: HTTP
+# 500 on a 115 MB asset) leaves the release without the file. Every
+# accumulating writer here reads its asset back next run, and a missing one
+# reads as "first run" -- the next run publishes a cut-down file over the
+# history. vb_sh_safe_upload keeps the old asset until a verified
+# replacement is on the release. Audit: vault/plans/CLOBBER-AUDIT-2026-10-08.md.
+VB_SH_TMP_PREFIX="vbnew-"
+
+# vb_sh_list_assets <repo> <tag>
+# Prints the release's asset array as JSON. Non-zero if it can't be fetched.
+vb_sh_list_assets() {
+  gh api "repos/$1/releases/tags/$2" --jq '.assets'
+}
+
+# vb_sh_safe_upload <repo> <tag> <file>
+# Uploads <file> under a temporary asset name (vbnew-<run>-<attempt>-<pid>--
+# <name>), confirms it reached state "uploaded" at the local byte size, and
+# only then deletes the old <name> (plus any temp copies left by earlier
+# runs) and renames the new asset to <name>. Prints "OK <name>" or
+# "FAIL <name> <why>". Failure before the delete leaves the old asset
+# untouched; failure of the final rename leaves the data on the release
+# under its temp name, where vb_sh_restore finds it.
+vb_sh_safe_upload() {
+  local repo="$1" tag="$2" f="$3"
+  local name size tmpname tmpd assets new_id attempt id old_ids
+  name=$(basename "$f")
+  [ -f "$f" ] || { echo "FAIL $name local file missing"; return 1; }
+  size=$(stat -c%s "$f")
+  # Unique per call: a second upload of the same file in one shell must not
+  # collide with a temp copy the first one stranded.
+  tmpname="${VB_SH_TMP_PREFIX}${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}-$$${RANDOM}${RANDOM}--${name}"
+
+  # gh names an asset after the file's basename, so stage it under the temp
+  # name. Hard link where possible: the events files run to ~300 MB.
+  tmpd=$(mktemp -d) || { echo "FAIL $name could not create a staging dir"; return 1; }
+  ln "$f" "$tmpd/$tmpname" 2>/dev/null || cp "$f" "$tmpd/$tmpname" || {
+    rm -rf "$tmpd"; echo "FAIL $name could not stage $tmpname"; return 1; }
+  if ! gh release upload "$tag" "$tmpd/$tmpname" --repo "$repo"; then
+    rm -rf "$tmpd"
+    echo "FAIL $name upload failed (old asset untouched)"
+    return 1
+  fi
+  rm -rf "$tmpd"
+
+  # The listing can lag an upload by seconds (versebus.R saw a stale size
+  # for ~95s on 2026-07-16), so poll before declaring the upload bad.
+  new_id=""
+  for attempt in 1 2 3 4 5; do
+    if assets=$(vb_sh_list_assets "$repo" "$tag"); then
+      new_id=$(jq -r --arg n "$tmpname" --argjson s "$size" \
+        '.[] | select(.name == $n and .state == "uploaded" and .size == $s) | .id' <<<"$assets" | head -1)
+      [ -n "$new_id" ] && break
+    fi
+    [ "$attempt" -lt 5 ] && sleep $((attempt * 3))
+  done
+  if [ -z "$new_id" ]; then
+    echo "FAIL $name $tmpname never listed as uploaded at $size bytes (old asset untouched)"
+    return 1
+  fi
+
+  # Delete the old asset and any stale temp copies of it. A failed delete of
+  # the real <name> stops here: the rename below would collide with it.
+  old_ids=$(jq -r --arg n "$name" --arg t "$tmpname" --arg p "$VB_SH_TMP_PREFIX" \
+    '.[] | select(.name == $n or (.name != $t and (.name | startswith($p)) and (.name | endswith("--" + $n)))) | "\(.id) \(.name)"' <<<"$assets")
+  while read -r id old_name; do
+    [ -n "$id" ] || continue
+    if ! gh api -X DELETE "repos/${repo}/releases/assets/${id}" >/dev/null; then
+      if [ "$old_name" = "$name" ]; then
+        echo "FAIL $name could not delete the old asset; new copy left as $tmpname"
+        return 1
+      fi
+      echo "::warning::could not delete stale temp asset $old_name" >&2
+    fi
+  done <<<"$old_ids"
+
+  for attempt in 1 2 3; do
+    if gh api -X PATCH "repos/${repo}/releases/assets/${new_id}" -f name="$name" >/dev/null; then
+      echo "OK $name"
+      return 0
+    fi
+    [ "$attempt" -lt 3 ] && sleep $((attempt * 5))
+  done
+  echo "FAIL $name rename failed; the data is on the release as $tmpname (vb_sh_restore falls back to it)"
+  return 1
+}
+
+# vb_sh_restore <repo> <tag> <name> <dir>
+# Downloads <name> into <dir>. If <name> is absent but an unswapped temp
+# copy from vb_sh_safe_upload is on the release, downloads the newest one
+# and saves it as <dir>/<name>. Checks the downloaded size against the
+# listing. Uses $VB_SH_ASSETS_JSON as the listing when set (callers that
+# restore many files list once). Returns:
+#   0  restored
+#   2  not on the release at all (neither the name nor a temp copy)
+#   1  on the release but could not be downloaded intact -- callers must
+#      treat this as fatal, never as "absent"
+vb_sh_restore() {
+  local repo="$1" tag="$2" name="$3" dir="$4"
+  local assets src want attempt got
+  assets="${VB_SH_ASSETS_JSON:-}"
+  if [ -z "$assets" ]; then
+    assets=$(vb_sh_list_assets "$repo" "$tag") || return 1
+  fi
+  src=$(jq -r --arg n "$name" \
+    '[.[] | select(.state == "uploaded" and .name == $n)] | .[0].name // empty' <<<"$assets")
+  if [ -z "$src" ]; then
+    src=$(jq -r --arg n "$name" --arg p "$VB_SH_TMP_PREFIX" \
+      '[.[] | select(.state == "uploaded" and (.name | startswith($p)) and (.name | endswith("--" + $n)))]
+       | sort_by(.created_at) | last | .name // empty' <<<"$assets")
+    [ -n "$src" ] && echo "::warning::$name is missing from ${repo}@${tag}; restoring the unswapped upload $src" >&2
+  fi
+  [ -n "$src" ] || return 2
+  want=$(jq -r --arg n "$src" '[.[] | select(.name == $n)] | .[0].size' <<<"$assets")
+
+  mkdir -p "$dir" || return 1
+  for attempt in 1 2 3; do
+    if gh release download "$tag" --repo "$repo" --pattern "$src" --dir "$dir" --clobber; then
+      got=$(stat -c%s "$dir/$src" 2>/dev/null || echo -1)
+      if [ "$got" = "$want" ]; then
+        [ "$src" = "$name" ] || mv -f "$dir/$src" "$dir/$name" || return 1
+        return 0
+      fi
+      echo "::warning::$src downloaded at $got bytes, listing says $want (attempt $attempt)" >&2
+    fi
+    [ "$attempt" -lt 3 ] && sleep $((attempt * 5))
+  done
+  return 1
+}
 
 # vb_sh_upload_all <repo> <tag> <file> [<file> ...]
-# Uploads each file with `gh release upload --clobber`, one at a time.
-# Prints "OK <name>" or "FAIL <name>" per file to stdout -- the caller greps/
-# counts failures (mirrors the pre-existing `upload_errors` counter
-# convention in daily-opta-scrape.yml). Never aborts on an individual
+# vb_sh_safe_upload on each file, one at a time. Prints "OK <name>" or
+# "FAIL <name> ..." per file to stdout -- the caller greps/counts failures
+# (panna's epv-pipeline.yml greps '^FAIL'). Never aborts on an individual
 # failure; the caller decides whether to gate downstream steps (verify,
 # manifest) on the failure count.
 vb_sh_upload_all() {
@@ -26,11 +155,7 @@ vb_sh_upload_all() {
   local f
   for f in "$@"; do
     [ -f "$f" ] || continue
-    if gh release upload "$tag" "$f" --repo "$repo" --clobber; then
-      echo "OK $(basename "$f")"
-    else
-      echo "FAIL $(basename "$f")"
-    fi
+    vb_sh_safe_upload "$repo" "$tag" "$f"
   done
 }
 
@@ -82,7 +207,7 @@ vb_sh_verify() {
 # events_<comp>.parquet files because the concurrent-scrape mtime-skip logic
 # left the rest untouched) still describes the WHOLE tag, per
 # ECOSYSTEM-FIX-PLAN.md Section 1.2. Uploads the manifest LAST via
-# --clobber. Returns non-zero (manifest NOT uploaded) on any internal
+# vb_sh_safe_upload. Returns non-zero (manifest NOT uploaded) on any internal
 # failure (fetch/hash/jq), same effect as the upload_errors gate.
 vb_sh_manifest_last() {
   local repo="$1" tag="$2" upload_errors="$3" out_path="$4"; shift 4
@@ -95,8 +220,17 @@ vb_sh_manifest_last() {
   local tmpdir prev_manifest
   tmpdir=$(mktemp -d) || return 1
   prev_manifest=""
-  if gh release download "$tag" --repo "$repo" --pattern "bus_manifest.json" --dir "$tmpdir" 2>/dev/null; then
+  # A previous manifest that exists but fails to download must not read as
+  # "first publish": the merged manifest would silently drop every
+  # carried-forward entry.
+  local rc=0
+  VB_SH_ASSETS_JSON="" vb_sh_restore "$repo" "$tag" "bus_manifest.json" "$tmpdir" || rc=$?
+  if [ "$rc" -eq 0 ]; then
     prev_manifest="$tmpdir/bus_manifest.json"
+  elif [ "$rc" -ne 2 ]; then
+    echo "::error::vb_sh_manifest_last could not read the previous bus_manifest.json for ${repo}@${tag}" >&2
+    rm -rf "$tmpdir"
+    return 1
   fi
 
   local entries="[]" f name sha bytes entry
@@ -135,7 +269,7 @@ vb_sh_manifest_last() {
     upload_src="$tmpdir/bus_manifest.json"
   fi
 
-  if gh release upload "$tag" "$upload_src" --repo "$repo" --clobber; then
+  if vb_sh_safe_upload "$repo" "$tag" "$upload_src" >/dev/null; then
     echo "OK bus_manifest.json (generation $generation, $(echo "$entries" | jq 'length') asset(s))"
     rm -rf "$tmpdir"
     return 0

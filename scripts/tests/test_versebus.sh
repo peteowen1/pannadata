@@ -36,6 +36,99 @@ tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
 echo "dummy content" > "$tmpdir/a.parquet"
 
+# No real waiting in tests (safe upload / restore back off between retries).
+sleep() { :; }
+# Windows jq emits CRLF, which breaks the size comparisons; Linux CI is
+# unaffected. pipefail keeps jq's own exit status.
+jq() { command jq "$@" | tr -d '\r'; }
+
+# ---------------------------------------------------------------------------
+# Fake release: a stateful `gh` that keeps assets as real files plus a JSON
+# listing, so the upload -> list -> delete -> rename and restore paths run
+# for real. Failure switches (set to 1 to trigger):
+#   FAKE_UPLOAD_FAIL FAKE_LIST_FAIL FAKE_PATCH_FAIL FAKE_DELETE_FAIL
+#   FAKE_DOWNLOAD_FAIL FAKE_DOWNLOAD_TRUNC FAKE_UPLOAD_STUCK (upload lands
+#   in state "starter", i.e. never completes)
+# ---------------------------------------------------------------------------
+fake_reset() {
+  FAKE_DIR="$tmpdir/fake_release_$RANDOM$RANDOM"
+  mkdir -p "$FAKE_DIR/files"
+  echo '[]' > "$FAKE_DIR/assets.json"
+  FAKE_NEXT_ID=1
+  FAKE_UPLOAD_FAIL=0 FAKE_LIST_FAIL=0 FAKE_PATCH_FAIL=0 FAKE_DELETE_FAIL=0
+  FAKE_DOWNLOAD_FAIL=0 FAKE_DOWNLOAD_TRUNC=0 FAKE_UPLOAD_STUCK=0
+}
+fake_put() {  # fake_put <name> <content> -- seed an asset directly
+  printf '%s' "$2" > "$FAKE_DIR/files/$1"
+  _fake_add "$1" "$(stat -c%s "$FAKE_DIR/files/$1")" uploaded
+}
+_fake_add() {
+  local tmp="$FAKE_DIR/assets.tmp"
+  command jq --arg n "$1" --argjson s "$2" --arg st "$3" --argjson id "$FAKE_NEXT_ID" \
+    '. + [{id: $id, name: $n, size: $s, state: $st, created_at: ("2026-10-08T00:00:" + ($id | tostring | if length < 2 then "0" + . else . end) + "Z")}]' \
+    "$FAKE_DIR/assets.json" > "$tmp" && mv "$tmp" "$FAKE_DIR/assets.json"
+  FAKE_NEXT_ID=$((FAKE_NEXT_ID + 1))
+}
+fake_names() { command jq -r '[.[].name] | sort | join(" ")' "$FAKE_DIR/assets.json" | tr -d '\r'; }
+fake_content() { cat "$FAKE_DIR/files/$1" 2>/dev/null; }
+
+gh() {
+  local tmp="$FAKE_DIR/assets.tmp"
+  if [ "$1" = "api" ] && [ "$2" = "-X" ]; then
+    local method="$3" id="${4##*/}"
+    local name
+    name=$(command jq -r --argjson id "$id" '.[] | select(.id == $id) | .name' "$FAKE_DIR/assets.json" | tr -d '\r')
+    [ -n "$name" ] || return 1
+    if [ "$method" = "DELETE" ]; then
+      [ "$FAKE_DELETE_FAIL" = 1 ] && return 1
+      rm -f "$FAKE_DIR/files/$name"
+      command jq --argjson id "$id" 'map(select(.id != $id))' "$FAKE_DIR/assets.json" > "$tmp" && mv "$tmp" "$FAKE_DIR/assets.json"
+      return 0
+    elif [ "$method" = "PATCH" ]; then
+      [ "$FAKE_PATCH_FAIL" = 1 ] && return 1
+      local new="${6#name=}"
+      mv "$FAKE_DIR/files/$name" "$FAKE_DIR/files/$new"
+      command jq --argjson id "$id" --arg n "$new" 'map(if .id == $id then .name = $n else . end)' "$FAKE_DIR/assets.json" > "$tmp" && mv "$tmp" "$FAKE_DIR/assets.json"
+      echo '{}'
+      return 0
+    fi
+    return 1
+  elif [ "$1" = "api" ]; then
+    [ "$FAKE_LIST_FAIL" = 1 ] && return 1
+    cat "$FAKE_DIR/assets.json"
+    return 0
+  elif [ "$1" = "release" ] && [ "$2" = "upload" ]; then
+    [ "$FAKE_UPLOAD_FAIL" = 1 ] && return 1
+    local f="$4" name
+    name=$(basename "$f")
+    cp "$f" "$FAKE_DIR/files/$name"
+    if [ "$FAKE_UPLOAD_STUCK" = 1 ]; then
+      _fake_add "$name" "$(stat -c%s "$f")" starter
+    else
+      _fake_add "$name" "$(stat -c%s "$f")" uploaded
+    fi
+    return 0
+  elif [ "$1" = "release" ] && [ "$2" = "download" ]; then
+    [ "$FAKE_DOWNLOAD_FAIL" = 1 ] && return 1
+    local pattern="" dir="" prev=""
+    for a in "$@"; do
+      [ "$prev" = "--pattern" ] && pattern="$a"
+      [ "$prev" = "--dir" ] && dir="$a"
+      prev="$a"
+    done
+    [ -f "$FAKE_DIR/files/$pattern" ] || return 1
+    if [ "$FAKE_DOWNLOAD_TRUNC" = 1 ]; then
+      head -c 1 "$FAKE_DIR/files/$pattern" > "$dir/$pattern"
+    else
+      cp "$FAKE_DIR/files/$pattern" "$dir/$pattern"
+    fi
+    return 0
+  fi
+  echo "unexpected gh invocation: $*" >&2
+  return 1
+}
+fake_reset
+
 # ---------------------------------------------------------------------------
 # 1. vb_sh_manifest_last refuses when upload_errors != 0 -- no manifest file
 #    is written, and it returns non-zero.
@@ -50,15 +143,7 @@ check_not "vb_sh_manifest_last does NOT write a manifest file when upload_errors
 # 2. vb_sh_manifest_last produces a §1.2-schema-valid manifest when
 #    upload_errors=0 (first-ever publish -- no previous manifest on the tag).
 # ---------------------------------------------------------------------------
-gh() {
-  if [ "$1" = "release" ] && [ "$2" = "download" ]; then
-    return 1  # no previous manifest -- simulates a first-ever publish
-  elif [ "$1" = "release" ] && [ "$2" = "upload" ]; then
-    return 0
-  fi
-  echo "unexpected gh invocation in phase 2: $*" >&2
-  return 1
-}
+fake_reset  # empty release -- simulates a first-ever publish
 
 out_fresh="$tmpdir/fresh_bus_manifest.json"
 check "vb_sh_manifest_last succeeds when upload_errors=0" \
@@ -97,24 +182,8 @@ cat > "$prev_dir/bus_manifest.json" <<EOF
  "notes":""}
 EOF
 
-gh() {
-  if [ "$1" = "release" ] && [ "$2" = "download" ]; then
-    local dir_arg="" prevarg=""
-    for a in "$@"; do
-      if [ "$prevarg" = "--dir" ]; then dir_arg="$a"; fi
-      prevarg="$a"
-    done
-    if [ -n "$dir_arg" ]; then
-      cp "$prev_dir/bus_manifest.json" "$dir_arg/bus_manifest.json"
-      return 0
-    fi
-    return 1
-  elif [ "$1" = "release" ] && [ "$2" = "upload" ]; then
-    return 0
-  fi
-  echo "unexpected gh invocation in phase 3: $*" >&2
-  return 1
-}
+fake_reset
+fake_put bus_manifest.json "$(cat "$prev_dir/bus_manifest.json")"
 
 out_carry="$tmpdir/carry_bus_manifest.json"
 check "vb_sh_manifest_last succeeds with a previous manifest present" \
@@ -135,32 +204,31 @@ fi
 #     (gh names assets by file basename; a models_manifest.json out_path
 #     shipped under the wrong asset name 2026-07-17 before this guard).
 # ---------------------------------------------------------------------------
-captured_upload="$tmpdir/captured_upload_path"
-gh() {
-  if [ "$1" = "release" ] && [ "$2" = "download" ]; then
-    return 1  # no previous manifest
-  elif [ "$1" = "release" ] && [ "$2" = "upload" ]; then
-    echo "$4" > "$captured_upload"  # args: release upload <tag> <file> --repo ...
-    return 0
-  fi
-  echo "unexpected gh invocation in phase 3b: $*" >&2
-  return 1
-}
+fake_reset  # no previous manifest
 
 out_oddname="$tmpdir/models_manifest.json"
 check "vb_sh_manifest_last succeeds with a non-canonical out_path basename" \
   vb_sh_manifest_last "test/fixture" "test-tag" 0 "$out_oddname" "$tmpdir/a.parquet"
 check "non-canonical out_path still writes the caller's local copy" \
   test -f "$out_oddname"
-if [ -f "$captured_upload" ]; then
-  uploaded_base=$(basename "$(cat "$captured_upload")")
-  if [ "$uploaded_base" = "bus_manifest.json" ]; then
-    pass "uploaded asset basename is bus_manifest.json regardless of out_path"
-  else
-    fail "uploaded asset basename is '$uploaded_base', expected bus_manifest.json"
-  fi
+if [ "$(fake_names)" = "bus_manifest.json" ]; then
+  pass "uploaded asset name is bus_manifest.json regardless of out_path"
 else
-  fail "mock gh never captured an upload path in phase 3b"
+  fail "release holds '$(fake_names)', expected exactly bus_manifest.json"
+fi
+
+# 3c. A previous manifest that is listed but fails to download must NOT be
+#     treated as a first publish (the merge would drop every carried entry).
+fake_reset
+fake_put bus_manifest.json "$(cat "$prev_dir/bus_manifest.json")"
+FAKE_DOWNLOAD_FAIL=1
+out_dlfail="$tmpdir/dlfail_bus_manifest.json"
+check_not "vb_sh_manifest_last refuses when the previous manifest can't be downloaded" \
+  vb_sh_manifest_last "test/fixture" "test-tag" 0 "$out_dlfail" "$tmpdir/a.parquet"
+if [ "$(fake_content bus_manifest.json)" = "$(cat "$prev_dir/bus_manifest.json")" ]; then
+  pass "previous manifest left untouched after a failed read"
+else
+  fail "previous manifest was replaced after a failed read"
 fi
 
 # ---------------------------------------------------------------------------
@@ -173,7 +241,7 @@ fi
 workflow="$SCRIPT_DIR/../../.github/workflows/daily-opta-scrape.yml"
 if [ -f "$workflow" ]; then
   parquet_loop_line=$(grep -n 'for f in opta/opta_\*\.parquet' "$workflow" | head -1 | cut -d: -f1)
-  domain_manifest_line=$(grep -n 'gh release upload opta-latest opta-manifest\.parquet' "$workflow" | head -1 | cut -d: -f1)
+  domain_manifest_line=$(grep -n 'vb_sh_safe_upload "peteowen1/pannadata" opta-latest opta-manifest\.parquet' "$workflow" | head -1 | cut -d: -f1)
   bus_manifest_line=$(grep -n 'vb_sh_manifest_last "peteowen1/pannadata" "opta-latest"' "$workflow" | head -1 | cut -d: -f1)
   gate_line=$(grep -n 'if \[ "\$upload_errors" -eq 0 \]' "$workflow" | head -1 | cut -d: -f1)
 
@@ -299,6 +367,118 @@ if [ -f "$out_r2_carry" ]; then
     jq -e '[.assets[].name] | index("a.parquet") != null' "$out_r2_carry"
   check "R2 carry-forward: previous-manifest-only file survives" \
     jq -e '[.assets[].name] | index("old_only.parquet") != null' "$out_r2_carry"
+fi
+
+# ---------------------------------------------------------------------------
+# 6. vb_sh_safe_upload / vb_sh_restore: the old asset must survive every
+#    failure before the swap (audit: vault/plans/CLOBBER-AUDIT-2026-10-08.md).
+# ---------------------------------------------------------------------------
+echo "new content" > "$tmpdir/a.parquet"
+
+# 6a. Happy path: replaced in place, one asset, no temp leftovers.
+fake_reset
+fake_put a.parquet "old content"
+check "safe upload succeeds over an existing asset" \
+  vb_sh_safe_upload "test/fixture" "test-tag" "$tmpdir/a.parquet"
+if [ "$(fake_names)" = "a.parquet" ] && [ "$(fake_content a.parquet)" = "new content" ]; then
+  pass "safe upload: one asset named a.parquet holding the new content"
+else
+  fail "safe upload: release holds '$(fake_names)', content '$(fake_content a.parquet)'"
+fi
+
+# 6b. Upload fails -> old asset untouched.
+fake_reset
+fake_put a.parquet "old content"
+FAKE_UPLOAD_FAIL=1
+check_not "safe upload returns non-zero when the upload fails" \
+  vb_sh_safe_upload "test/fixture" "test-tag" "$tmpdir/a.parquet"
+if [ "$(fake_names)" = "a.parquet" ] && [ "$(fake_content a.parquet)" = "old content" ]; then
+  pass "failed upload leaves the old asset in place"
+else
+  fail "failed upload changed the release: '$(fake_names)'"
+fi
+
+# 6c. Upload never completes (state stays "starter") -> old asset untouched.
+fake_reset
+fake_put a.parquet "old content"
+FAKE_UPLOAD_STUCK=1
+check_not "safe upload returns non-zero when the upload never completes" \
+  vb_sh_safe_upload "test/fixture" "test-tag" "$tmpdir/a.parquet"
+if [ "$(fake_content a.parquet)" = "old content" ]; then
+  pass "incomplete upload leaves the old asset in place"
+else
+  fail "incomplete upload deleted or changed the old asset"
+fi
+
+# 6d. Deleting the old asset fails -> old asset untouched, FAIL.
+fake_reset
+fake_put a.parquet "old content"
+FAKE_DELETE_FAIL=1
+check_not "safe upload returns non-zero when the old asset can't be deleted" \
+  vb_sh_safe_upload "test/fixture" "test-tag" "$tmpdir/a.parquet"
+if [ "$(fake_content a.parquet)" = "old content" ]; then
+  pass "failed delete leaves the old asset in place"
+else
+  fail "failed delete still lost the old asset"
+fi
+
+# 6e. Rename fails after the delete -> FAIL, and vb_sh_restore recovers the
+#     new data from the temp copy.
+fake_reset
+fake_put a.parquet "old content"
+FAKE_PATCH_FAIL=1
+check_not "safe upload returns non-zero when the final rename fails" \
+  vb_sh_safe_upload "test/fixture" "test-tag" "$tmpdir/a.parquet"
+FAKE_PATCH_FAIL=0
+restore_dir="$tmpdir/restore_6e"
+rc=0; VB_SH_ASSETS_JSON="" vb_sh_restore "test/fixture" "test-tag" a.parquet "$restore_dir" >/dev/null 2>&1 || rc=$?
+if [ "$rc" -eq 0 ] && [ "$(cat "$restore_dir/a.parquet" 2>/dev/null)" = "new content" ]; then
+  pass "restore falls back to the unswapped temp copy"
+else
+  fail "restore after a failed rename: rc=$rc, content '$(cat "$restore_dir/a.parquet" 2>/dev/null)'"
+fi
+
+# 6f. The next successful upload clears the stranded temp copy.
+check "safe upload succeeds after a stranded temp copy" \
+  vb_sh_safe_upload "test/fixture" "test-tag" "$tmpdir/a.parquet"
+if [ "$(fake_names)" = "a.parquet" ]; then
+  pass "stranded temp copy cleaned up by the next upload"
+else
+  fail "release still holds '$(fake_names)' after the next upload"
+fi
+
+# 6g. vb_sh_restore return codes: absent -> 2, download failure -> 1,
+#     truncated download -> 1, never 0 on a bad file.
+fake_reset
+rc=0; VB_SH_ASSETS_JSON="" vb_sh_restore "test/fixture" "test-tag" a.parquet "$tmpdir/r6g" >/dev/null 2>&1 || rc=$?
+[ "$rc" -eq 2 ] && pass "restore returns 2 for an absent asset" || fail "restore returned $rc for an absent asset, expected 2"
+fake_put a.parquet "old content"
+FAKE_DOWNLOAD_FAIL=1
+rc=0; VB_SH_ASSETS_JSON="" vb_sh_restore "test/fixture" "test-tag" a.parquet "$tmpdir/r6g" >/dev/null 2>&1 || rc=$?
+[ "$rc" -eq 1 ] && pass "restore returns 1 when a listed asset can't be downloaded" || fail "restore returned $rc on a download failure, expected 1"
+FAKE_DOWNLOAD_FAIL=0; FAKE_DOWNLOAD_TRUNC=1
+rc=0; VB_SH_ASSETS_JSON="" vb_sh_restore "test/fixture" "test-tag" a.parquet "$tmpdir/r6g" >/dev/null 2>&1 || rc=$?
+[ "$rc" -eq 1 ] && pass "restore returns 1 on a truncated download" || fail "restore returned $rc on a truncated download, expected 1"
+FAKE_DOWNLOAD_TRUNC=0; FAKE_LIST_FAIL=1
+rc=0; VB_SH_ASSETS_JSON="" vb_sh_restore "test/fixture" "test-tag" a.parquet "$tmpdir/r6g" >/dev/null 2>&1 || rc=$?
+[ "$rc" -eq 1 ] && pass "restore returns 1 when the listing fails (never 'absent')" || fail "restore returned $rc on a listing failure, expected 1"
+
+# 6h. vb_sh_upload_all keeps the OK/FAIL line format panna's epv-pipeline.yml
+#     greps ('^FAIL').
+fake_reset
+out=$(vb_sh_upload_all "test/fixture" "test-tag" "$tmpdir/a.parquet" 2>/dev/null)
+grep -qx "OK a.parquet" <<<"$out" && pass "upload_all prints 'OK <name>'" || fail "upload_all printed '$out'"
+FAKE_UPLOAD_FAIL=1
+out=$(vb_sh_upload_all "test/fixture" "test-tag" "$tmpdir/a.parquet" 2>/dev/null)
+grep -q "^FAIL a.parquet" <<<"$out" && pass "upload_all prints 'FAIL <name> ...'" || fail "upload_all printed '$out'"
+
+# 6i. No workflow in this repo uploads with --clobber any more.
+clobber_uploads=$(grep -n 'release upload.*--clobber' "$SCRIPT_DIR"/../../.github/workflows/*.yml "$SCRIPT_DIR/../versebus.sh" 2>/dev/null \
+  | grep -v ':[0-9]*:[[:space:]]*#' || true)
+if [ -z "$clobber_uploads" ]; then
+  pass "no 'gh release upload --clobber' left in workflows or versebus.sh"
+else
+  fail "delete-first uploads remain: $clobber_uploads"
 fi
 
 echo ""
