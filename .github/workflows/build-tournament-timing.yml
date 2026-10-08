@@ -120,6 +120,7 @@ jobs:
         run: |
           # The release asset uses hyphens; the script writes underscores.
           cp data/opta/tournament_events_timing.parquet tournament-events-timing.parquet
-          gh release upload blog-latest tournament-events-timing.parquet --clobber
+          source scripts/versebus.sh
+          vb_sh_safe_upload peteowen1/pannadata blog-latest tournament-events-timing.parquet
           echo "Uploaded $(stat -c %s tournament-events-timing.parquet) bytes to blog-latest"
           echo "It reaches R2 on the next build-blog-data run, which passes it straight through."

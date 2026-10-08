@@ -37,6 +37,11 @@ on:
         required: false
         type: boolean
         default: true
+      allow_missing_prior:
+        description: 'Allow events_<comp>.parquet or the event-less registry to be absent from opta-latest (a brand-new competition). Default refuses, so a LOST file never reads as new and gets replaced by one season.'
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: opta-latest-writer
@@ -71,6 +76,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           COMPETITION: ${{ inputs.competition }}
+          ALLOW_MISSING_PRIOR: ${{ inputs.allow_missing_prior }}
         run: |
           mkdir -p "data/opta/match_events/$COMPETITION"
           mkdir -p "data/opta/shot_events/$COMPETITION"
@@ -84,8 +90,18 @@ jobs:
           ls -la "data/opta/match_events/$COMPETITION/" || true
           # Existing event-less registry — pull so rebuild MERGES new event-less
           # match_ids into it rather than overwriting prior comps' entries.
-          gh release download opta-latest --pattern "event_less_match_ids.parquet" \
-            --dir data/opta/ 2>/dev/null || true
+          # Listed-but-undownloadable is fatal for the same reason as the
+          # events prior below: the upload would replace the registry.
+          source scripts/versebus.sh
+          rc=0
+          vb_sh_restore peteowen1/pannadata opta-latest event_less_match_ids.parquet data/opta || rc=$?
+          if [ "$rc" -eq 1 ]; then
+            echo "::error::event_less_match_ids.parquet is on opta-latest but could not be downloaded"
+            exit 1
+          elif [ "$rc" -eq 2 ] && [ "$ALLOW_MISSING_PRIOR" != "true" ]; then
+            echo "::error::event_less_match_ids.parquet is missing from opta-latest; the upload would replace the registry with this run's entries only. Re-dispatch with allow_missing_prior=true if that is intended."
+            exit 1
+          fi
 
       - name: Run rebuild_events.py
         env:
@@ -113,6 +129,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           COMPETITION: ${{ inputs.competition }}
+          ALLOW_MISSING_PRIOR: ${{ inputs.allow_missing_prior }}
           SEASON: ${{ inputs.season }}
         run: |
           cd data
@@ -121,9 +138,27 @@ jobs:
           # fetched only one season, so consolidate writes a single-season file;
           # without this merge the upload would clobber every other season already
           # on opta-latest (the 2026-06 Championship/UCL single-season regression).
+          #
+          # A prior file that exists but fails to download must stop the run:
+          # `|| true` here used to turn a transient error into a single-season
+          # upload over the full history. Absent (rc 2) is fine -- a brand-new
+          # comp has no prior. Audit: vault/plans/CLOBBER-AUDIT-2026-10-08.md.
+          source ../scripts/versebus.sh
           mkdir -p /tmp/prior
-          gh release download opta-latest --pattern "events_${COMPETITION}.parquet" \
-            --dir /tmp/prior 2>/dev/null || true
+          rc=0
+          vb_sh_restore peteowen1/pannadata opta-latest "events_${COMPETITION}.parquet" /tmp/prior || rc=$?
+          if [ "$rc" -eq 1 ]; then
+            echo "::error::events_${COMPETITION}.parquet is on opta-latest but could not be downloaded -- refusing to upload a file without its prior seasons"
+            exit 1
+          elif [ "$rc" -eq 2 ]; then
+            # A lost file looks exactly like a new comp here, so absence needs
+            # the dispatch to say "new" explicitly.
+            if [ "$ALLOW_MISSING_PRIOR" != "true" ]; then
+              echo "::error::No events_${COMPETITION}.parquet on opta-latest. Uploading would publish this run's season only. If ${COMPETITION} is a new competition, re-dispatch with allow_missing_prior=true."
+              exit 1
+            fi
+            echo "::notice::No prior events_${COMPETITION}.parquet on opta-latest (allow_missing_prior=true) -- uploading this run's seasons only"
+          fi
           # Force coverage check to pick up the new per-league rows
           OPTA_CONSOLIDATE_FORCE=1 python ../scripts/opta/consolidate_opta.py
           # Upload the affected per-league + consolidated files
@@ -138,14 +173,14 @@ jobs:
               if [ -f "$PRIOR" ]; then
                 python ../scripts/opta/merge_events_accumulate.py "$PRIOR" "$UP_FILE" "$UP_FILE"
               fi
-              gh release upload opta-latest "$UP_FILE" --repo peteowen1/pannadata --clobber
+              vb_sh_safe_upload peteowen1/pannadata opta-latest "$UP_FILE" || exit 1
               echo "Uploaded $UP_FILE (accumulated)"
             fi
           fi
           # Upload the event-less registry if rebuild recorded any (matches Opta
           # has no event feed for) — the coverage check subtracts these.
           if [ -f opta/event_less_match_ids.parquet ]; then
-            gh release upload opta-latest opta/event_less_match_ids.parquet --repo peteowen1/pannadata --clobber
+            vb_sh_safe_upload peteowen1/pannadata opta-latest opta/event_less_match_ids.parquet || exit 1
             echo "Uploaded event_less_match_ids.parquet"
           fi
 
