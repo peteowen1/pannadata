@@ -464,6 +464,11 @@ rc=0; VB_SH_ASSETS_JSON="" vb_sh_restore "test/fixture" "test-tag" a.parquet "$t
 FAKE_DOWNLOAD_TRUNC=0; FAKE_LIST_FAIL=1
 rc=0; VB_SH_ASSETS_JSON="" vb_sh_restore "test/fixture" "test-tag" a.parquet "$tmpdir/r6g" >/dev/null 2>&1 || rc=$?
 [ "$rc" -eq 1 ] && pass "restore returns 1 when the listing fails (never 'absent')" || fail "restore returned $rc on a listing failure, expected 1"
+# An asset under its real name in a non-uploaded state (killed upload) is
+# broken, not absent.
+rc=0; VB_SH_ASSETS_JSON='[{"id":1,"name":"a.parquet","size":0,"state":"starter","created_at":"x"}]' \
+  vb_sh_restore "test/fixture" "test-tag" a.parquet "$tmpdir/r6g" >/dev/null 2>&1 || rc=$?
+[ "$rc" -eq 1 ] && pass "restore returns 1 for a half-uploaded asset (never 'absent')" || fail "restore returned $rc for a half-uploaded asset, expected 1"
 # A listing jq can't parse (the 2026-10-08 dev dry run: jq died with
 # "Argument list too long" and the old code read that as absent).
 FAKE_LIST_FAIL=0
@@ -494,6 +499,15 @@ grep -qx "OK a.parquet" <<<"$out" && pass "upload_all prints 'OK <name>'" || fai
 FAKE_UPLOAD_FAIL=1
 out=$(vb_sh_upload_all "test/fixture" "test-tag" "$tmpdir/a.parquet" 2>/dev/null)
 grep -q "^FAIL a.parquet" <<<"$out" && pass "upload_all prints 'FAIL <name> ...'" || fail "upload_all printed '$out'"
+# panna's epv-pipeline.yml runs `out=$(vb_sh_upload_all ...)` under
+# `set -euo pipefail`; a failing LAST file must not kill the step before the
+# FAIL line is read.
+if out=$(set -e; vb_sh_upload_all "test/fixture" "test-tag" "$tmpdir/a.parquet" 2>/dev/null) \
+   && grep -q "^FAIL a.parquet" <<<"$out"; then
+  pass "upload_all returns 0 with a failing last file, so set -e callers still read FAIL"
+else
+  fail "upload_all aborted a set -e caller on a failing last file"
+fi
 
 # 6i. No workflow in this repo uploads with --clobber any more.
 clobber_uploads=$(grep -n 'release upload.*--clobber' "$SCRIPT_DIR"/../../.github/workflows/*.yml "$SCRIPT_DIR/../versebus.sh" 2>/dev/null \

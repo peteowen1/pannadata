@@ -133,6 +133,14 @@ vb_sh_restore() {
   src=$(jq -r --arg n "$name" \
     '[.[] | select(.state == "uploaded" and .name == $n)] | .[0].name // empty' <<<"$assets") || return 1
   if [ -z "$src" ]; then
+    # Listed under its real name but not "uploaded" (a killed upload) is a
+    # broken asset, not an absent one.
+    local half
+    half=$(jq -r --arg n "$name" '[.[] | select(.name == $n)] | length' <<<"$assets") || return 1
+    if [ "$half" != "0" ]; then
+      echo "::error::$name is on ${repo}@${tag} but not in state uploaded" >&2
+      return 1
+    fi
     src=$(jq -r --arg n "$name" --arg p "$VB_SH_TMP_PREFIX" \
       '[.[] | select(.state == "uploaded" and (.name | startswith($p)) and (.name | endswith("--" + $n)))]
        | sort_by(.created_at) | last | .name // empty' <<<"$assets") || return 1
@@ -160,15 +168,18 @@ vb_sh_restore() {
 # vb_sh_safe_upload on each file, one at a time. Prints "OK <name>" or
 # "FAIL <name> ..." per file to stdout -- the caller greps/counts failures
 # (panna's epv-pipeline.yml greps '^FAIL'). Never aborts on an individual
-# failure; the caller decides whether to gate downstream steps (verify,
-# manifest) on the failure count.
+# failure and always returns 0: callers run `out=$(vb_sh_upload_all ...)`
+# under `set -e`, where a non-zero return would kill the step before the
+# FAIL lines are read. The caller decides whether to gate downstream steps
+# (verify, manifest) on the failure count.
 vb_sh_upload_all() {
   local repo="$1" tag="$2"; shift 2
   local f
   for f in "$@"; do
     [ -f "$f" ] || continue
-    vb_sh_safe_upload "$repo" "$tag" "$f"
+    vb_sh_safe_upload "$repo" "$tag" "$f" || true
   done
+  return 0
 }
 
 # vb_sh_verify <repo> <tag> <file> [<file> ...]

@@ -37,6 +37,11 @@ on:
         required: false
         type: boolean
         default: true
+      allow_missing_prior:
+        description: 'Allow events_<comp>.parquet or the event-less registry to be absent from opta-latest (a brand-new competition). Default refuses, so a LOST file never reads as new and gets replaced by one season.'
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: opta-latest-writer
@@ -71,6 +76,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           COMPETITION: ${{ inputs.competition }}
+          ALLOW_MISSING_PRIOR: ${{ inputs.allow_missing_prior }}
         run: |
           mkdir -p "data/opta/match_events/$COMPETITION"
           mkdir -p "data/opta/shot_events/$COMPETITION"
@@ -91,6 +97,9 @@ jobs:
           vb_sh_restore peteowen1/pannadata opta-latest event_less_match_ids.parquet data/opta || rc=$?
           if [ "$rc" -eq 1 ]; then
             echo "::error::event_less_match_ids.parquet is on opta-latest but could not be downloaded"
+            exit 1
+          elif [ "$rc" -eq 2 ] && [ "$ALLOW_MISSING_PRIOR" != "true" ]; then
+            echo "::error::event_less_match_ids.parquet is missing from opta-latest; the upload would replace the registry with this run's entries only. Re-dispatch with allow_missing_prior=true if that is intended."
             exit 1
           fi
 
@@ -120,6 +129,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           COMPETITION: ${{ inputs.competition }}
+          ALLOW_MISSING_PRIOR: ${{ inputs.allow_missing_prior }}
           SEASON: ${{ inputs.season }}
         run: |
           cd data
@@ -141,7 +151,13 @@ jobs:
             echo "::error::events_${COMPETITION}.parquet is on opta-latest but could not be downloaded -- refusing to upload a file without its prior seasons"
             exit 1
           elif [ "$rc" -eq 2 ]; then
-            echo "::notice::No prior events_${COMPETITION}.parquet on opta-latest -- uploading this run's seasons only"
+            # A lost file looks exactly like a new comp here, so absence needs
+            # the dispatch to say "new" explicitly.
+            if [ "$ALLOW_MISSING_PRIOR" != "true" ]; then
+              echo "::error::No events_${COMPETITION}.parquet on opta-latest. Uploading would publish this run's season only. If ${COMPETITION} is a new competition, re-dispatch with allow_missing_prior=true."
+              exit 1
+            fi
+            echo "::notice::No prior events_${COMPETITION}.parquet on opta-latest (allow_missing_prior=true) -- uploading this run's seasons only"
           fi
           # Force coverage check to pick up the new per-league rows
           OPTA_CONSOLIDATE_FORCE=1 python ../scripts/opta/consolidate_opta.py
