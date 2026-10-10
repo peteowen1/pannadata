@@ -84,6 +84,12 @@ def derive_shot_row(ev):
         "x": float(ev["x"]), "y": float(ev["y"]), "outcome": ev["outcome"],
         "is_goal": ev["type_id"] == 16, "type_id": ev["type_id"],
         "body_part": body_part, "situation": situation, "big_chance": 214 in q,
+        # Same qualifiers as opta_scraper.extract_shot_events (q28 own goal,
+        # q82 blocked by an outfield player).
+        "is_own_goal": 28 in q, "is_blocked": 82 in q,
+        # Unknown until score_shots_context.R scores the shot (it runs after
+        # this heal and sets thin_feed on every shot it scores).
+        "thin_feed": pd.NA,
         "competition": ev["competition"], "season": ev["season"],
         "xg": np.nan, "goalmouth_y": _gm(q, 102), "goalmouth_z": _gm(q, 103),
         "xgot": np.nan,
@@ -149,7 +155,21 @@ def main():
         print("no matches healed after the degenerate-count filter.")
         return
 
-    rows = rows[shots.columns]  # exact column order match
+    # Exact column order match. A column the consolidated file has gained since
+    # derive_shot_row() was last updated is filled with NA and NAMED here,
+    # rather than crashing: is_own_goal/is_blocked/thin_feed did exactly that
+    # with a KeyError on every scrape from at least 2026-10-04, so nothing was
+    # healed. Update derive_shot_row() when this fires.
+    new_cols = [c for c in shots.columns if c not in rows.columns]
+    if new_cols:
+        print(f"::warning::heal_shot_events: no rule for {new_cols}; healed rows get NA "
+              "there. Add them to derive_shot_row().")
+        for c in new_cols:
+            rows[c] = pd.NA
+    rows = rows[shots.columns]
+    for c in ("is_own_goal", "is_blocked", "thin_feed"):
+        if c in rows.columns:
+            rows[c] = rows[c].astype("boolean")
     out = pd.concat([shots, rows], ignore_index=True)
     out = out.drop_duplicates(subset=["match_id", "event_id"], keep="first")
     print(f"opta_shot_events: {len(shots):,} -> {len(out):,} rows "
