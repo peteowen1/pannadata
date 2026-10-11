@@ -1103,14 +1103,23 @@ class OptaScraper:
 
     @classmethod
     def _drop_untimed_duplicates(cls, records: List[Dict], key_fields: tuple) -> List[Dict]:
-        """Drop feed records with no time field when a timed record with the same
-        key exists (pannadata#173 / N003). A genuine untimed record with no timed
+        """Drop feed records with no time field, at most one per timed record with the
+        same key (count-aware) (pannadata#173 / N003). A genuine untimed record with no timed
         twin is kept (it is stamped 0:00 by _parse_event_minute)."""
-        timed = {tuple(r.get(k, "") for k in key_fields)
-                 for r in records if cls._has_event_time(r)}
-        return [r for r in records
-                if cls._has_event_time(r)
-                or tuple(r.get(k, "") for k in key_fields) not in timed]
+        def key(r):
+            return tuple(r.get(k, "") for k in key_fields)
+
+        n_timed = {}
+        for r in records:
+            if cls._has_event_time(r):
+                n_timed[key(r)] = n_timed.get(key(r), 0) + 1
+        out = []
+        for r in records:
+            if not cls._has_event_time(r) and n_timed.get(key(r), 0) > 0:
+                n_timed[key(r)] -= 1  # this untimed record pairs with a timed one
+                continue
+            out.append(r)
+        return out
 
     def extract_match_events(self, match_data: Dict) -> List[MatchEvent]:
         """Extract goals, cards, and substitutions with timing from matchstats data"""

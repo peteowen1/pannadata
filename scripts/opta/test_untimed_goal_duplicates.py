@@ -53,3 +53,31 @@ def test_cleanup_drops_only_twinned_zero_rows():
         dict(match_id="m2", event_type="goal", minute=0.0, second=0.0, team_id="t", player_id="p1"),
     ])
     assert c.phantom_mask(df).tolist() == [True, False, False, False]
+
+
+def test_count_aware_keeps_extra_untimed_goal():
+    live = {"goal": [
+        {"scorerId": "p1", "contestantId": "t1"},
+        {"scorerId": "p1", "contestantId": "t1"},
+        {"scorerId": "p1", "contestantId": "t1", "timeMin": 31, "timeMinSec": "31:10"},
+    ]}
+    assert sorted(e.minute for e in _events(live)) == [0, 31]
+
+
+def test_cleanup_count_aware():
+    import pandas as pd
+    import clean_untimed_event_duplicates as c
+    g = lambda m: dict(match_id="m", event_type="goal", minute=m, second=0.0, team_id="t", player_id="p1")
+    df = pd.DataFrame([g(0.0), g(0.0), g(31.0)])
+    assert c.phantom_mask(df).sum() == 1
+
+
+def test_consolidate_replaces_stale_zero_row():
+    import pandas as pd
+    import consolidate_opta as co
+    old = pd.DataFrame([dict(match_id="m", event_type="goal", minute=0.0, second=0.0, player_id="p1")])
+    new = pd.DataFrame([dict(match_id="m", event_type="goal", minute=31.0, second=10.0, player_id="p1")])
+    kept = co._drop_rescraped_matches([old], [new])
+    out = pd.concat(kept + [new], ignore_index=True)
+    out = out.drop_duplicates(subset=co._get_dedup_cols('events') + ['second'], keep='last')
+    assert len(out) == 1 and out.minute.iloc[0] == 31.0

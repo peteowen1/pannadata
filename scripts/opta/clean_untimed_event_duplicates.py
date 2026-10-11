@@ -35,10 +35,15 @@ def phantom_mask(df: pd.DataFrame) -> pd.Series:
         if not sel.any():
             continue
         cols = ["match_id"] + keys
-        sub = df.loc[sel, cols].fillna("")
-        timed = sub[~zero[sel]].drop_duplicates()
-        merged = sub.merge(timed.assign(_t=True), on=cols, how="left")
-        drop[sel] = (zero[sel].to_numpy() & merged["_t"].fillna(False).to_numpy())
+        sub = df.loc[sel, cols].fillna("").copy()
+        sub["_z"] = zero[sel].to_numpy()
+        n_timed = sub[~sub["_z"]].groupby(cols).size().rename("_nt").reset_index()
+        sub = sub.reset_index().merge(n_timed, on=cols, how="left").set_index("index")
+        sub["_nt"] = sub["_nt"].fillna(0)
+        # rank untimed rows within each key; drop the first n_timed of them
+        sub["_rk"] = sub[sub["_z"]].groupby(cols).cumcount() + 1
+        flag = sub["_z"] & (sub["_rk"] <= sub["_nt"])
+        drop[flag[flag].index] = True
     return drop
 
 
@@ -65,7 +70,9 @@ def main(argv=None):
     g = df["event_type"] == "goal"
     print(f"goal rows {int(g.sum()):,} -> {int((g & ~drop).sum()):,}; "
           f"goal 0:00 rows {int((g & zero).sum()):,} -> {int((g & zero & ~drop).sum()):,}")
-    df[~drop].to_parquet(out, index=False)
+    tmp = out.with_name(out.name + ".tmp")
+    df[~drop].to_parquet(tmp, index=False)
+    tmp.replace(out)  # atomic: a crash never leaves a half-written file
     print(f"wrote {out}")
 
 
