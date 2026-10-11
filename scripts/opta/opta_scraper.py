@@ -1075,6 +1075,22 @@ class OptaScraper:
             return int(time_min), 0
         return 0, 0
 
+    @staticmethod
+    def _has_event_time(event_dict: Dict) -> bool:
+        """True if the feed record carries any time field (so 0:00 is real)."""
+        return event_dict.get("timeMinSec") or event_dict.get("timeMin") is not None
+
+    @classmethod
+    def _drop_untimed_duplicates(cls, records: List[Dict], key_fields: tuple) -> List[Dict]:
+        """Drop feed records with no time field when a timed record with the same
+        key exists (pannadata#173 / N003). A genuine untimed record with no timed
+        twin is kept (it is stamped 0:00 by _parse_event_minute)."""
+        timed = {tuple(r.get(k, "") for k in key_fields)
+                 for r in records if cls._has_event_time(r)}
+        return [r for r in records
+                if cls._has_event_time(r)
+                or tuple(r.get(k, "") for k in key_fields) not in timed]
+
     def extract_match_events(self, match_data: Dict) -> List[MatchEvent]:
         """Extract goals, cards, and substitutions with timing from matchstats data"""
         events = []
@@ -1082,7 +1098,8 @@ class OptaScraper:
         live_data = match_data.get("liveData", {})
 
         # Extract goals
-        for goal in live_data.get("goal", []):
+        for goal in self._drop_untimed_duplicates(
+                live_data.get("goal", []), ("scorerId", "contestantId")):
             minute, second = self._parse_event_minute(goal)
 
             events.append(MatchEvent(
@@ -1098,7 +1115,8 @@ class OptaScraper:
             ))
 
         # Extract cards
-        for card in live_data.get("card", []):
+        for card in self._drop_untimed_duplicates(
+                live_data.get("card", []), ("playerId", "type")):
             minute, second = self._parse_event_minute(card)
 
             card_type = card.get("type", "")
@@ -1122,7 +1140,8 @@ class OptaScraper:
             ))
 
         # Extract substitutions
-        for sub in live_data.get("substitute", []):
+        for sub in self._drop_untimed_duplicates(
+                live_data.get("substitute", []), ("playerOnId", "playerOffId")):
             minute, second = self._parse_event_minute(sub)
 
             events.append(MatchEvent(
@@ -1677,5 +1696,18 @@ def main():
         print(f"  Avg minutes played: {lineups_df['minutes_played'].mean():.1f}")
 
 
+def zero_minute_goal_share(events, min_goals: int = 20):
+    """Share of goal rows stamped 0:00 in a scrape's event rows (dicts or a
+    DataFrame). Returns None when there are fewer than ``min_goals`` goals,
+    where a handful of genuine early goals would trip any threshold."""
+    rows = events.to_dict("records") if hasattr(events, "to_dict") else list(events)
+    goals = [r for r in rows if r.get("event_type") == "goal"]
+    if len(goals) < min_goals:
+        return None
+    zero = sum(1 for r in goals if not (r.get("minute") or 0) and not (r.get("second") or 0))
+    return zero / len(goals)
+
+
 if __name__ == "__main__":
     main()
+
