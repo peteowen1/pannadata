@@ -11,6 +11,8 @@
 library(arrow)
 library(dplyr)
 
+source("scripts/sim_margin.R")   # sample_margin(), shared with simulate_cup.R
+
 N_SIMS <- 10000L
 
 cat("=== Football Season Simulator ===\n")
@@ -157,23 +159,6 @@ if (!is.null(standings) && nrow(predictions) > 0) {
 leagues <- leagues_with_predictions
 cat("Leagues:", paste(leagues, collapse = ", "), "\n")
 cat("Matches after filtering:", nrow(predictions), "\n\n")
-
-# ── Winning-margin sampler ──────────────────────────────────────────────
-# Margin (>= 1) of a win, given the match is won by `side` (+1 home, -1 away).
-# Goals are independent Poisson(lam_h), Poisson(lam_a); the margin distribution
-# is the joint pmf restricted to that side winning, renormalised. The
-# win/draw/loss outcome itself still comes from the model's prob_H/D/A.
-sample_margin <- function(lam_h, lam_a, side, n) {
-  lam_h <- max(lam_h, 0.05); lam_a <- max(lam_a, 0.05)   # guard NA-free degenerate rows
-  g <- 0:15
-  joint <- outer(dpois(g, lam_h), dpois(g, lam_a))
-  d <- outer(g, g, "-") * side            # margin from the winner's view
-  w <- tapply(joint[d >= 1], d[d >= 1], sum)
-  if (length(w) == 0 || sum(w) <= 0) return(rep(1, n))
-  m <- as.integer(names(w))
-  if (length(m) == 1L) return(rep(m, n))
-  sample(m, n, replace = TRUE, prob = as.numeric(w))
-}
 
 # ── Simulate one season for a league (vectorized) ─────────────────────
 simulate_league <- function(preds, league_standings = NULL, n_sims = N_SIMS) {

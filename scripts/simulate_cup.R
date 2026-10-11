@@ -19,6 +19,7 @@ library(arrow)
 library(dplyr)
 
 source("scripts/league_config.R")
+source("scripts/sim_margin.R")   # sample_margin(), shared with simulate_season.R
 
 N_SIMS <- 10000L
 HOME_ADV <- 1.08  # ~8% home advantage in expected goals for knockout legs
@@ -246,7 +247,8 @@ simulate_league_phase <- function(preds, league_standings = NULL, n_sims = N_SIM
   away_idx <- team_idx[preds$away_team]
   prob_H <- preds$prob_H
   prob_HD <- preds$prob_H + preds$prob_D
-  gd_match <- preds$pred_home_goals - preds$pred_away_goals
+  lam_h <- preds$pred_home_goals  # expected goals; shape the winning-margin distribution
+  lam_a <- preds$pred_away_goals
 
   rand <- matrix(runif(n_sims * n_matches), nrow = n_sims, ncol = n_matches)
   is_home_win <- rand < rep(prob_H, each = n_sims)
@@ -260,7 +262,6 @@ simulate_league_phase <- function(preds, league_standings = NULL, n_sims = N_SIM
   for (m in seq_len(n_matches)) {
     hi <- home_idx[m]
     ai <- away_idx[m]
-    gd_m <- gd_match[m]
     hw <- is_home_win[, m]
     dr <- is_draw[, m]
     aw <- !hw & !dr
@@ -270,10 +271,22 @@ simulate_league_phase <- function(preds, league_standings = NULL, n_sims = N_SIM
     sim_points[dr, ai] <- sim_points[dr, ai] + 1L
     sim_points[aw, ai] <- sim_points[aw, ai] + 3L
 
-    sim_gd[hw, hi] <- sim_gd[hw, hi] + gd_m
-    sim_gd[hw, ai] <- sim_gd[hw, ai] - gd_m
-    sim_gd[aw, ai] <- sim_gd[aw, ai] - gd_m
-    sim_gd[aw, hi] <- sim_gd[aw, hi] + gd_m
+    # Goal difference (R024 / pannadata#155): sample a winning margin consistent
+    # with the drawn outcome. The old code added the signed EXPECTED goal
+    # difference (home - away) whatever the outcome, so an away win for a home
+    # favourite LOWERED the winner's goal difference. Draws add 0.
+    n_hw <- sum(hw)
+    if (n_hw > 0) {
+      marg <- sample_margin(lam_h[m], lam_a[m], +1L, n_hw)
+      sim_gd[hw, hi] <- sim_gd[hw, hi] + marg
+      sim_gd[hw, ai] <- sim_gd[hw, ai] - marg
+    }
+    n_aw <- sum(aw)
+    if (n_aw > 0) {
+      marg <- sample_margin(lam_h[m], lam_a[m], -1L, n_aw)
+      sim_gd[aw, ai] <- sim_gd[aw, ai] + marg
+      sim_gd[aw, hi] <- sim_gd[aw, hi] - marg
+    }
   }
 
   total_points <- sweep(sim_points, 2, cur_pts, "+")
