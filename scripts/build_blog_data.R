@@ -252,30 +252,35 @@ if (file.exists(gl_path)) {
     gl_dt <- data.table::as.data.table(game_logs)
     # piero_value_p90 is already a per-90 rate — average weighted by minutes.
     # Everything else is per-match credit — sum then divide by season minutes * 90.
+    # Each rate divides by the minutes of the games where that column has a
+    # value: since panna R007, a game with no PSV carries NA psv/piero rather
+    # than 0, and its minutes must not dilute the player's rate.
     rate_cols <- setdiff(extra_cols, "piero_value_p90")
+    min_cols <- paste0(".min_", rate_cols)
     agg <- gl_dt[, c(
-      list(gl_minutes = sum(total_minutes, na.rm = TRUE)),
-      lapply(.SD, \(x) sum(x, na.rm = TRUE))
+      lapply(.SD, \(x) sum(x, na.rm = TRUE)),
+      stats::setNames(lapply(.SD, \(x) sum(total_minutes[!is.na(x)], na.rm = TRUE)),
+                      min_cols)
     ), by = dedup_key, .SDcols = rate_cols]
     if ("piero_value_p90" %in% extra_cols) {
-      pvp_agg <- gl_dt[, .(
+      pvp_agg <- gl_dt[!is.na(piero_value_p90), .(
         piero_value_p90 = sum(piero_value_p90 * total_minutes, na.rm = TRUE) /
           pmax(sum(total_minutes, na.rm = TRUE), 1)
       ), by = dedup_key]
       agg <- merge(agg, pvp_agg, by = dedup_key, all.x = TRUE)
     }
-    for (col in rate_cols) {
+    for (i in seq_along(rate_cols)) {
+      col <- rate_cols[i]
+      mins <- agg[[min_cols[i]]]
       data.table::set(
         agg, j = col,
-        value = ifelse(agg$gl_minutes > 0,
-                       round(agg[[col]] / agg$gl_minutes * 90, 4),
-                       NA_real_)
+        value = ifelse(mins > 0, round(agg[[col]] / mins * 90, 4), NA_real_)
       )
     }
     if ("piero_value_p90" %in% extra_cols) {
       data.table::set(agg, j = "piero_value_p90", value = round(agg$piero_value_p90, 4))
     }
-    agg[, gl_minutes := NULL]
+    agg[, (min_cols) := NULL]
     gl_extra <- as.data.frame(agg)
     cat("game-logs enrichment:", nrow(gl_extra), "players,",
         length(extra_cols), "columns\n")
