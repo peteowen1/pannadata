@@ -46,6 +46,27 @@ def _get_dedup_cols(table_type):
         return ['match_id', 'player_id']
 
 
+def _drop_rescraped_matches(existing_dfs, new_dfs):
+    """Drop stored rows for every match present in the new per-season files.
+
+    A re-scraped match supersedes all its stored events. Keyed dedup alone keeps
+    stale rows whose key (minute) changed between scraper versions: the
+    pannadata#173 / N003 phantom 0:00 copies. Returns the filtered existing frames.
+    """
+    ids = set()
+    for df in new_dfs:
+        if 'match_id' in df.columns:
+            ids.update(df['match_id'].dropna().unique())
+    if not ids:
+        return list(existing_dfs)
+    out = []
+    for df in existing_dfs:
+        if 'match_id' in df.columns:
+            df = df[~df['match_id'].isin(ids)]
+        out.append(df)
+    return out
+
+
 def _parse_force_full_env():
     """Parse OPTA_CONSOLIDATE_FORCE env var robustly.
 
@@ -665,6 +686,7 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
         try:
             for league in all_leagues:
                 dfs = []
+                new_dfs = []
 
                 # Load existing data for this league from temp file
                 league_temp = temp_dir / f"{league}.parquet"
@@ -683,11 +705,16 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
                         df = pd.read_parquet(f)
                         df['competition'] = league
                         df['season'] = f.stem
-                        dfs.append(df)
+                        new_dfs.append(df)
                     except (pd.errors.ParserError, FileNotFoundError, OSError, ValueError,
                             pyarrow.lib.ArrowInvalid) as e:
                         print(f"  ERROR: Failed to read {f}: {e}")
                         errors += 1
+
+                if table_type == 'events':
+                    dfs = _drop_rescraped_matches(dfs, new_dfs)
+                dfs = dfs + new_dfs
+                del new_dfs
 
                 non_empty = [df for df in dfs if not df.empty]
                 if not non_empty:
