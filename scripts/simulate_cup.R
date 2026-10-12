@@ -20,9 +20,9 @@ library(dplyr)
 
 source("scripts/league_config.R")
 source("scripts/sim_margin.R")   # sample_margin(), shared with simulate_season.R
+source("scripts/cup_knockout.R") # simulate_knockout(), extract_known_ties(), bracket constants (R090)
 
 N_SIMS <- 10000L
-HOME_ADV <- 1.08  # ~8% home advantage in expected goals for knockout legs
 
 cat("=== Cup Competition Simulator ===\n")
 cat("Simulations:", N_SIMS, "\n\n")
@@ -35,8 +35,7 @@ CUP_CONFIG <- list(
   UECL = list(code = "UECL", name = "Conference League",  n_matches = 6L)
 )
 # All cups: top 8 → auto R16, 9-24 → playoffs, 25-36 → eliminated
-AUTO_R16 <- 8L
-PLAYOFF_END <- 24L
+# (AUTO_R16, PLAYOFF_END and HOME_ADV live in cup_knockout.R)
 
 # Playoff seeding pairs (by league phase position):
 # 9/10 vs 23/24, 11/12 vs 21/22, 13/14 vs 19/20, 15/16 vs 17/18
@@ -311,254 +310,7 @@ simulate_league_phase <- function(preds, league_standings = NULL, n_sims = N_SIM
 }
 
 # ── Simulate knockout bracket ────────────────────────────────────────
-# For each simulation, given final league phase positions:
-# 1. Draw playoff matchups per seeding
-# 2. Simulate playoffs (2 legs)
-# 3. Draw R16 matchups (top 8 vs playoff winners, per bracket path)
-# 4. Simulate R16 → QF → SF → Final
-simulate_knockout <- function(positions, strengths, n_sims = N_SIMS) {
-  teams <- colnames(positions)
-  n_teams <- length(teams)
-
-  # Compute league-average defense for Poisson lambda normalization
-  avg_defense <- mean(strengths$defense, na.rm = TRUE)
-
-  # Build strength lookup
-  str_lookup <- setNames(
-    lapply(seq_len(nrow(strengths)), function(i) {
-      list(attack = strengths$attack[i], defense = strengths$defense[i])
-    }),
-    strengths$team
-  )
-
-  # Helper: compute expected goals for team A vs team B
-  # lambda_A = A_attack * (B_defense / avg_defense) * home_factor
-  # This scales A's attack by how leaky B's defense is relative to average
-  ko_lambda <- function(attacker, defender, home = FALSE) {
-    lam <- attacker$attack * (defender$defense / avg_defense)
-    if (home) lam <- lam * HOME_ADV
-    max(lam, 0.1)  # floor to avoid degenerate Poisson(~0)
-  }
-
-  # Track which round each team reaches per simulation
-  # Rounds: 0=eliminated_league, 1=playoff, 2=r16, 3=qf, 4=sf, 5=final, 6=winner
-  round_reached <- matrix(0L, nrow = n_sims, ncol = n_teams)
-  colnames(round_reached) <- teams
-
-  # ── Classify league phase outcomes ──
-  for (sim in seq_len(n_sims)) {
-    pos <- positions[sim, ]
-
-    # Top 8: auto R16
-    auto_teams <- names(pos[pos <= AUTO_R16])
-    round_reached[sim, auto_teams] <- 2L  # start at R16
-
-    # 9-24: playoffs
-    playoff_teams <- names(pos[pos > AUTO_R16 & pos <= PLAYOFF_END])
-    round_reached[sim, playoff_teams] <- 1L  # start at playoff
-
-    # 25+: eliminated
-    # round_reached stays 0
-  }
-
-  # ── Simulate playoffs ──
-  # For each sim, pair teams 9/10 vs 23/24, etc.
-  # This is vectorized per pairing group across all sims
-  playoff_winners <- matrix(NA_character_, nrow = n_sims, ncol = 8L)
-
-  for (sim in seq_len(n_sims)) {
-    pos <- positions[sim, ]
-    # Get teams sorted by position
-    pos_to_team <- names(sort(pos))
-
-    pw_idx <- 0L
-    # Pair: positions 9,10 vs 23,24 — draw within pairs
-    pair_groups <- list(
-      list(high = c(9L, 10L), low = c(23L, 24L)),
-      list(high = c(11L, 12L), low = c(21L, 22L)),
-      list(high = c(13L, 14L), low = c(19L, 20L)),
-      list(high = c(15L, 16L), low = c(17L, 18L))
-    )
-
-    for (pg in pair_groups) {
-      high_teams <- pos_to_team[pg$high]
-      low_teams <- pos_to_team[pg$low]
-      # Random draw within group: shuffle and pair
-      high_shuf <- sample(high_teams)
-      low_shuf <- sample(low_teams)
-
-      for (k in 1:2) {
-        pw_idx <- pw_idx + 1L
-        tm_a <- high_shuf[k]  # higher seed
-        tm_b <- low_shuf[k]   # lower seed
-
-        str_a <- str_lookup[[tm_a]]
-        str_b <- str_lookup[[tm_b]]
-
-        if (is.null(str_a) || is.null(str_b)) {
-          # Fallback: higher seed advances
-          playoff_winners[sim, pw_idx] <- tm_a
-        } else {
-          # Higher seed has 2nd leg at home (slight advantage)
-          # Leg 1 at B's home, leg 2 at A's home
-          g_a1 <- rpois(1, ko_lambda(str_a, str_b, home = FALSE))
-          g_b1 <- rpois(1, ko_lambda(str_b, str_a, home = TRUE))
-          g_a2 <- rpois(1, ko_lambda(str_a, str_b, home = TRUE))
-          g_b2 <- rpois(1, ko_lambda(str_b, str_a, home = FALSE))
-
-          agg_a <- g_a1 + g_a2
-          agg_b <- g_b1 + g_b2
-
-          if (agg_a > agg_b) {
-            playoff_winners[sim, pw_idx] <- tm_a
-          } else if (agg_b > agg_a) {
-            playoff_winners[sim, pw_idx] <- tm_b
-          } else {
-            # Penalties: 50/50
-            playoff_winners[sim, pw_idx] <- if (runif(1) < 0.5) tm_a else tm_b
-          }
-        }
-      }
-    }
-  }
-
-  # Mark playoff winners as reaching R16
-  for (sim in seq_len(n_sims)) {
-    pws <- playoff_winners[sim, ]
-    pws <- pws[!is.na(pws)]
-    round_reached[sim, pws] <- pmax(round_reached[sim, pws], 2L)
-  }
-
-  # ── Simulate R16 → QF → SF → Final ──
-  # R16: 16 teams (8 auto + 8 playoff winners)
-  # Bracket is pre-determined by league phase position
-  for (sim in seq_len(n_sims)) {
-    pos <- positions[sim, ]
-    pos_to_team <- names(sort(pos))
-    pws <- playoff_winners[sim, ]
-
-    # Build R16 matchups (8 matches)
-    # Top seed pairs: 1/2 vs PO winners from 15/16 vs 17/18 bracket
-    # etc.
-    # Simplified: pair auto teams with playoff winners in bracket order
-    auto_teams <- pos_to_team[1:8]
-    # Match auto teams with playoff winners based on bracket paths
-    # Position 1/2 face PO winners 7/8 (from pair 15/16 vs 17/18)
-    # Position 3/4 face PO winners 5/6 (from pair 13/14 vs 19/20)
-    # Position 5/6 face PO winners 3/4 (from pair 11/12 vs 21/22)
-    # Position 7/8 face PO winners 1/2 (from pair 9/10 vs 23/24)
-    r16_matchups <- list()
-    auto_shuf <- list(
-      sample(auto_teams[1:2]),
-      sample(auto_teams[3:4]),
-      sample(auto_teams[5:6]),
-      sample(auto_teams[7:8])
-    )
-    po_groups <- list(pws[7:8], pws[5:6], pws[3:4], pws[1:2])
-
-    for (g in 1:4) {
-      po_shuf <- sample(po_groups[[g]])
-      r16_matchups[[length(r16_matchups) + 1]] <- c(auto_shuf[[g]][1], po_shuf[1])
-      r16_matchups[[length(r16_matchups) + 1]] <- c(auto_shuf[[g]][2], po_shuf[2])
-    }
-
-    # Simulate R16 (2 legs, auto team is higher seed → 2nd leg at home)
-    r16_winners <- character(8)
-    for (m in seq_along(r16_matchups)) {
-      tm_a <- r16_matchups[[m]][1]  # higher seed
-      tm_b <- r16_matchups[[m]][2]
-
-      str_a <- str_lookup[[tm_a]]
-      str_b <- str_lookup[[tm_b]]
-
-      if (is.null(str_a) || is.null(str_b)) {
-        r16_winners[m] <- tm_a
-        next
-      }
-
-      # Leg 1 at B's home, leg 2 at A's home
-      g_a1 <- rpois(1, ko_lambda(str_a, str_b, home = FALSE))
-      g_b1 <- rpois(1, ko_lambda(str_b, str_a, home = TRUE))
-      g_a2 <- rpois(1, ko_lambda(str_a, str_b, home = TRUE))
-      g_b2 <- rpois(1, ko_lambda(str_b, str_a, home = FALSE))
-
-      agg_a <- g_a1 + g_a2
-      agg_b <- g_b1 + g_b2
-
-      if (agg_a > agg_b) r16_winners[m] <- tm_a
-      else if (agg_b > agg_a) r16_winners[m] <- tm_b
-      else r16_winners[m] <- if (runif(1) < 0.5) tm_a else tm_b
-    }
-    round_reached[sim, r16_winners] <- pmax(round_reached[sim, r16_winners], 3L)
-
-    # QF: 8 → 4 (open draw within bracket halves)
-    left <- sample(r16_winners[1:4])
-    right <- sample(r16_winners[5:8])
-    qf_matchups <- list(
-      c(left[1], left[2]), c(left[3], left[4]),
-      c(right[1], right[2]), c(right[3], right[4])
-    )
-
-    qf_winners <- character(4)
-    for (m in 1:4) {
-      tm_a <- qf_matchups[[m]][1]
-      tm_b <- qf_matchups[[m]][2]
-      str_a <- str_lookup[[tm_a]]
-      str_b <- str_lookup[[tm_b]]
-      if (is.null(str_a) || is.null(str_b)) { qf_winners[m] <- tm_a; next }
-
-      g_a1 <- rpois(1, ko_lambda(str_a, str_b, home = TRUE))
-      g_b1 <- rpois(1, ko_lambda(str_b, str_a, home = FALSE))
-      g_b2 <- rpois(1, ko_lambda(str_b, str_a, home = TRUE))
-      g_a2 <- rpois(1, ko_lambda(str_a, str_b, home = FALSE))
-      agg_a <- g_a1 + g_a2; agg_b <- g_b1 + g_b2
-      if (agg_a > agg_b) qf_winners[m] <- tm_a
-      else if (agg_b > agg_a) qf_winners[m] <- tm_b
-      else qf_winners[m] <- if (runif(1) < 0.5) tm_a else tm_b
-    }
-    round_reached[sim, qf_winners] <- pmax(round_reached[sim, qf_winners], 4L)
-
-    # SF: 4 → 2 (left vs left, right vs right)
-    sf_matchups <- list(c(qf_winners[1], qf_winners[2]), c(qf_winners[3], qf_winners[4]))
-    sf_winners <- character(2)
-    for (m in 1:2) {
-      tm_a <- sf_matchups[[m]][1]
-      tm_b <- sf_matchups[[m]][2]
-      str_a <- str_lookup[[tm_a]]
-      str_b <- str_lookup[[tm_b]]
-      if (is.null(str_a) || is.null(str_b)) { sf_winners[m] <- tm_a; next }
-
-      g_a1 <- rpois(1, ko_lambda(str_a, str_b, home = TRUE))
-      g_b1 <- rpois(1, ko_lambda(str_b, str_a, home = FALSE))
-      g_b2 <- rpois(1, ko_lambda(str_b, str_a, home = TRUE))
-      g_a2 <- rpois(1, ko_lambda(str_a, str_b, home = FALSE))
-      agg_a <- g_a1 + g_a2; agg_b <- g_b1 + g_b2
-      if (agg_a > agg_b) sf_winners[m] <- tm_a
-      else if (agg_b > agg_a) sf_winners[m] <- tm_b
-      else sf_winners[m] <- if (runif(1) < 0.5) tm_a else tm_b
-    }
-    round_reached[sim, sf_winners] <- pmax(round_reached[sim, sf_winners], 5L)
-
-    # Final: single match, neutral venue (no home advantage)
-    tm_a <- sf_winners[1]
-    tm_b <- sf_winners[2]
-    str_a <- str_lookup[[tm_a]]
-    str_b <- str_lookup[[tm_b]]
-
-    if (is.null(str_a) || is.null(str_b)) {
-      winner <- tm_a
-    } else {
-      g_a <- rpois(1, ko_lambda(str_a, str_b, home = FALSE))
-      g_b <- rpois(1, ko_lambda(str_b, str_a, home = FALSE))
-      if (g_a > g_b) winner <- tm_a
-      else if (g_b > g_a) winner <- tm_b
-      else winner <- if (runif(1) < 0.5) tm_a else tm_b
-    }
-    round_reached[sim, winner] <- 6L
-  }
-
-  round_reached
-}
+# simulate_knockout() lives in scripts/cup_knockout.R so it can be tested.
 
 # ── Run cup simulations ──────────────────────────────────────────────
 all_results <- list()
@@ -608,6 +360,21 @@ for (cup_name in names(CUP_CONFIG)) {
     parsed <- suppressWarnings(as.Date(date_str))
     remaining_preds <- league_preds[!is.na(parsed) & parsed >= Sys.Date(), ]
   }
+  # Knockout-phase rows (Feb-Jun) are not league-phase matches: counting them
+  # would hand league-table points to playoff/R16 ties. They feed the bracket
+  # below instead (R090).
+  known_ties <- extract_known_ties(league_preds)
+  n_ko <- sum(is_knockout_date(remaining_preds$match_date))
+  if (n_ko > 0L) {
+    remaining_preds <- remaining_preds[!is_knockout_date(remaining_preds$match_date), ]
+    cat("  excluded", n_ko, "knockout-phase fixtures from the league-phase sim
+")
+  }
+  if (length(known_ties) > 0L) {
+    cat("  known knockout rounds from fixtures:",
+        paste(names(known_ties), lengths(known_ties), sep = "=", collapse = ", "), "
+")
+  }
   cat("  remaining fixtures to simulate:", nrow(remaining_preds), "\n")
 
   t0 <- proc.time()["elapsed"]
@@ -636,7 +403,8 @@ for (cup_name in names(CUP_CONFIG)) {
   # Phase 2: Knockout simulation
   if (n_teams >= PLAYOFF_END) {
     cat("  simulating knockout bracket...")
-    round_reached <- simulate_knockout(lp_result$positions, strengths, N_SIMS)
+    round_reached <- simulate_knockout(lp_result$positions, strengths, N_SIMS,
+                                      known = known_ties)
   } else {
     cat("  fewer than", PLAYOFF_END, "teams — league phase only\n")
     round_reached <- matrix(0L, nrow = N_SIMS, ncol = n_teams)
