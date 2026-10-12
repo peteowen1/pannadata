@@ -1480,14 +1480,19 @@ def main():
 
     # A page-1 API failure on a fixture window (outage, revoked outlet token,
     # rate limit) used to read as an empty window and give a green run with no
-    # data (R087). Fail the step; the workflow's Recovery step still
-    # consolidates and uploads whatever landed.
+    # data (R087). Pete's policy (2026-10-12): publish what worked, then end
+    # the run red. So the scrape exits normally here (consolidate, upload and
+    # the panna dispatch all run for the competitions that succeeded) and the
+    # workflow's final "Fail on failed fixture windows" step reads
+    # failed_windows from scrape_summary.json and turns the run red. The
+    # manifest never records the failed windows' matches, so they are retried
+    # on the next run.
     if scraper.failed_windows:
         logger.error("%d fixture window(s) failed on page 1 (not empty): %s",
                      len(scraper.failed_windows), scraper.failed_windows[:10])
-        print(f"\nERROR: {len(scraper.failed_windows)} fixture window(s) failed "
-              f"(see failed_windows in scrape_summary.json)")
-        sys.exit(1)
+        print(f"\n::warning::{len(scraper.failed_windows)} fixture window(s) failed "
+              f"on the first API page (see failed_windows in scrape_summary.json); "
+              f"the run will end red after publishing what succeeded")
 
     # Exit non-zero if majority of league-seasons failed (partial failure is expected with flaky APIs)
     if error_count > 0 and len(scrape_plan) > 0:

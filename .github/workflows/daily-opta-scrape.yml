@@ -315,13 +315,11 @@ jobs:
           # Distinguish "no new data" from "scraper crashed"
           if [ -f "../scripts/opta/data/scrape_summary.json" ]; then
             # An outage or revoked outlet token on a fixture window's first
-            # page looks exactly like an empty window. The scraper records
-            # those and exits non-zero (so this step is normally never
-            # reached); refuse a green "no new matches" if it somehow was.
+            # page looks exactly like an empty window (R087). Say so here; the
+            # final "Fail on failed fixture windows" step ends the run red.
             FAILED_WINDOWS=$(python -c "import json; print(len(json.load(open('../scripts/opta/data/scrape_summary.json')).get('failed_windows') or []))")
             if [ "$FAILED_WINDOWS" -gt 0 ]; then
-              echo "::error::$FAILED_WINDOWS fixture window(s) failed on the first API page (outage, rate limit or revoked outlet token) -- this is not 'no new matches'"
-              exit 1
+              echo "::warning::$FAILED_WINDOWS fixture window(s) failed on the first API page (outage, rate limit or revoked outlet token) -- 'no new matches' may be wrong"
             fi
             # Silent-empty guard: if the user dispatched with --seasons (targeted
             # a specific tournament/season) and zero new matches came back,
@@ -867,3 +865,22 @@ jobs:
         done
         echo "::error::Failed to dispatch opta-scrape-complete after 3 attempts"
         exit 1
+
+    # R087: publish what worked, then end red (Pete, 2026-10-12). Runs last, after
+    # upload and the panna dispatch, so one failed window costs a red run, not a
+    # day of downstream data.
+    - name: Fail on failed fixture windows
+      if: ${{ !cancelled() }}
+      run: |
+        f=scripts/opta/data/scrape_summary.json
+        [ -f "$f" ] || exit 0
+        python - "$f" <<'PY'
+        import json, sys
+        fw = json.load(open(sys.argv[1])).get("failed_windows") or []
+        if not fw:
+            sys.exit(0)
+        print(f"::error::{len(fw)} fixture window(s) failed on the first API page (outage, rate limit or revoked outlet token); their matches were not scraped and will be retried next run")
+        for w in fw[:20]:
+            print(f"::error::failed window: {w}")
+        sys.exit(1)
+        PY
