@@ -83,8 +83,9 @@ try {
 } catch (e) { console.error("could not read previous player-bio.json:", String(e.message).slice(0, 120)) }
 const floor = prevN ? Math.ceil(0.9 * prevN) : Math.ceil(0.5 * ourIds.size)
 console.log(`bio sanity gate: ${nBio} entries vs floor ${floor} (${prevN ? "90% of previous " + prevN : "50% of " + ourIds.size + " rated players; previous file unreadable"})`)
-if (!nBio || nBio < floor) {
-  console.error(`ERROR: only ${nBio} bio entries (floor ${floor}); refusing to write or upload player-bio.json`)
+// ALLOW_BIO_SHRINK=1 lets an intentional shrink (e.g. a filter change) through once.
+if (!nBio || (nBio < floor && process.env.ALLOW_BIO_SHRINK !== "1")) {
+  console.error(`ERROR: only ${nBio} bio entries (floor ${floor}); refusing to write or upload player-bio.json (set ALLOW_BIO_SHRINK=1 if the shrink is intended)`)
   process.exit(1)
 }
 const outPath = fileURLToPath(new URL("./player-bio.json", import.meta.url))

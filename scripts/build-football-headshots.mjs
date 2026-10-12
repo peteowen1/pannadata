@@ -109,15 +109,24 @@ const NONFREE = /(non[\- ]?commercial|no[\- ]?deriv|\bnc\b|\bnd\b|fair[\- ]?use|
 const isFreeLicense = (...names) => names.some(n => FREE.test(n || "")) && !names.some(n => NONFREE.test(n || ""))
 
 const chunk = (a, n) => { const o = []; for (let i = 0; i < a.length; i += n) o.push(a.slice(i, i + n)); return o }
-const wapi = async (host, params) => {
+// Retries a throttle (HTTP 429/5xx, or MediaWiki maxlag/ratelimited) with backoff,
+// so one transient error doesn't abort the whole weekly run; anything still
+// failing after the retries throws rather than reading as "no data".
+const wapi = async (host, params, tries = 4) => {
   const u = `https://${host}/w/api.php?${new URLSearchParams({ format: "json", origin: "*", ...params })}`
-  const r = await fetch(u, { headers: UA })
-  if (!r.ok) throw new Error(`${host} HTTP ${r.status}`)
-  const j = await r.json()
-  // MediaWiki returns HTTP 200 with an `error` body for throttling/maxlag; an empty
-  // result must not be mistaken for "no data" (it would drop nationality/photos).
-  if (j && j.error) throw new Error(`${host} API error: ${j.error.code || ""} ${String(j.error.info || "").slice(0, 100)}`)
-  return j
+  for (let k = 1; ; k++) {
+    let err
+    const r = await fetch(u, { headers: UA })
+    if (!r.ok) err = new Error(`${host} HTTP ${r.status}`)
+    const j = err ? null : await r.json()
+    // MediaWiki returns HTTP 200 with an `error` body for throttling/maxlag; an empty
+    // result must not be mistaken for "no data" (it would drop nationality/photos).
+    if (j && j.error) err = new Error(`${host} API error: ${j.error.code || ""} ${String(j.error.info || "").slice(0, 100)}`)
+    if (!err) return j
+    const transient = (r.status === 429 || r.status >= 500) || (j && j.error && /maxlag|ratelimited/i.test(j.error.code || ""))
+    if (!transient || k >= tries) throw err
+    await new Promise(res => setTimeout(res, 2000 * 2 ** (k - 1)))
+  }
 }
 
 // ── Load our players (player_id → valid Wikidata QID) ──────────────
