@@ -307,8 +307,22 @@ jobs:
         PARQUET_COUNT=$(find opta/player_stats opta/shots opta/lineups opta/events opta/shot_events opta/match_events opta/fixtures -name "*.parquet" 2>/dev/null | wc -l)
         echo "Raw per-league parquet files: $PARQUET_COUNT"
         if [ "$PARQUET_COUNT" -eq 0 ]; then
+          # Later steps read /tmp/scrape-state/pre_mtimes.txt; the "no new
+          # matches" exit below skips the snapshot further down, so create it
+          # empty first (R087).
+          mkdir -p /tmp/scrape-state
+          touch /tmp/scrape-state/pre_mtimes.txt
           # Distinguish "no new data" from "scraper crashed"
           if [ -f "../scripts/opta/data/scrape_summary.json" ]; then
+            # An outage or revoked outlet token on a fixture window's first
+            # page looks exactly like an empty window. The scraper records
+            # those and exits non-zero (so this step is normally never
+            # reached); refuse a green "no new matches" if it somehow was.
+            FAILED_WINDOWS=$(python -c "import json; print(len(json.load(open('../scripts/opta/data/scrape_summary.json')).get('failed_windows') or []))")
+            if [ "$FAILED_WINDOWS" -gt 0 ]; then
+              echo "::error::$FAILED_WINDOWS fixture window(s) failed on the first API page (outage, rate limit or revoked outlet token) -- this is not 'no new matches'"
+              exit 1
+            fi
             # Silent-empty guard: if the user dispatched with --seasons (targeted
             # a specific tournament/season) and zero new matches came back,
             # fail loudly rather than exit 0. A silent-success here hides real

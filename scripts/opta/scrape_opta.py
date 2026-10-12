@@ -1470,12 +1470,24 @@ def main():
                     "total_matches": total_matches,
                     "player_records": total_players,
                     "shot_records": total_shots,
-                }
+                },
+                "failed_windows": scraper.failed_windows,
             }, f, indent=2)
         print(f"\nSummary saved to {summary_path}")
     except OSError as e:
         logger.error("Failed to write scrape summary: %s", e)
         print(f"\nWARNING: Failed to save summary to {summary_path}")
+
+    # A page-1 API failure on a fixture window (outage, revoked outlet token,
+    # rate limit) used to read as an empty window and give a green run with no
+    # data (R087). Fail the step; the workflow's Recovery step still
+    # consolidates and uploads whatever landed.
+    if scraper.failed_windows:
+        logger.error("%d fixture window(s) failed on page 1 (not empty): %s",
+                     len(scraper.failed_windows), scraper.failed_windows[:10])
+        print(f"\nERROR: {len(scraper.failed_windows)} fixture window(s) failed "
+              f"(see failed_windows in scrape_summary.json)")
+        sys.exit(1)
 
     # Exit non-zero if majority of league-seasons failed (partial failure is expected with flaky APIs)
     if error_count > 0 and len(scrape_plan) > 0:
