@@ -193,6 +193,34 @@ def build_profiles(player_stats: pd.DataFrame, reep: pd.DataFrame | None) -> pd.
     ]]
 
 
+# Coverage floors for players with MIN_MATCHES_FOR_FLOOR+ matches. Measured on
+# the 2026-09-02 build (91,782 such players): dob 38.6%, nationality 32.6%,
+# height 23.9% (all-players dob 17.1%). Floors sit at roughly half of that, so
+# normal reep churn passes but a failed/empty/column-shifted reep (0%) cannot.
+MIN_MATCHES_FOR_FLOOR = 10
+MIN_POPULATION_FOR_FLOOR = 100  # below this the sample is a test/partial run
+COVERAGE_FLOORS = {"dob": 0.20, "nationality": 0.15, "height_cm": 0.10}
+
+
+def check_coverage(profiles: pd.DataFrame) -> list[str]:
+    """Return a list of failure messages (empty = ok) for coverage below floor
+    among players with MIN_MATCHES_FOR_FLOOR+ matches."""
+    core = profiles[profiles["n_matches"] >= MIN_MATCHES_FOR_FLOOR]
+    if len(core) < MIN_POPULATION_FOR_FLOOR:
+        print(f"  NOTE: only {len(core)} players with {MIN_MATCHES_FOR_FLOOR}+ matches - "
+              f"coverage floor not applied")
+        return []
+    failures = []
+    for col, floor in COVERAGE_FLOORS.items():
+        rate = core[col].notna().mean()
+        print(f"  coverage {col} (n={len(core):,} players with {MIN_MATCHES_FOR_FLOOR}+ matches): "
+              f"{100 * rate:.1f}% (floor {100 * floor:.0f}%)")
+        if rate < floor:
+            failures.append(f"{col} coverage {100 * rate:.1f}% < floor {100 * floor:.0f}% "
+                            f"(n={len(core):,})")
+    return failures
+
+
 def _download_reep(dest_path: str, url: str = REEP_URL) -> bool:
     """Best-effort download of the reep register. Returns False (never
     raises) on any network failure so the caller can proceed opta-only."""
@@ -256,6 +284,12 @@ def main():
                 print(f"  WARNING: failed to parse reep register ({e}) — building opta-only profiles")
                 reep = None
 
+    if reep is None and not args.no_reep:
+        # Without reep every DOB/nationality/height is null. Publishing that would
+        # replace the last good opta_players.parquet with an empty-looking one.
+        sys.exit("ABORT: reep register unavailable (download/parse failed), not writing "
+                 f"{args.out}; the previous file stays in place. Use --no-reep to build opta-only on purpose.")
+
     profiles = build_profiles(player_stats, reep)
 
     n = len(profiles)
@@ -263,6 +297,11 @@ def main():
     nat_pct = 100 * profiles["nationality"].notna().mean() if n else 0.0
     print(f"opta_players: {n:,} rows | dob coverage {dob_pct:.1f}% | "
           f"nationality coverage {nat_pct:.1f}%")
+
+    if reep is not None:
+        failures = check_coverage(profiles)
+        if failures:
+            sys.exit("ABORT: coverage floor failed, not writing " + args.out + ": " + "; ".join(failures))
 
     tmp = f"{args.out}.tmp"
     profiles.to_parquet(tmp, index=False)

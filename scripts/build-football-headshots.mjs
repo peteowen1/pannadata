@@ -109,13 +109,32 @@ const NONFREE = /(non[\- ]?commercial|no[\- ]?deriv|\bnc\b|\bnd\b|fair[\- ]?use|
 const isFreeLicense = (...names) => names.some(n => FREE.test(n || "")) && !names.some(n => NONFREE.test(n || ""))
 
 const chunk = (a, n) => { const o = []; for (let i = 0; i < a.length; i += n) o.push(a.slice(i, i + n)); return o }
-const wapi = async (host, params) => {
+// Retries a throttle (HTTP 429/5xx, or MediaWiki maxlag/ratelimited) with backoff,
+// so one transient error doesn't abort the whole weekly run; anything still
+// failing after the retries throws rather than reading as "no data".
+const wapi = async (host, params, tries = 4) => {
   const u = `https://${host}/w/api.php?${new URLSearchParams({ format: "json", origin: "*", ...params })}`
-  const r = await fetch(u, { headers: UA }); return r.json()
+  for (let k = 1; ; k++) {
+    let err
+    const r = await fetch(u, { headers: UA })
+    if (!r.ok) err = new Error(`${host} HTTP ${r.status}`)
+    const j = err ? null : await r.json()
+    // MediaWiki returns HTTP 200 with an `error` body for throttling/maxlag; an empty
+    // result must not be mistaken for "no data" (it would drop nationality/photos).
+    if (j && j.error) err = new Error(`${host} API error: ${j.error.code || ""} ${String(j.error.info || "").slice(0, 100)}`)
+    if (!err) return j
+    const transient = (r.status === 429 || r.status >= 500) || (j && j.error && /maxlag|ratelimited/i.test(j.error.code || ""))
+    if (!transient || k >= tries) throw err
+    await new Promise(res => setTimeout(res, 2000 * 2 ** (k - 1)))
+  }
 }
 
 // ── Load our players (player_id → valid Wikidata QID) ──────────────
-const bio = await (await fetch(R2_PUB + "player-bio.json?t=" + Math.floor(Math.random()*1e9))).json()
+const bioRes = await fetch(R2_PUB + "player-bio.json?t=" + Math.floor(Math.random()*1e9))
+if (!bioRes.ok) { console.error(`ERROR: player-bio.json HTTP ${bioRes.status}; aborting`); process.exit(1) }
+const bio = await bioRes.json()
+const bioN = Object.keys(bio).length
+if (bioN < 1000) { console.error(`ERROR: player-bio.json has only ${bioN} entries; aborting before re-uploading it`); process.exit(1) }
 let players = Object.entries(bio).filter(([, b]) => /^Q\d+$/.test(b.wd || "")).map(([id, b]) => ({ id, qid: b.wd, bio: b }))
 if (LIMIT) players = players.slice(0, +LIMIT)
 console.log(`players with a Wikidata QID: ${players.length}`)
@@ -344,7 +363,18 @@ if (!DRY) {
   await Promise.all(Array.from({ length: CONC }, async () => { while (q.length) await one(q.shift()) }))
 
   // upload credits + updated bio
-  const cf = path.join(TMP, "headshot-credits.json"); await writeFile(cf, JSON.stringify(credits))
+  // Merge with the existing credits file instead of replacing it: a partial run
+  // (--limit, Wikimedia errors) only knows about the players it touched, and the
+  // images already on R2 still need their attribution. New entries win.
+  let prevCredits = {}
+  try {
+    const cr = await fetch(R2_PUB + "headshot-credits.json?t=" + Math.floor(Math.random()*1e9))
+    if (cr.ok) prevCredits = await cr.json()
+    else if (cr.status !== 404) throw new Error(`HTTP ${cr.status}`)
+  } catch (e) { console.error("ERROR: cannot read existing headshot-credits.json, not replacing it:", String(e.message).slice(0, 120)); process.exit(1) }
+  const mergedCredits = { ...prevCredits, ...credits }
+  if (Object.keys(mergedCredits).length < Object.keys(prevCredits).length) { console.error("ERROR: merged credits shrank; aborting"); process.exit(1) }
+  const cf = path.join(TMP, "headshot-credits.json"); await writeFile(cf, JSON.stringify(mergedCredits))
   const bf = path.join(TMP, "player-bio.json"); await writeFile(bf, JSON.stringify(bioOut))
   await exec(WRANGLER, ["r2", "object", "put", "inthegame-data/football/headshot-credits.json", "--file", cf, "--remote", "--content-type", "application/json"], { shell: true, maxBuffer: 1 << 24 })
   await exec(WRANGLER, ["r2", "object", "put", "inthegame-data/football/player-bio.json", "--file", bf, "--remote", "--content-type", "application/json"], { shell: true, maxBuffer: 1 << 24 })

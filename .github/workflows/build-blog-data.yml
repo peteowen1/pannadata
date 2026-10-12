@@ -14,6 +14,12 @@ env:
 permissions:
   contents: read
 
+# Both workflows write the same public R2 keys (football/*, incl. the read-modify-write
+# predictions-locked.parquet). One shared group makes them queue, never overlap.
+concurrency:
+  group: blog-r2-writer
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
