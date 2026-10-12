@@ -25,6 +25,7 @@ Usage:
     python scrape_opta.py --types fixtures --recent 1  # Fixtures for current season only
 """
 
+import csv
 import json
 import argparse
 import logging
@@ -705,6 +706,68 @@ COMPETITION_SEASON_DATE_EXCEPTIONS = {
 }
 
 
+CATALOG_PATH = Path(__file__).parent / "opta_entitlement_catalog.csv"
+_catalog_dates: Optional[dict] = None
+
+
+def catalog_season_dates(season_id: str) -> Optional[tuple]:
+    """(start, end) ISO dates Opta's catalog gives for a season id, or None.
+
+    Loaded once from opta_entitlement_catalog.csv. A missing or unreadable
+    catalog is logged and treated as empty, so windows fall back to the
+    name-based rules alone.
+    """
+    global _catalog_dates
+    if _catalog_dates is None:
+        _catalog_dates = {}
+        try:
+            with open(CATALOG_PATH, encoding="utf-8", newline="") as f:
+                for row in csv.DictReader(f):
+                    if row.get("season_id") and row.get("start_date") and row.get("end_date"):
+                        _catalog_dates[row["season_id"]] = (row["start_date"][:10], row["end_date"][:10])
+        except (OSError, csv.Error) as e:
+            logger.warning("Entitlement catalog unreadable (%s): season windows use name rules only", e)
+    return _catalog_dates.get(season_id)
+
+
+def extend_to_catalog_dates(date_ranges: list, season_id: str, chunk_days: int = 61) -> list:
+    """Add windows so a season's catalog start and end dates are covered.
+
+    The match list is already filtered by season id (tmcl); the date windows
+    only split it into requests. The name-based windows assume Aug-Jul (or a
+    calendar year) and miss seasons that start or end outside that: old
+    qualifier cycles starting two years before the finals, Nations League
+    finals in March, Swedish cup group stages in May, seasons pushed past
+    December by COVID (102 configured seasons on 2026-10-13). Existing windows
+    are kept as they are; new ones of at most `chunk_days` are added before
+    the first and after the last. A catalog span inside the windows changes
+    nothing, so a stale catalog can only widen coverage, never narrow it.
+    """
+    dates = catalog_season_dates(season_id)
+    if not dates or not date_ranges:
+        return date_ranges
+    fmt = "%Y-%m-%d"
+    cat_start = datetime.strptime(dates[0], fmt).date()
+    cat_end = datetime.strptime(dates[1], fmt).date()
+    win_start = min(datetime.strptime(a, fmt).date() for a, _ in date_ranges)
+    win_end = max(datetime.strptime(b, fmt).date() for _, b in date_ranges)
+
+    def chunks(lo, hi):
+        out = []
+        while lo <= hi:
+            top = min(lo + timedelta(days=chunk_days - 1), hi)
+            out.append((lo.strftime(fmt), top.strftime(fmt)))
+            lo = top + timedelta(days=1)
+        return out
+
+    before = chunks(cat_start, win_start - timedelta(days=1))
+    after = chunks(win_end + timedelta(days=1), cat_end)
+    if before or after:
+        print(f"Catalog dates {dates[0]}..{dates[1]} run outside the season windows: "
+              f"+{len(before)} window(s) before, +{len(after)} after")
+    return before + list(date_ranges) + after
+
+
 def get_season_date_range(season_name: str, competition: Optional[str] = None) -> list:
     """Get start and end dates for a season (Aug-May typical)
 
@@ -870,7 +933,8 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
                 msg += f" ({skipped_unavailable} with unavailable events)"
             print(msg)
 
-    date_ranges = get_season_date_range(season_name, competition)
+    date_ranges = extend_to_catalog_dates(
+        get_season_date_range(season_name, competition), season_id)
     today_iso = datetime.now().date().isoformat()
 
     # Collectors for all data types
