@@ -32,6 +32,7 @@ import shutil
 import sys
 from pathlib import Path
 from datetime import datetime, timedelta
+from typing import Optional
 from opta_scraper import OptaScraper, MatchEvent, ShotEvent, PlayerLineup, AllMatchEvent
 from dataclasses import asdict
 import pandas as pd
@@ -542,11 +543,10 @@ TOURNAMENT_DATE_EXCEPTIONS = {
     "2022 Qatar": [
         ("2019-09-01", "2022-12-31"),
     ],
-    # EURO 2020 — COVID-delayed to Jun 11 – Jul 11, 2021. Labelled "2020" in
-    # Opta (no host country) because it was pan-European.
-    "2020": [
-        ("2021-06-01", "2021-07-31"),
-    ],
+    # NOTE: the bare "2020" key (EURO 2020, played Jun-Jul 2021) used to live
+    # here. It applied to EVERY competition labelled "2020" (MLS, Brazilian
+    # Serie A, Nordic leagues...), replacing their Jan-Dec 2020 window with
+    # Jun-Jul 2021 (R089). It now lives in COMPETITION_SEASON_DATE_EXCEPTIONS.
     # AFCON 2021 Cameroon — COVID-delayed to Jan 9 – Feb 6, 2022. The default
     # ("2021" → Aug 2020 – Jul 2021) misses the entire tournament. AFCON
     # Qualifiers 2021 cycle was Nov 2019 – Mar 2021, also outside default,
@@ -675,8 +675,37 @@ TOURNAMENT_DATE_EXCEPTIONS = {
     # across all years and doesn't merit one explicit entry per year.
 }
 
+# Exceptions that only apply to ONE competition's season label. Checked before
+# TOURNAMENT_DATE_EXCEPTIONS, keyed (competition, season_name). Needed where a
+# label is shared by unrelated competitions (bare "2020" is MLS, Brazilian
+# Serie A, the Nordic leagues... as well as EURO 2020), or where a qualifying
+# cycle starts long before the finals the default window is built around.
+# Real dates are in opta_entitlement_catalog.csv (start_date/end_date);
+# test_season_windows.py asserts every window here covers its catalog dates.
+COMPETITION_SEASON_DATE_EXCEPTIONS = {
+    # EURO 2020 finals, COVID-delayed to Jun 11 - Jul 11, 2021 (R089).
+    ("UEFA_Euros", "2020"): [("2021-06-01", "2021-07-31")],
+    # EURO 2020 qualifiers: Mar 2019 - Nov 2019, play-offs to Nov 2020.
+    ("UEFA_Euro_Qualifiers", "2020"): [("2019-03-01", "2020-12-31")],
+    # EURO 2024 qualifiers: Mar 2023 - Nov 2023, play-offs Mar 2024. The default
+    # window starts Aug 2023 and misses the first three months (R088).
+    ("UEFA_Euro_Qualifiers", "2024 Germany"): [("2023-03-01", "2024-03-31")],
+    # UEFA World Cup 2026 qualifiers: Mar 2025 - Nov 2025, play-offs Mar 2026.
+    # Opta labels this season "...-United States" (the other confederations
+    # use "...-USA", covered above); the default window starts Aug 2024 so
+    # only the Aug-Jul 2025/26 slice was ever requested (R088).
+    ("UEFA_WC_Qualifiers", "2026 Canada-Mexico-United States"): [
+        ("2025-03-01", "2026-04-30"),
+    ],
+    # CONMEBOL qualifiers opened Sep 7, 2023; the shared "-USA" window above
+    # starts Oct 1, 2023 and skipped the first round.
+    ("CONMEBOL_WC_Qualifiers", "2026 Canada-Mexico-USA"): [
+        ("2023-09-01", "2026-07-31"),
+    ],
+}
 
-def get_season_date_range(season_name: str) -> tuple:
+
+def get_season_date_range(season_name: str, competition: Optional[str] = None) -> list:
     """Get start and end dates for a season (Aug-May typical)
 
     Handles both league seasons (2024-2025) and tournament seasons (2025 Morocco, 2024/2025).
@@ -686,7 +715,13 @@ def get_season_date_range(season_name: str) -> tuple:
     """
     import re
 
-    # Explicit exceptions override the name-based inference.
+    # Explicit exceptions override the name-based inference. The
+    # competition-specific table wins; a bare season label only matches the
+    # competition-agnostic table.
+    if competition is not None:
+        comp_ranges = COMPETITION_SEASON_DATE_EXCEPTIONS.get((competition, season_name))
+        if comp_ranges is not None:
+            return comp_ranges
     if season_name in TOURNAMENT_DATE_EXCEPTIONS:
         return TOURNAMENT_DATE_EXCEPTIONS[season_name]
 
@@ -743,7 +778,8 @@ def get_season_date_range(season_name: str) -> tuple:
     return date_ranges
 
 
-def season_starts_within_lookahead(season_name: str, lookahead_days: int = FIXTURE_LOOKAHEAD_DAYS) -> bool:
+def season_starts_within_lookahead(season_name: str, lookahead_days: int = FIXTURE_LOOKAHEAD_DAYS,
+                                   competition: Optional[str] = None) -> bool:
     """True if a not-yet-started season's earliest date window begins within
     `lookahead_days` of today (pannadata#119).
 
@@ -756,7 +792,7 @@ def season_starts_within_lookahead(season_name: str, lookahead_days: int = FIXTU
     pre-season pulls, e.g. months-ahead WC2026-style seeding).
     """
     try:
-        ranges = get_season_date_range(season_name)
+        ranges = get_season_date_range(season_name, competition)
     except Exception:
         return False
     if not ranges:
@@ -834,7 +870,7 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
                 msg += f" ({skipped_unavailable} with unavailable events)"
             print(msg)
 
-    date_ranges = get_season_date_range(season_name)
+    date_ranges = get_season_date_range(season_name, competition)
     today_iso = datetime.now().date().isoformat()
 
     # Collectors for all data types
@@ -1206,7 +1242,7 @@ def main():
             # announced weeks ahead, but is_future_season() would otherwise
             # exclude the whole season from the pool until August.
             near_future = [(s, sid) for s, sid in league_seasons.items()
-                           if is_future_season(s) and season_starts_within_lookahead(s)]
+                           if is_future_season(s) and season_starts_within_lookahead(s, competition=league)]
             seasons = seasons + [x for x in near_future if x not in seasons]
         else:
             # Default: current (most-recent active) season only — same future-
@@ -1218,7 +1254,7 @@ def main():
             )
             seasons = sorted_seasons[:1]
             near_future = [(s, sid) for s, sid in league_seasons.items()
-                           if is_future_season(s) and season_starts_within_lookahead(s)]
+                           if is_future_season(s) and season_starts_within_lookahead(s, competition=league)]
             seasons = seasons + [x for x in near_future if x not in seasons]
 
         for season_name, season_id in seasons:
@@ -1234,7 +1270,7 @@ def main():
     if not args.include_future:
         original_count = len(scrape_plan)
         scrape_plan = [(l, s, sid) for l, s, sid in scrape_plan
-                       if not is_future_season(s) or season_starts_within_lookahead(s)]
+                       if not is_future_season(s) or season_starts_within_lookahead(s, competition=l)]
         if len(scrape_plan) < original_count:
             skipped = original_count - len(scrape_plan)
             print(f"Filtered out {skipped} future seasons from scrape plan "
@@ -1434,12 +1470,29 @@ def main():
                     "total_matches": total_matches,
                     "player_records": total_players,
                     "shot_records": total_shots,
-                }
+                },
+                "failed_windows": scraper.failed_windows,
             }, f, indent=2)
         print(f"\nSummary saved to {summary_path}")
     except OSError as e:
         logger.error("Failed to write scrape summary: %s", e)
         print(f"\nWARNING: Failed to save summary to {summary_path}")
+
+    # A page-1 API failure on a fixture window (outage, revoked outlet token,
+    # rate limit) used to read as an empty window and give a green run with no
+    # data (R087). Pete's policy (2026-10-12): publish what worked, then end
+    # the run red. So the scrape exits normally here (consolidate, upload and
+    # the panna dispatch all run for the competitions that succeeded) and the
+    # workflow's final "Fail on failed fixture windows" step reads
+    # failed_windows from scrape_summary.json and turns the run red. The
+    # manifest never records the failed windows' matches, so they are retried
+    # on the next run.
+    if scraper.failed_windows:
+        logger.error("%d fixture window(s) failed on page 1 (not empty): %s",
+                     len(scraper.failed_windows), scraper.failed_windows[:10])
+        print(f"\n::warning::{len(scraper.failed_windows)} fixture window(s) failed "
+              f"on the first API page (see failed_windows in scrape_summary.json); "
+              f"the run will end red after publishing what succeeded")
 
     # Exit non-zero if majority of league-seasons failed (partial failure is expected with flaky APIs)
     if error_count > 0 and len(scrape_plan) > 0:

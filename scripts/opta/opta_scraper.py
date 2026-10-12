@@ -520,6 +520,11 @@ class OptaScraper:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self._request_count = 0
         self._last_request_time = 0
+        # Fixture windows whose page-1 call failed for a reason other than
+        # "nothing there" (R087). The caller turns a non-empty list into a
+        # failed run; a 404 / empty 200 is a legitimately empty window and is
+        # NOT recorded.
+        self.failed_windows: List[Dict] = []
 
     def _set_random_headers(self):
         """Set randomized browser headers to help prevent rate limiting"""
@@ -747,18 +752,32 @@ class OptaScraper:
                 if page == 1:
                     # Page-1 None: no data was ever returned for this window.
                     # Distinct from mid-pagination None — there is no partial
-                    # list to lose. Real-world causes: 404 for a legitimately
-                    # empty window (cup tournament gap between rounds, future
-                    # fixtures not yet published in Opta, off-season subset
-                    # of a season's date span) OR a transient API error after
-                    # retry-exhaustion. Either way, return empty so the
-                    # season continues to the next window. The manifest tracks
-                    # what's been scraped, so a real "should have data here"
-                    # case will be picked up by a later run once Opta has it.
-                    print(
-                        f"  Empty window {start_date}..{end_date} for season "
-                        f"{season_id} (page-1 None) — moving on"
-                    )
+                    # list to lose. Opta returns 404 for a legitimately empty
+                    # window (cup gap between rounds, fixtures not yet
+                    # published, off-season stretch): return empty and move on.
+                    # Any OTHER status (0 = connection/JSON failure after
+                    # retries, 400, 403, 429, 5xx) is an outage or a revoked
+                    # outlet token, NOT an empty window. Return empty so the
+                    # season continues, but record the failure so the run
+                    # exits non-zero instead of reporting a green run with no
+                    # data (R087).
+                    if status == 404:
+                        print(
+                            f"  Empty window {start_date}..{end_date} for season "
+                            f"{season_id} (page-1 404) — moving on"
+                        )
+                    else:
+                        self.failed_windows.append({
+                            "season_id": season_id,
+                            "start_date": start_date,
+                            "end_date": end_date,
+                            "status": status,
+                        })
+                        print(
+                            f"  FAILED window {start_date}..{end_date} for season "
+                            f"{season_id}: page-1 call failed (status={status}) — "
+                            f"NOT an empty window; the run will exit non-zero"
+                        )
                     return []
                 # Later-page None: distinguish 404 (legitimate end-of-pagination)
                 # from other failures (real truncation we must not silently
