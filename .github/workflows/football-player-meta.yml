@@ -42,7 +42,7 @@ jobs:
           npm install --legacy-peer-deps @tensorflow/tfjs @tensorflow/tfjs-backend-wasm @vladmandic/face-api
 
       - name: Download reep register (CC0)
-        run: curl -sL -o scripts/people.csv https://raw.githubusercontent.com/withqwerty/reep/main/data/people.csv
+        run: curl -fsSL --retry 3 -o scripts/people.csv https://raw.githubusercontent.com/withqwerty/reep/main/data/people.csv
 
       - name: Build player-bio.json (reep → dob/nationality/flag) + upload to R2
         env:

@@ -70,6 +70,23 @@ for (const r of recs) {
   if (r.key_wikidata) e.wd = r.key_wikidata   // kept for step 3 (photos)
   if (Object.keys(e).length) bio[r.key_opta] = e
 }
+// Sanity gate: refuse to overwrite the live file with a shrunken one (a truncated
+// or empty reep download would otherwise wipe the bios site-wide). Compare with the
+// previous file on R2 (public, cheap); if that is unreadable, fall back to an
+// absolute floor of 50% of the players in ratings.parquet, since nearly every
+// rated player has a reep record. Applies to dry runs too.
+const nBio = Object.keys(bio).length
+let prevN = null
+try {
+  const pr = await fetch("https://pub-ee4bf5b599a047f9ac2b9facc1587008.r2.dev/football/player-bio.json?t=" + Date.now())
+  if (pr.ok) prevN = Object.keys(await pr.json()).length
+} catch (e) { console.error("could not read previous player-bio.json:", String(e.message).slice(0, 120)) }
+const floor = prevN ? Math.ceil(0.9 * prevN) : Math.ceil(0.5 * ourIds.size)
+console.log(`bio sanity gate: ${nBio} entries vs floor ${floor} (${prevN ? "90% of previous " + prevN : "50% of " + ourIds.size + " rated players; previous file unreadable"})`)
+if (!nBio || nBio < floor) {
+  console.error(`ERROR: only ${nBio} bio entries (floor ${floor}); refusing to write or upload player-bio.json`)
+  process.exit(1)
+}
 const outPath = fileURLToPath(new URL("./player-bio.json", import.meta.url))
 writeFileSync(outPath, JSON.stringify(bio))
 console.log(`bio entries: ${Object.keys(bio).length} | dob: ${withDob} | flag(iso): ${withIso}`)
