@@ -122,7 +122,9 @@ def test_catalog_extension_keeps_windows_and_chunks():
     old = scrape_opta._catalog_dates
     try:
         scrape_opta._catalog_dates = {"inside": ("2020-08-09", "2020-12-20"),
-                                      "outside": ("2020-03-01", "2021-02-26")}
+                                      "outside": ("2020-03-01", "2021-02-26"),
+                                      "bogus": ("1900-01-01", "2021-02-26")}
+        assert extend_to_catalog_dates(base, "bogus") == base
         assert extend_to_catalog_dates(base, "inside") == base
         assert extend_to_catalog_dates(base, "unknown") == base
         out = extend_to_catalog_dates(base, "outside")

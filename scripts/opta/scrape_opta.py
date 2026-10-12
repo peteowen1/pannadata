@@ -725,7 +725,7 @@ def catalog_season_dates(season_id: str) -> Optional[tuple]:
                 for row in csv.DictReader(f):
                     if row.get("season_id") and row.get("start_date") and row.get("end_date"):
                         _catalog_dates[row["season_id"]] = (row["start_date"][:10], row["end_date"][:10])
-        except (OSError, csv.Error) as e:
+        except (OSError, csv.Error, ValueError) as e:
             logger.warning("Entitlement catalog unreadable (%s): season windows use name rules only", e)
     return _catalog_dates.get(season_id)
 
@@ -762,6 +762,12 @@ def extend_to_catalog_dates(date_ranges: list, season_id: str, chunk_days: int =
 
     before = chunks(cat_start, win_start - timedelta(days=1))
     after = chunks(win_end + timedelta(days=1), cat_end)
+    # The widest real extension is 16 windows (2026-10-13). Far more means a
+    # bad catalog row (e.g. a placeholder year), not a long season.
+    if len(before) + len(after) > 24:
+        logger.warning("Catalog dates %s..%s for season %s would add %d windows; ignoring them",
+                       dates[0], dates[1], season_id, len(before) + len(after))
+        return date_ranges
     if before or after:
         print(f"Catalog dates {dates[0]}..{dates[1]} run outside the season windows: "
               f"+{len(before)} window(s) before, +{len(after)} after")
