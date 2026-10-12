@@ -1239,7 +1239,10 @@ def main():
                        choices=list(seasons_config.keys()),
                        help="Specific leagues to scrape (default: all)")
     parser.add_argument("--seasons", nargs="+",
-                       help="Specific seasons to scrape (e.g., 2024-2025 2023-2024)")
+                       help="Specific seasons to scrape (e.g., 2024-2025 2023-2024). "
+                            "An entry written League=Season applies to that league "
+                            "only (e.g. UCL=2019-2020), so one run can backfill "
+                            "different seasons of different leagues.")
     parser.add_argument("--include-future", action="store_true",
                        help="Honour explicitly-listed --seasons that haven't started yet "
                             "(pre-season fixture pull, e.g. 2026-2027 in July). Only the "
@@ -1279,8 +1282,26 @@ def main():
                             "before any API calls or writes (pannadata#36).")
     args = parser.parse_args()
 
+    # Split --seasons into labels for every league and League=Season pairs.
+    # Pairs add their league to the run, so --leagues can be left out.
+    season_labels, season_pairs = [], set()
+    for entry in args.seasons or []:
+        league_part, sep, season_part = entry.partition("=")
+        if sep:
+            if league_part not in seasons_config:
+                parser.error(f"--seasons pair {entry!r}: unknown league {league_part!r}")
+            if season_part not in seasons_config[league_part]:
+                parser.error(f"--seasons pair {entry!r}: {league_part} has no season {season_part!r} in seasons.json")
+            season_pairs.add((league_part, season_part))
+        else:
+            season_labels.append(entry)
+
     # Determine what to scrape
-    leagues_to_scrape = args.leagues or list(seasons_config.keys())
+    leagues_to_scrape = args.leagues or (
+        [] if season_pairs and not season_labels else list(seasons_config.keys()))
+    for pair_league, _ in sorted(season_pairs):
+        if pair_league not in leagues_to_scrape:
+            leagues_to_scrape.append(pair_league)
 
     # Build scrape plan
     scrape_plan = []
@@ -1295,7 +1316,8 @@ def main():
             # Filter to specified seasons. Explicit --seasons is honoured as-is
             # (operators may pre-pull a not-yet-started future calendar on demand);
             # the post-loop future-season guard below trims those if appropriate.
-            seasons = [(s, sid) for s, sid in league_seasons.items() if s in args.seasons]
+            seasons = [(s, sid) for s, sid in league_seasons.items()
+                       if s in season_labels or (league, s) in season_pairs]
         elif args.recent > 0:
             # Get N most recent ACTIVE seasons. Filter out future (not-yet-started)
             # seasons BEFORE slicing — otherwise --recent 1 can land on a future

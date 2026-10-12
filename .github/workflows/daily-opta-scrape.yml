@@ -11,7 +11,7 @@ on:
         required: false
         type: string
       seasons:
-        description: 'Specific season name — overrides `recent`. Tournament names may contain spaces (e.g. "2022 Qatar" or "2020" for EURO 2020). One season per dispatch; run multiple times for multiple.'
+        description: 'Specific season name — overrides `recent`. Tournament names may contain spaces (e.g. "2022 Qatar" or "2020" for EURO 2020). Several: separate with | ; an entry League=Season applies to that league only (e.g. UCL=2019-2020|MLS=2020).'
         required: false
         type: string
       recent:
@@ -227,9 +227,12 @@ jobs:
         fi
         # --seasons may contain spaces (tournament names like "2022 Qatar"),
         # so pass it as a quoted argument after the unquoted ARGS expansion.
+        # Several seasons: separate them with "|". An entry written
+        # League=Season applies to that league only (e.g. "UCL=2019-2020|2020").
         if [ -n "$INPUT_SEASONS" ]; then
-          echo "Running: python scrape_opta.py $ARGS --seasons \"$INPUT_SEASONS\""
-          python scrape_opta.py $ARGS --seasons "$INPUT_SEASONS"
+          IFS='|' read -ra SEASON_ARGS <<< "$INPUT_SEASONS"
+          echo "Running: python scrape_opta.py $ARGS --seasons (${#SEASON_ARGS[@]} entries) $INPUT_SEASONS"
+          python scrape_opta.py $ARGS --seasons "${SEASON_ARGS[@]}"
         else
           echo "Running: python scrape_opta.py $ARGS"
           python scrape_opta.py $ARGS
