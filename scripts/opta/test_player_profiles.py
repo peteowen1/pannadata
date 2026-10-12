@@ -15,6 +15,8 @@ from build_player_profiles import (
     _safe_float_or_none,
     _safe_parse_date,
     build_profiles,
+    check_coverage,
+    main,
     dedupe_player_stats,
     load_reep,
 )
@@ -216,3 +218,71 @@ def test_load_reep_dedupes_and_drops_blank_keys(tmp_path):
     out = load_reep(str(csv_path))
     assert list(out["player_id"]) == ["p1"]
     assert out.iloc[0]["height_cm"] == 181
+
+
+# ---------------------------------------------------------------------------
+# publish safety (R086): no write when reep is missing or coverage collapses
+# ---------------------------------------------------------------------------
+
+def _profiles(n, with_dob):
+    return pd.DataFrame({
+        "n_matches": [20] * n,
+        "dob": [date(1990, 1, 1) if i < with_dob else None for i in range(n)],
+        "nationality": ["X" if i < with_dob else None for i in range(n)],
+        "height_cm": [180.0 if i < with_dob else None for i in range(n)],
+    })
+
+
+def test_check_coverage_passes_at_realistic_rate():
+    assert check_coverage(_profiles(1000, 386)) == []
+
+
+def test_check_coverage_fails_at_zero():
+    failures = check_coverage(_profiles(1000, 0))
+    assert len(failures) == 3 and "dob" in failures[0]
+
+
+def test_check_coverage_skipped_for_tiny_population():
+    assert check_coverage(_profiles(10, 0)) == []
+
+
+def _write_stats(path, n_players=150, n_matches=12):
+    rows = [{"match_id": f"m{m}", "match_date": f"2025-01-{m + 1:02d}", "player_id": f"p{i}",
+             "player_name": f"P {i}", "first_name": "P", "last_name": str(i)}
+            for i in range(n_players) for m in range(n_matches)]
+    pd.DataFrame(rows).to_parquet(path, index=False)
+
+
+def _run_main(monkeypatch, stats, out, *extra):
+    monkeypatch.setattr("sys.argv", ["x", "--player-stats", str(stats), "--out", str(out), *extra])
+    main()
+
+
+def test_main_aborts_without_writing_when_reep_unavailable(tmp_path, monkeypatch):
+    stats, out = tmp_path / "s.parquet", tmp_path / "o.parquet"
+    _write_stats(stats)
+    out.write_bytes(b"previous good file")
+    monkeypatch.setattr("build_player_profiles._download_reep", lambda *a, **k: False)
+    with pytest.raises(SystemExit) as e:
+        _run_main(monkeypatch, stats, out)
+    assert "reep register unavailable" in str(e.value)
+    assert out.read_bytes() == b"previous good file"
+
+
+def test_main_aborts_without_writing_when_coverage_below_floor(tmp_path, monkeypatch):
+    stats, out, csv = tmp_path / "s.parquet", tmp_path / "o.parquet", tmp_path / "r.csv"
+    _write_stats(stats)
+    csv.write_text("key_opta,date_of_birth,nationality,height_cm\nunrelated,1990-01-01,X,180\n")
+    with pytest.raises(SystemExit) as e:
+        _run_main(monkeypatch, stats, out, "--reep-csv", str(csv))
+    assert "coverage floor failed" in str(e.value)
+    assert not out.exists()
+
+
+def test_main_writes_when_coverage_ok(tmp_path, monkeypatch):
+    stats, out, csv = tmp_path / "s.parquet", tmp_path / "o.parquet", tmp_path / "r.csv"
+    _write_stats(stats)
+    lines = ["key_opta,date_of_birth,nationality,height_cm"] + [f"p{i},1990-01-01,X,180" for i in range(150)]
+    csv.write_text("\n".join(lines) + "\n")
+    _run_main(monkeypatch, stats, out, "--reep-csv", str(csv))
+    assert out.exists() and len(pd.read_parquet(out)) == 150
