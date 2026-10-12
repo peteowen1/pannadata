@@ -91,3 +91,51 @@ def test_brazil_2020_start_covered():
     # a separate, older gap and is deliberately not asserted here.
     ranges = get_season_date_range("2020", "Brazilian_Serie_A")
     assert _covers(ranges, "2020-08-09")
+
+
+def test_every_configured_season_covered_after_catalog_extension():
+    # The general fix for the remaining window gaps: each season's windows are
+    # widened to Opta's own catalog dates, looked up by season id.
+    from scrape_opta import extend_to_catalog_dates
+    catalog = {r["season_id"]: r for r in csv.DictReader(
+        open(HERE / "opta_entitlement_catalog.csv", encoding="utf-8")) if r["start_date"]}
+    seasons = json.loads((HERE / "seasons.json").read_text(encoding="utf-8"))
+    checked = 0
+    for comp, labels in seasons.items():
+        if not isinstance(labels, dict):
+            continue
+        for label, sid in labels.items():
+            row = catalog.get(sid)
+            if row is None:
+                continue
+            ranges = extend_to_catalog_dates(get_season_date_range(label, comp), sid)
+            assert _covers(ranges, row["start_date"][:10]), (comp, label, "start")
+            assert _covers(ranges, row["end_date"][:10]), (comp, label, "end")
+            checked += 1
+    assert checked > 3000
+
+
+def test_catalog_extension_keeps_windows_and_chunks():
+    import scrape_opta
+    from scrape_opta import extend_to_catalog_dates
+    base = [("2020-08-01", "2020-09-30"), ("2020-10-01", "2020-12-31")]
+    old = scrape_opta._catalog_dates
+    try:
+        scrape_opta._catalog_dates = {"inside": ("2020-08-09", "2020-12-20"),
+                                      "outside": ("2020-03-01", "2021-02-26"),
+                                      "bogus": ("1900-01-01", "2021-02-26")}
+        assert extend_to_catalog_dates(base, "bogus") == base
+        assert extend_to_catalog_dates(base, "inside") == base
+        assert extend_to_catalog_dates(base, "unknown") == base
+        out = extend_to_catalog_dates(base, "outside")
+        assert base[0] in out and base[1] in out
+        assert out[0][0] == "2020-03-01" and out[-1][1] == "2021-02-26"
+        fmt = "%Y-%m-%d"
+        from datetime import datetime as dt
+        for a, b in out:
+            assert (dt.strptime(b, fmt) - dt.strptime(a, fmt)).days < 92
+        # Contiguous: no day between windows is skipped.
+        for (a1, b1), (a2, b2) in zip(out, out[1:]):
+            assert (dt.strptime(a2, fmt) - dt.strptime(b1, fmt)).days == 1
+    finally:
+        scrape_opta._catalog_dates = old
