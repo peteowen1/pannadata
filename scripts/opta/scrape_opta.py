@@ -272,10 +272,15 @@ def update_manifest(manifest_path: Path, new_matches: list) -> bool:
     else:
         combined = new_df
 
+    # R199: write to a temp file and swap it in, so a run killed mid-write
+    # leaves the previous manifest intact rather than a truncated one.
+    tmp_path = manifest_path.with_name(manifest_path.name + '.tmp')
     try:
-        combined.to_parquet(manifest_path, index=False, compression='gzip')
+        combined.to_parquet(tmp_path, index=False, compression='gzip')
+        tmp_path.replace(manifest_path)
     except (OSError, pyarrow.lib.ArrowInvalid) as e:
         logger.error("Failed to write manifest: %s", e)
+        tmp_path.unlink(missing_ok=True)
         return False
     print(f"Updated manifest: {len(combined):,} total matches")
     return True
