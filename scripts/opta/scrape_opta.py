@@ -1180,7 +1180,12 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
         results["events"] = combine_and_save(
             all_events,
             output_dirs["events"] / f"{season_name}.parquet",
-            ["match_id", "event_type", "minute", "player_id"]
+            # R196: substitutions carry player_id '' (players are in
+            # player_on_id / player_off_id), so without these and `second`
+            # every substitution in the same minute collapsed to one row on
+            # each re-save: 9.2% of lineup sub-ons were missing (2026-10-14).
+            ["match_id", "event_type", "minute", "second", "player_id",
+             "player_on_id", "player_off_id"]
         )
         results["lineups"] = combine_and_save(
             all_lineups,

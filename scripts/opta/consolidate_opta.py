@@ -38,7 +38,11 @@ def _get_dedup_cols(table_type):
     if table_type in ('shot_events', 'match_events'):
         return ['match_id', 'event_id']
     elif table_type == 'events':
-        return ['match_id', 'event_type', 'minute', 'player_id']
+        # R196: substitution rows carry player_id '' (the players are in
+        # player_on_id / player_off_id), so a double change in the same second
+        # collapsed to one row -- 9.2% of lineup sub-ons were missing (2026-10-14).
+        return ['match_id', 'event_type', 'minute', 'player_id',
+                'player_on_id', 'player_off_id']
     elif table_type == 'fixtures':
         return ['match_id']
     else:
