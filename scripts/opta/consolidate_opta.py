@@ -711,7 +711,13 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
                     if table_type == 'events' and 'second' in league_df.columns:
                         if 'second' not in valid_dedup:
                             valid_dedup.append('second')
-                    league_df = league_df.drop_duplicates(subset=valid_dedup, keep='last')
+                    # R196: null vs '' in the substitution columns must not make
+                    # the same event look like two (stored values untouched).
+                    key_df = league_df[valid_dedup].copy()
+                    for c in ('player_on_id', 'player_off_id', 'player_id'):
+                        if table_type == 'events' and c in key_df.columns:
+                            key_df[c] = key_df[c].fillna('')
+                    league_df = league_df[~key_df.duplicated(keep='last')]
                     dupes = before - len(league_df)
                     if dupes > 0:
                         print(f"    {league}: removed {dupes:,} duplicates")

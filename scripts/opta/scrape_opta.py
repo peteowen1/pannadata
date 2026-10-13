@@ -1132,7 +1132,14 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
             try:
                 existing_df = pd.read_parquet(output_path)
                 combined = pd.concat([existing_df, new_df], ignore_index=True)
-                combined = combined.drop_duplicates(subset=dedup_cols, keep='last')
+                # R196: older files hold null where new rows hold '' in the
+                # substitution columns; compare them as equal (stored values
+                # are left as they are).
+                key_df = combined[dedup_cols].copy()
+                for c in ('player_on_id', 'player_off_id', 'player_id'):
+                    if c in key_df.columns:
+                        key_df[c] = key_df[c].fillna('')
+                combined = combined[~key_df.duplicated(keep='last')]
             except (pd.errors.ParserError, OSError, ValueError, pyarrow.lib.ArrowInvalid) as e:
                 logger.error("Failed to read existing %s: %s. Writing new records only.", output_path, e)
                 try:
