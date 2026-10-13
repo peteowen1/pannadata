@@ -1136,9 +1136,10 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
                 # substitution columns; compare them as equal (stored values
                 # are left as they are).
                 key_df = combined[dedup_cols].copy()
-                for c in ('player_on_id', 'player_off_id', 'player_id'):
-                    if c in key_df.columns:
-                        key_df[c] = key_df[c].fillna('')
+                if 'player_on_id' in dedup_cols:  # events table only
+                    for c in ('player_on_id', 'player_off_id', 'player_id'):
+                        if c in key_df.columns:
+                            key_df[c] = key_df[c].fillna('')
                 combined = combined[~key_df.duplicated(keep='last')]
             except (pd.errors.ParserError, OSError, ValueError, pyarrow.lib.ArrowInvalid) as e:
                 logger.error("Failed to read existing %s: %s. Writing new records only.", output_path, e)
