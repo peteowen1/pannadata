@@ -2,8 +2,13 @@ name: Daily Opta Scrape
 
 on:
   schedule:
-    # Run at 5 AM UTC daily (before Understat at 7 AM)
-    - cron: '0 5 * * *'
+    # 5 AM UTC. Tuesday-Sunday scrape tiers 1-2; Monday scrapes every tier
+    # (tier 0), so tier 3-5 leagues and cups stay at most a week behind. Before
+    # 2026-10-14 nothing ran tier 0 on a schedule, and 60 tier 3-5 comps sat
+    # frozen at 30 January. The Monday cron string is matched below: keep the two
+    # in step.
+    - cron: '0 5 * * 0,2-6'
+    - cron: '0 5 * * 1'
   workflow_dispatch:
     inputs:
       leagues:
@@ -197,13 +202,15 @@ jobs:
       # for the overall 120-min job timeout to fire. Override via dispatch
       # input `scrape_timeout_minutes` if a legitimate full-catalog rebuild
       # needs longer.
-      timeout-minutes: ${{ fromJson(github.event.inputs.scrape_timeout_minutes || '35') }}
+      # The Monday all-tier cron gets 120: a week of tier 3-5 matches on top
+      # of the usual daily load.
+      timeout-minutes: ${{ fromJson(github.event.inputs.scrape_timeout_minutes || (github.event.schedule == '0 5 * * 1' && '120') || '35') }}
       env:
         OPTA_OUTLET_ID: ${{ secrets.OPTA_OUTLET_ID }}
         INPUT_LEAGUES: ${{ github.event.inputs.leagues }}
         INPUT_SEASONS: ${{ github.event.inputs.seasons }}
         INPUT_RECENT: ${{ github.event.inputs.recent || 1 }}
-        INPUT_TIER: ${{ github.event.inputs.tier || 2 }}
+        INPUT_TIER: ${{ github.event.inputs.tier || (github.event.schedule == '0 5 * * 1' && '0') || 2 }}
         INPUT_FORCE: ${{ github.event.inputs.force_rescrape }}
         INPUT_INCLUDE_FUTURE: ${{ github.event.inputs.include_future }}
         INPUT_DRY_RUN: ${{ github.event.inputs.dry_run }}

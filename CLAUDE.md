@@ -6,7 +6,7 @@ Data repository for the pannaverse ecosystem. Stores cached match data managed v
 
 | Source | Scraper | Environment | Schedule | Release Tag |
 |--------|---------|-------------|----------|-------------|
-| **Opta** ⭐ | Python (`scripts/opta/`) | GitHub Actions | 5 AM UTC daily | `opta-latest` |
+| **Opta** ⭐ | Python (`scripts/opta/`) | GitHub Actions | 5 AM UTC daily (tiers 1-2; Mondays every tier) | `opta-latest` |
 
 As of 2026-04-18 the project consolidated on Opta. The retired Understat/FBref scrapers and their
 disabled workflows were removed from the repo 2026-07-14 (git history is the archive); their last
@@ -58,7 +58,7 @@ source("scripts/build_chains_ci.R")     # Possession chains with EPV equity
 | File | Source | Purpose |
 |------|--------|---------|
 | `ratings.parquet` | `build_blog_data.R` | Seasonal player ratings |
-| `player-details.parquet` | `build_player_meta.R` | Player bio (id, name, team, league, position) |
+| `player-details.parquet` | `build_player_meta.R` | Player bio (id, name, team, league, position), from each player's own latest season of the newest two; `season` + `is_previous_season` say which. No blog page reads it as of 2026-10-14 (ratings get team/league from `player_metadata.parquet`) |
 | `game-logs.parquet` | panna step 10b → `blog-latest` pass-through | Per-match EPV+WPA+PSV value metrics (current-season alias, fast default) |
 | `game-logs-<season>.parquet` | panna step 10b per-season → `blog-latest` pass-through | Historical per-season value metrics, fetched on-demand by the blog Value tab (kept per-season, ~6MB each — never concatenated) |
 | `chains-{CODE}.parquet` | `build_chains_ci.R` + equity join | Possession chains with per-action EPV equity |
