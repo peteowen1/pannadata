@@ -53,8 +53,13 @@ def read_raw_subs(raw_dir):
                                     filter=ds.field("type_id").isin([18, 19])).to_pandas()
              for f in files]
     s = pd.concat(parts, ignore_index=True).drop_duplicates(["match_id", "event_id"])
-    print(f"raw sub events: {len(s):,} in {s.match_id.nunique():,} matches from {len(files)} files")
-    return s
+    # A sub event with no player id would add a row with a blank on/off id (913
+    # such raw rows on 2026-10-13). Dropping them unbalances their timestamp
+    # group, so pair_subs skips the whole group: no guessed partner either.
+    blank = s.player_id.isna() | (s.player_id == "")
+    print(f"raw sub events: {len(s):,} in {s.match_id.nunique():,} matches from {len(files)} files; "
+          f"{int(blank.sum()):,} with no player id dropped")
+    return s[~blank]
 
 
 def pair_subs(s):
@@ -87,8 +92,6 @@ def repair(events, pairs):
     sub = events[is_sub]
     zero = is_sub & (events.minute == 0) & (events.second == 0)
     timed = sub[~zero.loc[sub.index]]
-    z = events[zero].merge(timed[KEY].drop_duplicates(), on=KEY, how="left", indicator=True)
-    drop_idx = events[zero].index[(z._merge == "both").to_numpy()]
 
     t = timed[KEY + ["minute", "second"]].drop_duplicates(KEY)
     m = pairs.merge(t, on=KEY, how="left", indicator=True)
@@ -115,6 +118,12 @@ def repair(events, pairs):
     on_seen = timed[["match_id", "player_on_id"]].drop_duplicates()
     lost = lost.merge(on_seen, on=["match_id", "player_on_id"], how="left", indicator="seen")
     add = lost[lost.seen == "left_only"].drop_duplicates(KEY)
+
+    # Drop a 0:00 placeholder when the same sub exists at a real time: stored,
+    # or added just above (else a placeholder-only sub would end up twice).
+    twins = pd.concat([timed[KEY], add[KEY]]).drop_duplicates()
+    z = events[zero].merge(twins, on=KEY, how="left", indicator=True)
+    drop_idx = events[zero].index[(z._merge == "both").to_numpy()]
 
     new = pd.DataFrame({c: pd.Series(dtype=events[c].dtype) for c in events.columns})
     new = pd.concat([new, pd.DataFrame({

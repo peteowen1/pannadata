@@ -85,3 +85,23 @@ def test_lineup_agreement_counts_sub_rows_per_match():
                        "minutes_played": [40, 30, 20]})
     r = lineup_agreement(events, lu, {"m1", "m2"})
     assert r == {"matches": 2, "equal": 0.5, "over": 0, "under": 1}
+
+
+def test_placeholder_only_sub_is_replaced_not_doubled():
+    # Stored only as a 0:00 placeholder; the raw events have its real time.
+    raw = pd.DataFrame([raw_row(1, 18, "x_off", "h", 60, 0), raw_row(2, 19, "x_on", "h", 60, 0)])
+    events = pd.DataFrame([goal(), ev_row("x_on", "x_off", 0, 0)])[EV_COLS]
+    out, st = repair(events, pair_subs(raw))
+    subs = out[out.event_type == "substitution"]
+    assert len(subs) == 1 and subs.minute.iloc[0] == 60
+    assert st["added"] == 1 and st["placeholders_dropped"] == 1
+
+
+def test_blank_player_id_group_is_skipped(tmp_path):
+    import pyarrow as pa, pyarrow.parquet as pq
+    from repair_lost_subs import read_raw_subs
+    raw = pd.DataFrame([raw_row(1, 18, "a_off", "h", 60, 0), raw_row(2, 19, "", "h", 60, 0),
+                        raw_row(3, 18, "b_off", "h", 70, 0), raw_row(4, 19, "b_on", "h", 70, 0)])
+    pq.write_table(pa.Table.from_pandas(raw, preserve_index=False), tmp_path / "events_EPL.parquet")
+    pairs = pair_subs(read_raw_subs(tmp_path))
+    assert list(pairs.player_on_id) == ["b_on"]
