@@ -304,6 +304,9 @@ jobs:
     - name: Build consolidated parquet files
       env:
         INPUT_SEASONS: ${{ github.event.inputs.seasons }}
+        # R191: read below by the force_rescrape exception to the
+        # "--seasons returned zero new matches" error; it was never set here.
+        INPUT_FORCE: ${{ github.event.inputs.force_rescrape }}
       run: |
         cd data
         # Count only raw per-league season files (not consolidated opta_*.parquet at the root)
@@ -791,6 +794,12 @@ jobs:
         fi
 
         if [ -f "opta-manifest.parquet" ]; then
+          # R199: a run killed mid-write could leave a truncated manifest; never
+          # publish one that does not read back.
+          if ! python -c "import pandas as pd, sys; assert len(pd.read_parquet(sys.argv[1])) > 0" opta-manifest.parquet; then
+            echo "::error::opta-manifest.parquet does not read back -- not uploading it; the release keeps the previous manifest"
+            exit 1
+          fi
           if vb_sh_safe_upload "peteowen1/pannadata" opta-latest opta-manifest.parquet; then
             echo "Recovered opta-manifest.parquet"
           else

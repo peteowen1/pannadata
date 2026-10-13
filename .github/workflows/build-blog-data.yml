@@ -342,8 +342,10 @@ jobs:
               s <- read_parquet("source/opta_shot_events.parquet")
               if (!"xg"     %in% names(s)) { cat(100); quit() }
               if (!"season" %in% names(s)) { cat(100); quit() }
-              latest <- max(s$season, na.rm = TRUE)
-              recent <- s |> filter(season == latest)
+              # R192: by season END YEAR, not max(label) -- the text max is
+              # "Intl_Friendlies_2026" (2,980 shots), not a full season.
+              ey <- suppressWarnings(as.integer(sub(".*([0-9]{4})[^0-9]*$", "\\1", s$season)))
+              recent <- s[!is.na(ey) & ey == max(ey, na.rm = TRUE), ]
               if (nrow(recent) == 0)       { cat(100); quit() }
               cat(round(100 * mean(is.na(recent$xg))))
             }, error = function(e) { cat(100) })
@@ -351,11 +353,11 @@ jobs:
           [ -z "$NAN_PCT" ] && NAN_PCT=100
           echo "Upstream xG NaN rate on latest season: ${NAN_PCT}%"
 
-          # Threshold 50: healthy enriched data is <5% NaN on any season; a
-          # clobbered un-enriched file is ~99%. 50 is the safe midpoint — won't
-          # trip on transient partial-enrichment but reliably catches the
-          # clobber case.
-          if [ "$NAN_PCT" -lt "50" ]; then
+          # Threshold 15 (R192; was 50): healthy enriched data is under 1.5% NaN
+          # in every recent season (2026-10-14: 0.3-1.2%), and the scrape's own
+          # alarm fires above 15. At 50, a 15-50% partial failure that the
+          # scrape flagged still shipped to the blog unnoticed.
+          if [ "$NAN_PCT" -lt "15" ]; then
             echo "xG coverage is healthy — skipping re-enrichment"
             exit 0
           fi
@@ -385,8 +387,8 @@ jobs:
             suppressMessages({ library(arrow); library(dplyr) })
             tryCatch({
               s <- read_parquet("source/opta_shot_events.parquet")
-              latest <- max(s$season, na.rm = TRUE)
-              recent <- s |> filter(season == latest)
+              ey <- suppressWarnings(as.integer(sub(".*([0-9]{4})[^0-9]*$", "\\1", s$season)))
+              recent <- s[!is.na(ey) & ey == max(ey, na.rm = TRUE), ]
               if (nrow(recent) == 0) { cat(100); quit() }
               cat(round(100 * mean(is.na(recent$xg))))
             }, error = function(e) { cat(100) })

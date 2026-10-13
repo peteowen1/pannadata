@@ -272,10 +272,15 @@ def update_manifest(manifest_path: Path, new_matches: list) -> bool:
     else:
         combined = new_df
 
+    # R199: write to a temp file and swap it in, so a run killed mid-write
+    # leaves the previous manifest intact rather than a truncated one.
+    tmp_path = manifest_path.with_name(manifest_path.name + '.tmp')
     try:
-        combined.to_parquet(manifest_path, index=False, compression='gzip')
+        combined.to_parquet(tmp_path, index=False, compression='gzip')
+        tmp_path.replace(manifest_path)
     except (OSError, pyarrow.lib.ArrowInvalid) as e:
         logger.error("Failed to write manifest: %s", e)
+        tmp_path.unlink(missing_ok=True)
         return False
     print(f"Updated manifest: {len(combined):,} total matches")
     return True
@@ -1127,7 +1132,15 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
             try:
                 existing_df = pd.read_parquet(output_path)
                 combined = pd.concat([existing_df, new_df], ignore_index=True)
-                combined = combined.drop_duplicates(subset=dedup_cols, keep='last')
+                # R196: older files hold null where new rows hold '' in the
+                # substitution columns; compare them as equal (stored values
+                # are left as they are).
+                key_df = combined[dedup_cols].copy()
+                if 'player_on_id' in dedup_cols:  # events table only
+                    for c in ('player_on_id', 'player_off_id', 'player_id'):
+                        if c in key_df.columns:
+                            key_df[c] = key_df[c].fillna('')
+                combined = combined[~key_df.duplicated(keep='last')]
             except (pd.errors.ParserError, OSError, ValueError, pyarrow.lib.ArrowInvalid) as e:
                 logger.error("Failed to read existing %s: %s. Writing new records only.", output_path, e)
                 try:
@@ -1175,7 +1188,12 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
         results["events"] = combine_and_save(
             all_events,
             output_dirs["events"] / f"{season_name}.parquet",
-            ["match_id", "event_type", "minute", "player_id"]
+            # R196: substitutions carry player_id '' (players are in
+            # player_on_id / player_off_id), so without these and `second`
+            # every substitution in the same minute collapsed to one row on
+            # each re-save: 9.2% of lineup sub-ons were missing (2026-10-14).
+            ["match_id", "event_type", "minute", "second", "player_id",
+             "player_on_id", "player_off_id"]
         )
         results["lineups"] = combine_and_save(
             all_lineups,
