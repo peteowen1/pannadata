@@ -131,6 +131,42 @@ write_player_index <- function(ratings, path, rows = 500L) {
   invisible(nrow(back))
 }
 
+# game-logs-<season>-by-league.parquet (pannadata#175), for the
+# /football/player-stats "All Seasons" Value tab: it reads every season's
+# game-logs to total one league, and each original holds every league in one
+# row group (12-16 MB per season, ~26 s for 17 seasons). This copy holds the
+# same rows and columns sorted by league, ONE row group per league (rows = 1:
+# no group mixes two leagues, a big league is never split), with min/max
+# statistics on `league`, so a league filter reads only that league's group.
+# ~22 groups per season, so the footer stays small. Originals untouched.
+write_game_logs_by_league <- function(gl, path) {
+  gl <- as.data.frame(gl)
+  if (!is.character(gl$league)) stop(path, ": league is ", class(gl$league)[1], ", expected a plain string column")
+  n_rg <- write_parquet_packed(gl, path, by = c("league", "player_id", "match_date", "match_id"), rows = 1L)
+  n_lg <- length(unique(gl$league))
+  if (n_rg != n_lg) stop(sprintf("%s: %d row groups for %d leagues", path, n_rg, n_lg))
+  invisible(n_rg)
+}
+
+GAME_LOGS_SEASON_RE <- "^game-logs-[0-9]{4}-[0-9]{4}\\.parquet$"
+
+build_by_league_copies <- function(blog_dir = "blog") {
+  srcs <- list.files(blog_dir, pattern = GAME_LOGS_SEASON_RE, full.names = TRUE)
+  if (length(srcs) == 0L) message("::warning::no game-logs-<season>.parquet in ", blog_dir, ", so no -by-league copies this run")
+  failed <- character()
+  for (src in srcs) {
+    out <- sub("\\.parquet$", "-by-league.parquet", src)
+    tryCatch(write_game_logs_by_league(arrow::read_parquet(src), out),
+             error = function(e) {
+               unlink(out)
+               failed <<- c(failed, out)
+               message("::warning::", out, " NOT written (the page falls back to ", basename(src), "): ", conditionMessage(e))
+             })
+  }
+  cat(sprintf("by-league game-logs copies: %d of %d written\n", length(srcs) - length(failed), length(srcs)))
+  invisible(failed)
+}
+
 # Sort keys after player_id, per file family. Absent columns are skipped.
 BY_PLAYER_SORT <- c("player_id", "season", "match_date", "match_id")
 
@@ -161,5 +197,7 @@ build_by_player_copies <- function(blog_dir = "blog") {
 
 if (sys.nframe() == 0L) {
   args <- commandArgs(trailingOnly = TRUE)
-  build_by_player_copies(if (length(args) > 0) args[1] else "blog")
+  blog_dir <- if (length(args) > 0) args[1] else "blog"
+  build_by_player_copies(blog_dir)
+  build_by_league_copies(blog_dir)
 }

@@ -864,9 +864,11 @@ jobs:
           fi
 
       # Per-player copies of match-stats-<CODE> and game-logs for
-      # /football/player (pannadata#164, scripts/by_player.R). Additive: the
-      # originals are untouched, and a failure leaves the page on them.
-      - name: Build per-player and per-team copies of match-stats and game-logs
+      # /football/player (pannadata#164), and per-league copies of each
+      # game-logs-<season> for player-stats "All Seasons" (pannadata#175);
+      # scripts/by_player.R. Additive: the originals are untouched, and a
+      # failure leaves the page on them.
+      - name: Build per-player, per-team and per-league copies of match-stats and game-logs
         continue-on-error: true
         run: Rscript scripts/by_player.R blog
 
