@@ -27,18 +27,30 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
-      # Sparse checkout of ONE file: the versebus R2 trio the upload step
-      # sources. This workflow otherwise deliberately runs checkout-free for
-      # speed (the gh downloads below pass --repo explicitly for that reason)
-      # — keep it that way; don't widen this into a full checkout.
-      - name: Checkout versebus.sh only
+      # Sparse checkout of TWO files: the versebus R2 trio the upload step
+      # sources, and by_player.R, which writes the -by-player / -by-league
+      # game-logs copies (pannadata#164, #175) so a game-logs-only sync can't
+      # leave them stale against the originals. This workflow otherwise runs
+      # checkout-free for speed (the gh downloads below pass --repo explicitly
+      # for that reason) -- don't widen this into a full checkout.
+      - name: Checkout versebus.sh and by_player.R only
         uses: actions/checkout@v7
         with:
           sparse-checkout: |
             scripts/versebus.sh
+            scripts/by_player.R
           sparse-checkout-cone-mode: false
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: |
+            any::arrow
 
       - name: Download game-logs from blog-latest
         env:
@@ -75,8 +87,16 @@ jobs:
             echo "::warning::No per-season game_logs_*.parquet on blog-latest — historical Value tab unchanged"
           fi
 
-          echo "Files to sync:"
-          ls -lh blog/game-logs*.parquet
+      # Same copies build-blog-data.yml writes (scripts/by_player.R): sorted
+      # game-logs-by-player.parquet and one game-logs-<season>-by-league.parquet
+      # per season. Additive and continue-on-error, as there: a failed copy
+      # leaves the page on the original file.
+      - name: Build by-player and by-league copies of game-logs
+        continue-on-error: true
+        run: Rscript scripts/by_player.R blog
+
+      - name: List files to sync
+        run: ls -lh blog/game-logs*.parquet
 
       - name: Upload to R2
         env:
