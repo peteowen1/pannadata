@@ -348,6 +348,21 @@ def _heal_append_events(new_rows: list, output_path: Path, dedup_cols: list) -> 
         logger.error("Heal: failed to write %s: %s", output_path, e)
 
 
+# Competitions panna step 10b exports to the blog and guards for events
+# coverage, in pannadata's competition names. Python twin of panna's
+# PANNA_LEAGUE_GROUPS (R/constants.R) mapped through OPTA_LEAGUES
+# (R/opta_loaders.R); two repos cannot share one definition, so if the blog
+# list changes, both move together.
+HEAL_PRIORITY_COMPETITIONS = frozenset({
+    "EPL", "La_Liga", "Bundesliga", "Serie_A", "Ligue_1", "Eredivisie",
+    "Primeira_Liga", "Scottish_Premiership", "Super_Lig", "Championship",
+    "Belgian_First_Division", "Liga_MX", "Saudi_League", "A_League",
+    "MLS", "Argentine_Liga_Profesional", "Brazilian_Serie_A",
+    "UCL", "UEL", "Conference_League", "CAF_CL",
+    "World_Cup", "UEFA_Euros", "AFCON", "Copa_America",
+})
+
+
 def heal_unavailable_events(scraper, opta_dir: Path, manifest_path: Path,
                              season: str, cap: int = 200,
                              dry_run: bool = False) -> dict:
@@ -390,9 +405,16 @@ def heal_unavailable_events(scraper, opta_dir: Path, manifest_path: Path,
     if cand.empty:
         print(f"Heal pass [{season}]: no unconfirmed-unavailable matches.")
         return summary
-    cand = cand.sort_values(["competition", "match_id"]).head(cap)
+    # Blog competitions first: panna step 10b aborts the season when any of
+    # them has an unconfirmed gap, so they must not queue behind non-blog cups
+    # (2026-10-15: CAF_CL sat at 249-306 of 2,076 behind Belgian_Cup et al.).
+    cand["_blog_first"] = ~cand["competition"].isin(HEAL_PRIORITY_COMPETITIONS)
+    cand = (cand.sort_values(["_blog_first", "competition", "match_id"])
+                .drop(columns="_blog_first").head(cap))
+    n_blog = int(cand["competition"].isin(HEAL_PRIORITY_COMPETITIONS).sum())
     print(f"Heal pass [{season}]: re-attempting {len(cand)} unconfirmed-unavailable "
-          f"match(es) (cap={cap}); registry has {len(registry)} confirmed.")
+          f"match(es) (cap={cap}, {n_blog} from blog competitions); "
+          f"registry has {len(registry)} confirmed.")
     summary["attempted"] = int(len(cand))
 
     if dry_run:
