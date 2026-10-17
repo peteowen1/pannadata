@@ -455,7 +455,11 @@ jobs:
           any::data.table
           any::cli
 
+    # Failures here are recorded in SHOT_XG_FAILED and end the run red in the
+    # last step (after upload), like failed fixture windows: a crash used to
+    # leave the run green while new shots shipped without xG.
     - name: Enrich shots with xG + xGOT
+      id: enrich_xg
       if: github.event.inputs.dry_run != 'true'
       continue-on-error: true
       run: |
@@ -492,9 +496,11 @@ jobs:
             if gh release download models -p "xg_model_v5.rds" -p "xgot_model_v3.rds" -D source/ --clobber; then
               Rscript scripts/score_shots_context.R data/opta/opta_shot_events.parquet data/opta/opta_fixtures.parquet \
                 data/opta/events_consolidated source/xg_model_v5.rds source/xgot_model_v3.rds missing \
-                || echo "::error::context xG/xGOT scoring failed -- new shots ship without xG"
+                || { echo "::error::context xG/xGOT scoring failed -- new shots ship without xG";
+                     echo "SHOT_XG_FAILED=context scoring (score_shots_context.R) failed" >> "$GITHUB_ENV"; }
             else
               echo "::error::xg_model_v5.rds / xgot_model_v3.rds not available -- new shots ship without xG"
+              echo "SHOT_XG_FAILED=xg_model_v5.rds / xgot_model_v3.rds not downloadable" >> "$GITHUB_ENV"
             fi
           else
           # Pre-shot xG
@@ -517,6 +523,7 @@ jobs:
           [ -z "$NAN" ] && NAN=100
           if [ "$NAN" -gt 15 ]; then
             echo "::error::xG NaN rate ${NAN}% after enrich (healthy <5%) — an enrich step likely failed; shots (incl. any healed this run) shipped without xG."
+            echo "SHOT_XG_FAILED=xG NaN rate ${NAN}% after enrich" >> "$GITHUB_ENV"
           fi
         else
           echo "::notice::No shot events file — skipping enrichment"
@@ -912,3 +919,11 @@ jobs:
             print(f"::error::failed window: {w}")
         sys.exit(1)
         PY
+
+    # Same shape as the step above: the shots (with or without xG) are already
+    # uploaded; this only makes a shot-scoring failure visible as a red run.
+    - name: Fail on shot xG scoring failure
+      if: ${{ !cancelled() && (env.SHOT_XG_FAILED != '' || steps.enrich_xg.outcome == 'failure') }}
+      run: |
+        echo "::error::Shot xG enrichment failed: ${SHOT_XG_FAILED:-the enrich step itself errored}. New shots were published without xG; the next run rescores shots missing a value."
+        exit 1
