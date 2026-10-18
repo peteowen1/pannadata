@@ -13,9 +13,16 @@ Outputs (committed for future reference):
   scripts/opta/opta_entitlement_catalog.json  nested {competitions:[...]}
 
 Run from scripts/opta/:  python build_entitlement_catalog.py
+
+`our_key` is read from OptaScraper.COMPETITIONS at write time, so it goes stale
+whenever a competition is registered without re-running the sweep. To refresh
+just that column from the registry with no network:
+
+    python build_entitlement_catalog.py --remap-only
 """
 import json
 import csv
+import sys
 from pathlib import Path
 from opta_scraper import OptaScraper
 
@@ -25,8 +32,36 @@ def country_of(c):
     return v.get("name", "") if isinstance(v, dict) else (v or "")
 
 
+def remap_our_key(csv_path, competitions):
+    """Rewrite the our_key column of an existing catalog CSV from the registry.
+
+    Returns (rows, changed): total rows and how many had a different our_key.
+    """
+    id_to_key = {cid: k for k, cid in competitions.items()}
+    with open(csv_path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        fieldnames = reader.fieldnames
+        rows = list(reader)
+    changed = 0
+    for r in rows:
+        key = id_to_key.get(r["competition_id"], "")
+        if r["our_key"] != key:
+            r["our_key"] = key
+            changed += 1
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=fieldnames, lineterminator="\n")
+        w.writeheader()
+        w.writerows(rows)
+    return len(rows), changed
+
+
 def main():
     script_dir = Path(__file__).parent
+    if "--remap-only" in sys.argv[1:]:
+        n, changed = remap_our_key(script_dir / "opta_entitlement_catalog.csv",
+                                   OptaScraper.COMPETITIONS)
+        print(f"our_key remapped from COMPETITIONS: {changed} of {n} rows changed")
+        return
     s = OptaScraper(data_dir=str(script_dir / "data"))
     print(f"Outlet PROVIDER_ID: {s.PROVIDER_ID[:8]}...")
 
