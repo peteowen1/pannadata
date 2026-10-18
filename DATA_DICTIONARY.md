@@ -109,7 +109,7 @@ Per-player-per-match statistics. **~280 columns** covering every aspect of match
 | `player_name` | chr | Player name |
 | `team_id` | int | Team ID |
 | `team_name` | chr | Team name |
-| `position` | chr | Position (Goalkeeper, Defender, Midfielder, Forward) |
+| `position` | chr | Opta slot: Goalkeeper, Defender, Wing Back, Defensive Midfielder, Midfielder, Attacking Midfielder, Striker, or Substitute (every non-starter); blank on lineups with no formation data. Groupings built from it: docs/reference/POSITION-TAXONOMY.md (pannaverse) |
 | `mins_played` | int | Minutes played |
 
 ### Attacking — Shots & Goals
@@ -354,8 +354,8 @@ Starting XI, substitutions, positions, and minutes played.
 | `team_id` | int | Team ID |
 | `team_name` | chr | Team name |
 | `team_position` | chr | home / away |
-| `position` | chr | Goalkeeper, Defender, Midfielder, Forward |
-| `position_side` | chr | Left, Right, Centre |
+| `position` | chr | Opta slot: Goalkeeper, Defender, Wing Back, Defensive Midfielder, Midfielder, Attacking Midfielder, Striker, or Substitute (every non-starter); blank on lineups with no formation data. Groupings built from it: docs/reference/POSITION-TAXONOMY.md (pannaverse) |
+| `position_side` | chr | Left, Right, Centre, Left/Centre or Centre/Right; starters only (blank for substitutes). Defender + Left/Right = full-back, Defender + a Centre value = centre-back |
 | `formation_place` | chr | 1-11 for starters, NA for subs |
 | `shirt_number` | int | Shirt number |
 | `is_starter` | lgl | Whether player started |
