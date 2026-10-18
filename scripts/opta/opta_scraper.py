@@ -329,6 +329,8 @@ class OptaScraper:
         "AFC_WC_Qualifiers":        "40yjcbx2sq6oq736iqqqczwt1",
         "CAF_WC_Qualifiers":        "3aa4mumjl6zyetg6o9hwd5hhx",
         "CONMEBOL_WC_Qualifiers":   "2db0aw1duj2my9l5iey5gm6nq",
+        "Concacaf_WC_Qualifiers":   "3a0j0giz3c3ajw9h59evv7lqt",
+        "Concacaf_Nations_League":  "cu0rmpyff5692eo06ltddjo8a",
         "AFCON_Qualifiers":         "ax1yf4nlzqpcji4j8epdgx3zl",
         "Asian_Cup_Qualifiers":     "emy1ibc8fu2l0fukh4vlu5xl5",
         "Gulf_Cup_of_Nations":      "6yeu4m8ey7hcaa5wuf6oe81iw",
