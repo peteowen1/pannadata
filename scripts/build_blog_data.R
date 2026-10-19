@@ -39,9 +39,11 @@ cat("Join key:", dedup_key, "\n")
 # football ratings table counted it as player 4,503 of 4,503 with no Piero
 # (2026-10-20). Drop it here, once, so every reader of these tables is clean.
 is_replacement_row <- function(df) {
-  id <- if ("player_id" %in% names(df)) as.character(df$player_id) else rep(NA_character_, nrow(df))
-  (!is.na(id) & id == "replacement") |
-    (!is.na(df$player_name) & df$player_name == "Replacement Level")
+  # A missing column reads as "not the replacement row", never as a
+  # zero-length mask (which would make df[!drop, ] return no rows at all).
+  col <- function(c) if (c %in% names(df)) as.character(df[[c]]) else rep(NA_character_, nrow(df))
+  id <- col("player_id"); nm <- col("player_name")
+  (!is.na(id) & id == "replacement") | (!is.na(nm) & nm == "Replacement Level")
 }
 for (nm in c("seasonal_xrapm", "seasonal_spm")) {
   df <- get(nm)
