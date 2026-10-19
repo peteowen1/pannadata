@@ -15,6 +15,8 @@
 # Run from the repo root after the match-stats and game-logs files are in blog/:
 #   Rscript scripts/by_player.R [blog_dir]
 # build_blog_data.R sources this file for write_player_index() only.
+# player-skills-pct.parquet and primary_position in player-index.parquet are
+# built here too, from blog/player-skills.parquet (pannadata#182).
 
 suppressPackageStartupMessages(library(arrow))
 
@@ -118,17 +120,129 @@ write_match_stats_by_team <- function(ms, path) {
 # even projected to these 3 columns, because the ids are long). Sorted by
 # player_id in 500-row groups, so a player_id filter reads a few KB. Built from
 # the same data frame ratings.parquet is written from, then checked against it.
-write_player_index <- function(ratings, path, rows = 500L) {
+#
+# `positions` (optional; pannadata#182): a data frame with player_id and
+# primary_position (player-skills.parquet's), which adds a primary_position
+# column to the index, NA for a rated player with no skills row. The page builds
+# its player_name -> primary_position map from it instead of reading
+# player-skills.parquet. Left out (column absent, not all-NA) when NULL.
+write_player_index <- function(ratings, path, rows = 500L, positions = NULL) {
   idx <- as.data.frame(ratings)[, c("player_id", "player_name", "league")]
   if (anyDuplicated(idx$player_id)) stop(path, ": ratings has duplicate player_id, so the index would be ambiguous")
+  cols <- c("player_id", "player_name", "league")
+  if (!is.null(positions)) {
+    positions <- as.data.frame(positions)
+    if (anyDuplicated(positions$player_id)) stop(path, ": positions has duplicate player_id, so primary_position would be ambiguous")
+    idx$primary_position <- as.character(positions$primary_position[match(idx$player_id, positions$player_id)])
+    cols <- c(cols, "primary_position")
+  }
   write_parquet_by_player(idx, path, by = "player_id", rows = rows)
   back <- as.data.frame(arrow::read_parquet(path))
-  key <- function(x) paste(x$player_id, x$player_name, x$league, sep = "\r")
+  key <- function(x) do.call(paste, c(unname(as.list(x[cols])), sep = "\r"))
   if (nrow(back) != nrow(idx) || !setequal(key(back), key(idx))) {
-    stop(sprintf("%s: %d rows read back, %d in ratings, or the (player_id, player_name, league) triples differ", path, nrow(back), nrow(idx)))
+    stop(sprintf("%s: %d rows read back, %d in ratings, or the (%s) tuples differ", path, nrow(back), nrow(idx), paste(cols, collapse = ", ")))
   }
-  cat(sprintf("%s: %d rows, same (player_id, player_name, league) triples as ratings.parquet\n", path, nrow(back)))
+  cat(sprintf("%s: %d rows, same (%s) tuples as ratings.parquet\n", path, nrow(back), paste(cols, collapse = ", ")))
   invisible(nrow(back))
+}
+
+# player-skills-pct.parquet (pannadata#182): /football/player ranks ONE player
+# against everyone in every skills column, which needed all 154 columns of
+# every player (player-skills.parquet, 6.5 MB). This is that ranking done here:
+# long format, one row per (player, stat) with the player's value and its
+# percentile among all players (pct_all) and among players of the same
+# primary_position (pct_pos), sorted by player_id in row groups that never split
+# a player, so a player_id filter reads one group.
+#
+# The rule is the page's (player.qmd skillRows), kept exactly: a column's pool is
+# its non-null values; pct = round(100 * count(v <= x) / n), 50 when n == 1.
+# round() is JavaScript's Math.round (half up), NOT R's round() (half to even),
+# or x.5 cases would differ from today's page. Stats are discovered by type, not
+# listed, so a new skills column flows through; only the id/descriptor columns
+# below are skipped (the page's own skip list). A null (NA/NaN) value gets no
+# row. A null primary_position is a pool of its own, as null === null in the
+# page's filter.
+SKILLS_PCT_SKIP <- c("player_id", "total_minutes", "n_matches", "player_name", "primary_position",
+                     "date", "weighted_90s", "season_end_year", "is_gk", "is_df", "is_mf", "is_fw")
+
+# Percentile of each element of `v` (no NA) within `v`. rank(ties.method = "max")
+# is count(v <= x).
+pool_pct <- function(v) {
+  n <- length(v)
+  if (n == 1L) return(50L)
+  as.integer(floor(100 * rank(v, ties.method = "max") / n + 0.5))
+}
+
+skills_pct_long <- function(skills) {
+  skills <- as.data.frame(skills)
+  for (col in c("player_id", "primary_position")) if (!col %in% names(skills)) stop("skills has no ", col, " column")
+  if (anyNA(skills$player_id)) stop("skills has rows with NA player_id")
+  if (anyDuplicated(skills$player_id)) stop("skills has duplicate player_id (expected one row per player)")
+  stats <- setdiff(names(skills)[vapply(skills, is.numeric, logical(1))], SKILLS_PCT_SKIP)
+  if (length(stats) == 0L) stop("skills has no numeric stat columns")
+  pos_group <- split(seq_len(nrow(skills)), ifelse(is.na(skills$primary_position), "\r<NA>", skills$primary_position))
+  pieces <- lapply(stats, function(st) {
+    v <- as.numeric(skills[[st]])
+    ok <- which(!is.na(v))
+    if (length(ok) == 0L) return(NULL)
+    pct_all <- pool_pct(v[ok])
+    pct_pos <- integer(length(ok))
+    for (g in pos_group) {
+      in_g <- ok %in% g
+      if (any(in_g)) pct_pos[in_g] <- pool_pct(v[ok[in_g]])
+    }
+    data.frame(player_id = skills$player_id[ok], stat = st, value = v[ok],
+               pct_all = pct_all, pct_pos = pct_pos, stringsAsFactors = FALSE)
+  })
+  do.call(rbind, pieces)
+}
+
+write_player_skills_pct <- function(skills, path, rows = 5000L) {
+  long <- skills_pct_long(skills)
+  write_parquet_by_player(long, path, by = c("player_id", "stat"), rows = rows)
+  back <- as.data.frame(arrow::read_parquet(path))
+  if (nrow(back) != nrow(long) ||
+      !isTRUE(all.equal(sum(back$value), sum(long$value))) ||
+      sum(back$pct_all) != sum(long$pct_all) || sum(back$pct_pos) != sum(long$pct_pos)) {
+    stop(sprintf("%s: read back %d rows, wrote %d, or value/pct sums differ", path, nrow(back), nrow(long)))
+  }
+  cat(sprintf("%s: %d stats x %d players -> %d rows\n", path, length(unique(long$stat)), length(unique(long$player_id)), nrow(long)))
+  invisible(nrow(long))
+}
+
+# Runs after player-skills.parquet is in blog_dir (the workflow's "Download and
+# filter player skills" step). Writes player-skills-pct.parquet and re-writes
+# player-index.parquet with primary_position, from ratings.parquet plus the
+# skills file. Both are optional and independent: a failure warns and leaves the
+# page on player-skills.parquet / the index without primary_position (the index
+# is replaced only once the new one has passed its checks).
+build_player_skills_pct <- function(blog_dir = "blog") {
+  skills_path <- file.path(blog_dir, "player-skills.parquet")
+  if (!file.exists(skills_path)) {
+    message("::warning::", skills_path, " not present, so no player-skills-pct.parquet and no primary_position in player-index.parquet this run")
+    return(invisible(FALSE))
+  }
+  skills <- arrow::read_parquet(skills_path)
+  failed <- character()
+  out <- file.path(blog_dir, "player-skills-pct.parquet")
+  tryCatch(write_player_skills_pct(skills, out),
+           error = function(e) {
+             unlink(out); failed <<- c(failed, out)
+             message("::warning::", out, " NOT written (the page falls back to player-skills.parquet): ", conditionMessage(e))
+           })
+  idx_path <- file.path(blog_dir, "player-index.parquet")
+  ratings_path <- file.path(blog_dir, "ratings.parquet")
+  tmp <- file.path(blog_dir, "player-index.tmp.parquet")
+  tryCatch({
+    if (!file.exists(ratings_path)) stop(ratings_path, " not present")
+    ratings <- arrow::read_parquet(ratings_path, col_select = c("player_id", "player_name", "league"))
+    write_player_index(ratings, tmp, positions = skills[, c("player_id", "primary_position")])
+    if (!file.rename(tmp, idx_path)) stop("could not replace ", idx_path)
+  }, error = function(e) {
+    unlink(tmp); failed <<- c(failed, idx_path)
+    message("::warning::", idx_path, " keeps no primary_position (the page falls back to player-skills.parquet): ", conditionMessage(e))
+  })
+  invisible(failed)
 }
 
 # game-logs-<season>-by-league.parquet (pannadata#175), for the
@@ -200,4 +314,5 @@ if (sys.nframe() == 0L) {
   blog_dir <- if (length(args) > 0) args[1] else "blog"
   build_by_player_copies(blog_dir)
   build_by_league_copies(blog_dir)
+  build_player_skills_pct(blog_dir)
 }
