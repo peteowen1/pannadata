@@ -33,6 +33,25 @@ has_player_id <- "player_id" %in% names(seasonal_xrapm) &&
 dedup_key <- if (has_player_id) "player_id" else "player_name"
 cat("Join key:", dedup_key, "\n")
 
+# The synthetic replacement-pool row (player_id "replacement", "Replacement
+# Level") is in the seasonal files too, not only career_panna (filtered below).
+# Its latest-season xrapm made it an ACTIVE row of ratings.parquet: the site's
+# football ratings table counted it as player 4,503 of 4,503 with no Piero
+# (2026-10-20). Drop it here, once, so every reader of these tables is clean.
+is_replacement_row <- function(df) {
+  # A missing column reads as "not the replacement row", never as a
+  # zero-length mask (which would make df[!drop, ] return no rows at all).
+  col <- function(c) if (c %in% names(df)) as.character(df[[c]]) else rep(NA_character_, nrow(df))
+  id <- col("player_id"); nm <- col("player_name")
+  (!is.na(id) & id == "replacement") | (!is.na(nm) & nm == "Replacement Level")
+}
+for (nm in c("seasonal_xrapm", "seasonal_spm")) {
+  df <- get(nm)
+  drop <- is_replacement_row(df)
+  cat(sprintf("%s: dropped %d replacement-pool rows\n", nm, sum(drop)))
+  assign(nm, df[!drop, , drop = FALSE])
+}
+
 # Career-trait Panna (decay-weighted multi-season xRAPM): the HEADLINE rating, distinct
 # from the per-season `xrapm` (this season's contribution). See panna/CLAUDE_TODO_CAREER_PANNA.md.
 career_path <- "source/career_panna.parquet"
@@ -802,6 +821,11 @@ if (requireNamespace("jsonlite", quietly = TRUE)) {
   warning("jsonlite not installed — skipping blog/piero_reference.json (piero column still written)")
 }
 
+# It has leaked in twice by different routes (career_panna 2026-09-12, the
+# latest-season xrapm 2026-10-20), so check the output, not just the inputs.
+if (any(is_replacement_row(panna_ratings))) {
+  stop("the replacement-pool row reached ratings.parquet; it is a model artefact, not a player")
+}
 write_parquet(panna_ratings, "blog/ratings.parquet")
 cat("ratings:", nrow(panna_ratings), "players (season", latest_season, ")\n")
 
