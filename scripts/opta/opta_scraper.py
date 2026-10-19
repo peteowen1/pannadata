@@ -1740,4 +1740,3 @@ def zero_minute_goal_share(events, min_goals: int = 20):
 
 if __name__ == "__main__":
     main()
-

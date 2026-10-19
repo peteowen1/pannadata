@@ -75,8 +75,10 @@ def test_cleanup_count_aware():
 def test_consolidate_replaces_stale_zero_row():
     import pandas as pd
     import consolidate_opta as co
-    old = pd.DataFrame([dict(match_id="m", event_type="goal", minute=0.0, second=0.0, player_id="p1")])
-    new = pd.DataFrame([dict(match_id="m", event_type="goal", minute=31.0, second=10.0, player_id="p1")])
+    old = pd.DataFrame([dict(match_id="m", event_type="goal", minute=0.0, second=0.0, player_id="p1",
+                          player_on_id="", player_off_id="")])
+    new = pd.DataFrame([dict(match_id="m", event_type="goal", minute=31.0, second=10.0, player_id="p1",
+                          player_on_id="", player_off_id="")])
     kept = co._drop_rescraped_matches([old], [new])
     out = pd.concat(kept + [new], ignore_index=True)
     out = out.drop_duplicates(subset=co._get_dedup_cols('events') + ['second'], keep='last')
