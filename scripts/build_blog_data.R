@@ -26,6 +26,14 @@ meta_required <- c("player_name")
 meta_missing <- setdiff(meta_required, names(player_meta))
 if (length(meta_missing) > 0) stop("player_meta missing columns: ", paste(meta_missing, collapse = ", "))
 
+# Ranks and percentiles over the players who HAVE the value. rank()'s default
+# na.last = TRUE gives a missing value the highest rank, so the 11 players with
+# no career Panna read as the 100th percentile (and pushed the real top player
+# to 99.9) on 2026-10-20. Missing in, missing out; the denominator counts only
+# the rated.
+desc_rank <- function(x) as.integer(rank(-x, ties.method = "min", na.last = "keep"))
+pct_rank <- function(x) round(100 * rank(x, ties.method = "min", na.last = "keep") / sum(!is.na(x)), 1)
+
 # Determine join key: prefer player_id, fall back to player_name
 has_player_id <- "player_id" %in% names(seasonal_xrapm) &&
   "player_id" %in% names(seasonal_spm) &&
@@ -351,8 +359,8 @@ panna_ratings <- enriched |>
          offense = panna_offense, defense = panna_defense) |>
   mutate(
     # Ranks/percentiles are on the HEADLINE career Panna.
-    panna_rank = as.integer(rank(-panna, ties.method = "min")),
-    panna_percentile = round(100 * rank(panna, ties.method = "min") / n(), 1)
+    panna_rank = desc_rank(panna),
+    panna_percentile = pct_rank(panna)
   ) |>
   # Position-stratified ranks/percentiles. Allows the blog UI to compare
   # players against peers in the same position bucket (e.g. "Salah is the
@@ -364,13 +372,13 @@ panna_ratings <- enriched |>
   group_by(position) |>
   mutate(
     panna_rank_position = ifelse(is.na(position), NA_integer_,
-                                  as.integer(rank(-panna, ties.method = "min"))),
+                                  desc_rank(panna)),
     panna_percentile_position = ifelse(is.na(position), NA_real_,
-                                        round(100 * rank(panna, ties.method = "min") / n(), 1)),
+                                        pct_rank(panna)),
     offense_percentile_position = ifelse(is.na(position), NA_real_,
-                                          round(100 * rank(offense, ties.method = "min") / n(), 1)),
+                                          pct_rank(offense)),
     defense_percentile_position = ifelse(is.na(position), NA_real_,
-                                          round(100 * rank(defense, ties.method = "min") / n(), 1))
+                                          pct_rank(defense))
   ) |>
   ungroup() |>
   select(
@@ -609,17 +617,17 @@ if (file.exists(lineups_path)) {
   # Recompute ranks/percentiles over the UNION (headline career panna).
   panna_ratings <- panna_ratings |>
     mutate(is_active = !is.na(xrapm),
-           panna_rank = as.integer(rank(-panna, ties.method = "min")),
-           panna_percentile = round(100 * rank(panna, ties.method = "min") / n(), 1)) |>
+           panna_rank = desc_rank(panna),
+           panna_percentile = pct_rank(panna)) |>
     group_by(position) |>
     mutate(panna_rank_position = ifelse(is.na(position), NA_integer_,
-                                        as.integer(rank(-panna, ties.method = "min"))),
+                                        desc_rank(panna)),
            panna_percentile_position = ifelse(is.na(position), NA_real_,
-                                        round(100 * rank(panna, ties.method = "min") / n(), 1)),
+                                        pct_rank(panna)),
            offense_percentile_position = ifelse(is.na(position), NA_real_,
-                                        round(100 * rank(offense, ties.method = "min") / n(), 1)),
+                                        pct_rank(offense)),
            defense_percentile_position = ifelse(is.na(position), NA_real_,
-                                        round(100 * rank(defense, ties.method = "min") / n(), 1))) |>
+                                        pct_rank(defense))) |>
     ungroup() |>
     arrange(panna_rank)
 } else {
