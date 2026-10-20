@@ -869,7 +869,10 @@ jobs:
       # /football/player (pannadata#164), and per-league copies of each
       # game-logs-<season> for player-stats "All Seasons" (pannadata#175);
       # scripts/by_player.R. Additive: the originals are untouched, and a
-      # failure leaves the page on them.
+      # failure leaves the page on them. The same script also builds
+      # player-skills-pct.parquet and adds primary_position to
+      # player-index.parquet from blog/player-skills.parquet (pannadata#182),
+      # so it must stay after the "Download and filter player skills" step.
       - name: Build per-player, per-team and per-league copies of match-stats and game-logs
         continue-on-error: true
         run: Rscript scripts/by_player.R blog
@@ -949,7 +952,7 @@ jobs:
 
           # WARN tier — optional upstream downloads / pass-throughs. Absence is
           # surfaced for visibility but does not fail the run.
-          for f in blog/player-positions.parquet blog/player-skills.parquet \
+          for f in blog/player-positions.parquet blog/player-skills.parquet blog/player-skills-pct.parquet \
                    blog/predictions.parquet blog/predictions-locked.parquet blog/shootout-wpa.parquet; do
             [ -f "$f" ] || echo "::warning::Optional artifact missing: $f"
           done
