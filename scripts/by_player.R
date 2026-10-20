@@ -160,8 +160,10 @@ write_player_index <- function(ratings, path, rows = 500L, positions = NULL) {
 # or x.5 cases would differ from today's page. Stats are discovered by type, not
 # listed, so a new skills column flows through; only the id/descriptor columns
 # below are skipped (the page's own skip list). A null (NA/NaN) value gets no
-# row. A null primary_position is a pool of its own, as null === null in the
-# page's filter.
+# row. A null or empty primary_position has no position pool: its pct_pos is
+# its pct_all, because the page's Position toggle falls back to every player
+# when the player has no position (`pctileMode === "Position" &&
+# playerSkills.primary_position ? ... : skillsAll`).
 SKILLS_PCT_SKIP <- c("player_id", "total_minutes", "n_matches", "player_name", "primary_position",
                      "date", "weighted_90s", "season_end_year", "is_gk", "is_df", "is_mf", "is_fw")
 
@@ -180,13 +182,15 @@ skills_pct_long <- function(skills) {
   if (anyDuplicated(skills$player_id)) stop("skills has duplicate player_id (expected one row per player)")
   stats <- setdiff(names(skills)[vapply(skills, is.numeric, logical(1))], SKILLS_PCT_SKIP)
   if (length(stats) == 0L) stop("skills has no numeric stat columns")
-  pos_group <- split(seq_len(nrow(skills)), ifelse(is.na(skills$primary_position), "\r<NA>", skills$primary_position))
+  pos <- as.character(skills$primary_position)
+  has_pos <- !is.na(pos) & pos != ""
+  pos_group <- split(which(has_pos), pos[has_pos])
   pieces <- lapply(stats, function(st) {
     v <- as.numeric(skills[[st]])
     ok <- which(!is.na(v))
     if (length(ok) == 0L) return(NULL)
     pct_all <- pool_pct(v[ok])
-    pct_pos <- integer(length(ok))
+    pct_pos <- pct_all  # rows with no position keep this
     for (g in pos_group) {
       in_g <- ok %in% g
       if (any(in_g)) pct_pos[in_g] <- pool_pct(v[ok[in_g]])
@@ -222,7 +226,11 @@ build_player_skills_pct <- function(blog_dir = "blog") {
     message("::warning::", skills_path, " not present, so no player-skills-pct.parquet and no primary_position in player-index.parquet this run")
     return(invisible(FALSE))
   }
-  skills <- arrow::read_parquet(skills_path)
+  skills <- tryCatch(arrow::read_parquet(skills_path), error = function(e) {
+    message("::warning::", skills_path, " unreadable, so no player-skills-pct.parquet and no primary_position in player-index.parquet this run: ", conditionMessage(e))
+    NULL
+  })
+  if (is.null(skills)) return(invisible(FALSE))
   failed <- character()
   out <- file.path(blog_dir, "player-skills-pct.parquet")
   tryCatch(write_player_skills_pct(skills, out),

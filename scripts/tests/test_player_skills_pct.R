@@ -42,7 +42,8 @@ sk <- data.frame(
   is_gk = 0L,
   stringsAsFactors = FALSE
 )
-sk$primary_position[1] <- NA                         # null position is its own pool
+sk$primary_position[1] <- NA                         # no position: pct_pos is pct_all, as on the page
+sk$primary_position[3] <- ""                         # empty is falsy on the page too
 sk$pass_accuracy[2] <- NaN                           # NaN counts as null
 # a stat where 100 * count / n lands on x.5: 8 values -> 1/8 = 12.5 (R's round gives 12, JS 13)
 sk$half <- NA_real_; sk$half[1:8] <- 1:8
@@ -62,7 +63,8 @@ for (i in seq_len(nrow(long))) {
   r <- long[i, ]
   row <- sk[sk$player_id == r$player_id, ]
   col <- sk[[r$stat]]
-  same_pos <- if (is.na(row$primary_position)) is.na(sk$primary_position) else (!is.na(sk$primary_position) & sk$primary_position == row$primary_position)
+  # the page's pool: everyone when the player has no position, else exact matches
+  same_pos <- if (is.na(row$primary_position) || row$primary_position == "") rep(TRUE, nrow(sk)) else (!is.na(sk$primary_position) & sk$primary_position == row$primary_position)
   if (!identical(r$value, row[[r$stat]]) ||
       r$pct_all != ref_pct(r$value, col) ||
       r$pct_pos != ref_pct(r$value, col[same_pos])) bad <- bad + 1L
@@ -72,6 +74,8 @@ chk("every pct_all / pct_pos equals the reference rule", bad, 0L)
 # the cases the rule is easy to get wrong
 chk("n == 1 pool gives 50", long$pct_all[long$stat == "only_one"], 50L)
 chk("x.5 rounds up like Math.round (12.5 -> 13)", long$pct_all[long$stat == "half" & long$player_id == sk$player_id[1]], 13L)
+no_pos <- long$player_id %in% sk$player_id[c(1, 3)]
+chk("no position (NA or \"\"): pct_pos equals pct_all", identical(long$pct_pos[no_pos], long$pct_all[no_pos]), TRUE)
 chk("NaN gets no row", any(long$stat == "pass_accuracy" & long$player_id == sk$player_id[2]), FALSE)
 chk("percentiles are whole numbers in 0..100", all(long$pct_all >= 0L & long$pct_all <= 100L & long$pct_pos >= 0L & long$pct_pos <= 100L), TRUE)
 chk("percentiles are integer type", is.integer(long$pct_all) && is.integer(long$pct_pos), TRUE)
@@ -105,8 +109,10 @@ idx <- as.data.frame(read_parquet(ipath))
 chk("index columns with positions", names(idx), c("player_id", "player_name", "league", "primary_position"))
 chk("index position matches skills", idx$primary_position[idx$player_id == "p02"], sk$primary_position[sk$player_id == "p02"])
 chk("rated player without a skills row gets NA", is.na(idx$primary_position[idx$player_id == "zzz"]), TRUE)
-sink(tempfile()); write_player_index(ratings, ipath); sink()
-chk("no positions given: column absent", names(read_parquet(ipath)), c("player_id", "player_name", "league"))
+# a second path: on Windows, Arrow keeps ipath memory-mapped, so rewriting it fails
+ipath2 <- file.path(td, "player-index-nopos.parquet")
+sink(tempfile()); write_player_index(ratings, ipath2); sink()
+chk("no positions given: column absent", names(read_parquet(ipath2)), c("player_id", "player_name", "league"))
 
 # prove this harness can fail
 local({
