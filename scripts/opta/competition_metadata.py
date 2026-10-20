@@ -156,6 +156,8 @@ COMPETITION_METADATA = {
     "AFC_WC_Qualifiers":        {"name": "AFC World Cup Qualifiers", "country": "Asia",   "type": "international", "tier": 3},
     "CAF_WC_Qualifiers":        {"name": "CAF World Cup Qualifiers", "country": "Africa", "type": "international", "tier": 3},
     "CONMEBOL_WC_Qualifiers":   {"name": "CONMEBOL World Cup Qualifiers", "country": "South America", "type": "international", "tier": 3},
+    "Concacaf_WC_Qualifiers":   {"name": "Concacaf World Cup Qualifiers", "country": "N/C America", "type": "international", "tier": 3},
+    "Concacaf_Nations_League":  {"name": "Concacaf Nations League",  "country": "N/C America", "type": "international", "tier": 3},
     "AFCON_Qualifiers":         {"name": "AFCON Qualifiers",         "country": "Africa", "type": "international", "tier": 3},
     "Asian_Cup_Qualifiers":     {"name": "Asian Cup Qualifiers",     "country": "Asia",   "type": "international", "tier": 3},
     "Gulf_Cup_of_Nations":      {"name": "Gulf Cup of Nations",      "country": "Asia",          "type": "international", "tier": 3},
