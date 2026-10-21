@@ -65,11 +65,11 @@ for (i in seq_len(nrow(long))) {
   col <- sk[[r$stat]]
   # the page's pool: everyone when the player has no position, else exact matches
   same_pos <- if (is.na(row$primary_position) || row$primary_position == "") rep(TRUE, nrow(sk)) else (!is.na(sk$primary_position) & sk$primary_position == row$primary_position)
-  if (!identical(r$value, row[[r$stat]]) ||
+  if (!identical(r$value, row[[r$stat]]) || !identical(r$player_name, row$player_name) ||
       r$pct_all != ref_pct(r$value, col) ||
       r$pct_pos != ref_pct(r$value, col[same_pos])) bad <- bad + 1L
 }
-chk("every pct_all / pct_pos equals the reference rule", bad, 0L)
+chk("every pct_all / pct_pos equals the reference rule, and player_name is the skills file's", bad, 0L)
 
 # the cases the rule is easy to get wrong
 chk("n == 1 pool gives 50", long$pct_all[long$stat == "only_one"], 50L)
@@ -94,7 +94,9 @@ path <- file.path(td, "player-skills-pct.parquet")
 sink(tempfile()); write_player_skills_pct(sk, path, rows = 40L); sink()
 back <- as.data.frame(read_parquet(path))
 chk("file has the long frame's rows", nrow(back), nrow(long))
-chk("file columns", names(back), c("player_id", "stat", "value", "pct_all", "pct_pos"))
+chk("file columns", names(back), c("player_id", "player_name", "stat", "value", "pct_all", "pct_pos"))
+nameless <- sk; nameless$player_name <- NULL
+chk("skills with no player_name refused", inherits(try(skills_pct_long(nameless), silent = TRUE), "try-error"), TRUE)
 chk("file sorted by player_id", identical(back$player_id, sort(back$player_id, method = "radix")), TRUE)
 rdr <- ParquetFileReader$create(path)
 chk("several row groups", rdr$num_row_groups > 1L, TRUE)
