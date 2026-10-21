@@ -152,7 +152,10 @@ write_player_index <- function(ratings, path, rows = 500L, positions = NULL) {
 # long format, one row per (player, stat) with the player's value and its
 # percentile among all players (pct_all) and among players of the same
 # primary_position (pct_pos), sorted by player_id in row groups that never split
-# a player, so a player_id filter reads one group.
+# a player, so a player_id filter reads one group. player_name is the skills
+# file's own spelling, repeated on each of the player's rows: the page's heading
+# shows it, and player-index.parquet carries ratings' spelling, which differs
+# for ~195 players ("S. Mckenna" vs "S. McKenna").
 #
 # The rule is the page's (player.qmd skillRows), kept exactly: a column's pool is
 # its non-null values; pct = round(100 * count(v <= x) / n), 50 when n == 1.
@@ -177,7 +180,7 @@ pool_pct <- function(v) {
 
 skills_pct_long <- function(skills) {
   skills <- as.data.frame(skills)
-  for (col in c("player_id", "primary_position")) if (!col %in% names(skills)) stop("skills has no ", col, " column")
+  for (col in c("player_id", "player_name", "primary_position")) if (!col %in% names(skills)) stop("skills has no ", col, " column")
   if (anyNA(skills$player_id)) stop("skills has rows with NA player_id")
   if (anyDuplicated(skills$player_id)) stop("skills has duplicate player_id (expected one row per player)")
   stats <- setdiff(names(skills)[vapply(skills, is.numeric, logical(1))], SKILLS_PCT_SKIP)
@@ -195,7 +198,8 @@ skills_pct_long <- function(skills) {
       in_g <- ok %in% g
       if (any(in_g)) pct_pos[in_g] <- pool_pct(v[ok[in_g]])
     }
-    data.frame(player_id = skills$player_id[ok], stat = st, value = v[ok],
+    data.frame(player_id = skills$player_id[ok], player_name = as.character(skills$player_name[ok]),
+               stat = st, value = v[ok],
                pct_all = pct_all, pct_pos = pct_pos, stringsAsFactors = FALSE)
   })
   do.call(rbind, pieces)
