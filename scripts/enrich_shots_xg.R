@@ -108,5 +108,8 @@ cat("xG: mean =", round(mean(shots$xg, na.rm = TRUE), 4),
     ", total =", round(sum(shots$xg, na.rm = TRUE), 1),
     ", goals =", sum(shots$is_goal, na.rm = TRUE), "\n")
 
+# A data.table index inherited from the stored file would be saved in the footer
+# again (pannadata#162); no reader uses it.
+attr(shots, "index") <- NULL
 write_parquet(shots, shot_path)
 cat("Written:", shot_path, "(", round(file.size(shot_path) / 1e6, 1), "MB)\n")
