@@ -848,6 +848,37 @@ tryCatch(write_player_index(panna_ratings, "blog/player-index.parquet"),
            message("::warning::blog/player-index.parquet NOT written (the page falls back to ratings.parquet): ", conditionMessage(e))
          })
 
+# ratings-by-season.parquet (pannadata#135): xrapm / spm_overall / total_minutes
+# for EVERY fitted season, so the blog's season selector can show the rating a
+# player had then, not today's. A sibling file, so ratings.parquet keeps its
+# one-row-per-player shape and size. Optional: a failure (or a mismatch with
+# ratings.parquet for the latest season) warns and drops the file; the build
+# and ratings.parquet are unaffected.
+source("scripts/ratings_by_season.R")
+tryCatch({
+  by_season <- build_ratings_by_season(seasonal_xrapm, seasonal_spm, player_meta,
+                                       dedup_key, BLOG_COMP_EXCLUDE)
+  # Contract: the latest season here IS today's ratings.parquet (active rows).
+  shared <- c("xrapm", "xrapm_offense", "xrapm_defense", "spm_overall", "total_minutes")
+  cur <- by_season[by_season$season_end_year == latest_season & !is.na(by_season$xrapm), , drop = FALSE]
+  act <- as.data.frame(panna_ratings)[!is.na(panna_ratings$xrapm), , drop = FALSE]
+  cur <- cur[order(as.character(cur[[dedup_key]])), ]
+  act <- act[order(as.character(act[[dedup_key]])), ]
+  if (!identical(as.character(cur[[dedup_key]]), as.character(act[[dedup_key]])) ||
+      !isTRUE(all.equal(as.data.frame(cur[shared]), as.data.frame(act[shared]),
+                        check.attributes = FALSE, tolerance = 0))) {
+    stop("latest season of ratings-by-season does not reproduce ratings.parquet's active rows (",
+         nrow(cur), " vs ", nrow(act), ")")
+  }
+  write_parquet(by_season, "blog/ratings-by-season.parquet")
+  cat("ratings-by-season:", nrow(by_season), "player-seasons,",
+      length(unique(by_season$season_end_year)), "seasons (",
+      min(by_season$season_end_year), "-", max(by_season$season_end_year), ")\n")
+}, error = function(e) {
+  unlink("blog/ratings-by-season.parquet")
+  message("::warning::blog/ratings-by-season.parquet NOT written: ", conditionMessage(e))
+})
+
 # NOTE: Shot data, match-stats, match-shots, league-xg, and chains are built
 # by dedicated workflow steps in build-blog-data.yml — not here.
 # This script only builds ratings.parquet.
