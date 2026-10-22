@@ -8,7 +8,7 @@ comp_to_code <- BLOG_COMP_TO_CODE
 # Use arrow dataset for lazy evaluation — avoids loading 247MB into R memory at once
 ds <- open_dataset("source/opta_player_stats.parquet", format = "parquet")
 
-build_shard <- function(comp, code) {
+build_shard <- function(comp, code, drop_thin = FALSE) {
   league_stats <- ds |>
     filter(competition == comp) |>
     select(match_id, season, match_date, player_id, player_name, team_id,
@@ -59,6 +59,9 @@ build_shard <- function(comp, code) {
       key_passes = as.integer(coalesce(totalAttAssist, 0))
     ) |>
     filter(minsPlayed > 0) |>
+    # Club shards only: a tournament's size changes edition to edition (Euros
+    # 15 -> 51 matches), so "fraction of the median" says nothing there.
+    (\(d) if (drop_thin) drop_thin_seasons(d, paste0("match-stats-", code)) else d)() |>
     # season leads the sort and the file is written in 20,000-row groups
     # (pannadata#153): the blog reads one league's whole file (124,548 rows for
     # ENG) and mostly keeps the current season, so per-group min/max on season
@@ -73,7 +76,7 @@ build_shard <- function(comp, code) {
 }
 
 for (comp in names(comp_to_code)) {
-  build_shard(comp, comp_to_code[comp])
+  build_shard(comp, comp_to_code[comp], drop_thin = TRUE)
 }
 
 # World Cup shard for the blog's WC Player Stats page (R2 key

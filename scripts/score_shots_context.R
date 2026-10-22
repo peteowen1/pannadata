@@ -82,6 +82,11 @@ todo_xgot <- if (is.null(xgot_model)) rep(FALSE, nrow(shots)) else !og & !known_
 # qualifiers; new shots get panna's full rule (q263 too) when they are scored.
 # Blocked shots are left alone: panna gives them no on-target xGOT.
 write_shots <- function(shots) {
+  # The filters below (competition == comp & season == ssn & match_id %in% ...) make
+  # data.table build a secondary index on `shots`, one integer per row, and arrow
+  # saves it in the parquet footer (pannadata#162: 37.6 MB footer on a 112 MB file).
+  # Nothing reads the index; data.table rebuilds it when it is needed.
+  setindex(shots, NULL)
   tmp <- paste0(shot_path, ".tmp"); write_parquet(shots, tmp)
   if (file.exists(shot_path)) invisible(file.remove(shot_path))
   invisible(file.rename(tmp, shot_path))
@@ -99,7 +104,10 @@ shots[, `:=`(.row = .I, .todo = todo_xg | todo_xgot)]
 cat("to score: xG", sum(todo_xg), "| xGOT", sum(todo_xgot), "\n")
 if (!any(shots$.todo)) {
   cat("nothing to score\n")
-  if (n_fixed > 0) { shots[, c(".row", ".todo") := NULL]; write_shots(shots) }
+  # A stored file that still carries the index is rewritten too, so a quiet day
+  # does not re-ship the bloated footer (pannadata#162). Read before `.row`/`.todo`
+  # were added, so only an inherited index can be here.
+  if (n_fixed > 0 || !is.null(indices(shots))) { shots[, c(".row", ".todo") := NULL]; write_shots(shots) }
   quit(status = 0)
 }
 
