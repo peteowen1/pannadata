@@ -34,7 +34,8 @@ import sys
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional
-from opta_scraper import OptaScraper, MatchEvent, ShotEvent, PlayerLineup, AllMatchEvent
+from opta_scraper import (OptaScraper, MatchEvent, ShotEvent, PlayerLineup, AllMatchEvent,
+                          zero_minute_goal_share)
 from dataclasses import asdict
 import pandas as pd
 import pyarrow.lib
@@ -1135,7 +1136,7 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
             print("OK")
 
     # Helper to combine new data with existing parquet
-    def combine_and_save(new_data, output_path, dedup_cols):
+    def combine_and_save(new_data, output_path, dedup_cols, replace_matches=False):
         if not new_data:
             if output_path.exists():
                 try:
@@ -1153,6 +1154,11 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
         if output_path.exists():
             try:
                 existing_df = pd.read_parquet(output_path)
+                if replace_matches:
+                    # A re-scraped match supersedes ALL its stored rows. Keyed dedup
+                    # alone keeps stale rows whose key (minute) changed between
+                    # scraper versions: the pannadata#173 phantom 0:00 copies.
+                    existing_df = existing_df[~existing_df["match_id"].isin(new_df["match_id"].unique())]
                 combined = pd.concat([existing_df, new_df], ignore_index=True)
                 # R196: older files hold null where new rows hold '' in the
                 # substitution columns; compare them as equal (stored values
@@ -1183,6 +1189,13 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
                 logger.error("Failed to write %s: %s", output_path, e)
                 return pd.DataFrame()
         return combined
+
+    # Scrape-time sanity check (pannadata#173 / N003): warn if >1% of goal rows
+    # are stamped 0:00. Warn, not fail: one odd feed must not block the daily scrape.
+    zero_share = zero_minute_goal_share(all_events)
+    if zero_share is not None and zero_share > 0.01:
+        logger.warning("%.1f%% of goal rows in this scrape are at 0:00 (threshold 1%%); "
+                       "the feed may be missing time fields (pannadata#173)", 100 * zero_share)
 
     # Combine and save all data types
     results = {}
@@ -1215,7 +1228,8 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
             # every substitution in the same minute collapsed to one row on
             # each re-save: 9.2% of lineup sub-ons were missing (2026-10-14).
             ["match_id", "event_type", "minute", "second", "player_id",
-             "player_on_id", "player_off_id"]
+             "player_on_id", "player_off_id"],
+            replace_matches=True,
         )
         results["lineups"] = combine_and_save(
             all_lineups,
