@@ -1,5 +1,5 @@
 # simulate_cup.R — Monte Carlo cup competition simulations (UCL, UEL, UECL)
-# Generates cup rows in football/simulations.parquet for the inthegame-blog leagues page.
+# Generates cup rows for the inthegame-blog leagues page (blog/cup-simulations.parquet).
 #
 # Two-phase simulation:
 #   1. League phase: 36 teams, points-based standings (same maths as domestic sim)
@@ -19,7 +19,7 @@ library(arrow)
 library(dplyr)
 
 source("scripts/league_config.R")
-source("scripts/sim_margin.R")   # sample_margin(), shared with simulate_season.R
+source("scripts/sim_margin.R")   # sample_margin()
 source("scripts/cup_knockout.R") # simulate_knockout(), extract_known_ties(), bracket constants (R090)
 
 N_SIMS <- 10000L
@@ -85,7 +85,7 @@ if ("season" %in% names(cup_preds) && nrow(cup_preds) > 0) {
   cat("Filtered cups to current season:", nrow(cup_preds), "matches\n")
 }
 
-# Team-name normalization (same as simulate_season.R) — apply before the
+# Team-name normalization — apply before the
 # played/fixture split so both sides see canonical names. Defensive workaround;
 # the upstream fix is in panna step 01 via team_id-based canonicalization.
 normalize_team_names <- function(fixture_teams, canonical_teams) {
@@ -120,7 +120,7 @@ if (!is.null(standings) && nrow(cup_preds) > 0) {
       canon <- standings |> filter(league == key$league) |> pull(team)
       fixture_names <- unique(c(df$home_team, df$away_team))
       m <- normalize_team_names(fixture_names, canon)
-      # Mirror simulate_season.R — warn on unmapped so silent orphans surface
+      # Warn on unmapped names so silent orphans surface
       unmapped <- fixture_names[!fixture_names %in% canon & m[fixture_names] == fixture_names]
       if (length(unmapped) > 0) {
         warning(sprintf("[%s] %d fixture team names did not match standings: %s",

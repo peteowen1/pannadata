@@ -3,7 +3,7 @@ name: Sync game-logs to R2
 # Fast path for game-logs-only data refreshes (e.g. a PSV/value re-export).
 #
 # build-blog-data.yml rebuilds the ENTIRE blog dataset — chains (~14 comps x
-# 4-6 min), ratings, shots, match-stats, simulations — ~50 min. But game-logs
+# 4-6 min), ratings, shots, match-stats, cup simulations — ~50 min. But game-logs
 # are a pure PASS-THROUGH there: downloaded from blog-latest and uploaded to R2
 # verbatim, never rebuilt. So when ONLY game-logs change, none of that heavy
 # work is needed. This workflow does just the game-logs -> R2 copy (~2-3 min).
