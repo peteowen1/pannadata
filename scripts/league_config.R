@@ -40,6 +40,10 @@ BLOG_COMP_EXCLUDE <- c("CAF_CL", "Tunisian_Ligue_1")
 # played, so COVID-cut seasons -- Ligue_1 2019-20 at 279 of 380 -- stay in). The
 # newest season is always kept: it is in progress, so it is short on purpose.
 THIN_SEASON_FRAC <- 0.5
+# Only seasons starting before this year may be cut: that is Opta's sampled era.
+# A thin season from here on is a broken source, not a sample, so it is kept and
+# the log gets a ::warning:: instead of the season disappearing from the shard.
+THIN_SEASON_BEFORE <- 2015L
 
 # `df` needs `season` and `match_id`. Returns df without the thin seasons and
 # prints which ones went, so a build log shows the cut.
@@ -49,6 +53,13 @@ drop_thin_seasons <- function(df, label, frac = THIN_SEASON_FRAC) {
   if (length(seasons) < 2L) return(df)
   floor_n <- frac * stats::median(counts)
   thin <- setdiff(seasons[counts < floor_n], max(seasons))
+  recent <- thin[as.integer(substr(thin, 1L, 4L)) >= THIN_SEASON_BEFORE]
+  if (length(recent)) {
+    cat("::warning::", label, ": thin seasons kept, check the source (fewer than ",
+        floor_n, " matches): ", paste0(recent, "=", counts[recent], collapse = ", "),
+        "\n", sep = "")
+  }
+  thin <- setdiff(thin, recent)
   if (length(thin) == 0L) return(df)
   cat(label, ": dropping thin seasons (fewer than ", floor_n, " matches): ",
       paste0(thin, "=", counts[thin], collapse = ", "), "\n", sep = "")

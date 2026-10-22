@@ -26,4 +26,13 @@ stopifnot(identical(drop_thin_seasons(df, "T"), df))
 one <- season_rows("2020-2021", 3)
 stopifnot(identical(drop_thin_seasons(one, "T"), one))
 
+# 4. A thin season from 2015-16 on is a broken source, not Opta's sample era:
+# it is kept (with a ::warning:: in the log), while an early thin one still goes.
+df <- rbind(season_rows("2013-2014", 3), season_rows("2021-2022", 38),
+            season_rows("2022-2023", 38), season_rows("2023-2024", 10),
+            season_rows("2024-2025", 38), season_rows("2025-2026", 20))
+log <- capture.output(out <- drop_thin_seasons(df, "T"))
+stopifnot("2023-2024" %in% seasons_of(out), !"2013-2014" %in% seasons_of(out),
+          any(grepl("::warning::.*2023-2024=10", log)))
+
 cat("test_thin_seasons: all passed\n")
