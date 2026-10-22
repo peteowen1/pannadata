@@ -7,6 +7,7 @@ library(arrow)
 library(dplyr)
 
 dir.create("blog", showWarnings = FALSE)
+source("scripts/league_config.R")  # drop_thin_seasons()
 
 blog_comps <- c("EPL", "Championship", "La_Liga", "Ligue_1", "Bundesliga",
                 "Serie_A", "Eredivisie", "Primeira_Liga", "Scottish_Premiership",
@@ -63,7 +64,8 @@ match_stats <- stats_filtered |>
 
 for (comp in names(comp_to_code)) {
   code <- comp_to_code[comp]
-  league_stats <- match_stats |> filter(league == code)
+  league_stats <- match_stats |> filter(league == code) |>
+    (\(d) drop_thin_seasons(d, paste0("match-stats-", code)))()
   if (nrow(league_stats) > 0) {
     write_parquet(league_stats, paste0("blog/match-stats-", code, ".parquet"), chunk_size = 20000)
     cat("  match-stats-", code, ": ", nrow(league_stats), " rows\n", sep = "")
