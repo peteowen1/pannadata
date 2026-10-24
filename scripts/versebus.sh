@@ -320,19 +320,32 @@ vb_sh_manifest_last() {
 # the object and revalidate via ETag (304, zero bytes) instead of
 # re-downloading megabytes — the blog drops its cache-busting query once
 # objects carry this (blog #388).
+#
+# Each file gets 3 attempts (5 s, then 10 s apart) before it counts as a
+# failure: R2 returns one-off 500/502/524s often enough that, before this,
+# a single one stopped 3 builds in 2026-10-21..23 with most files
+# un-uploaded until someone re-ran the job by hand. A put is idempotent
+# per key, so retrying the same file is safe. VB_R2_RETRY_SLEEP (seconds
+# per backoff step, default 5) exists so the tests need not wait.
 vb_sh_r2_upload_all() {
   local prefix="$1"; shift
-  local f name
+  local f name attempt step="${VB_R2_RETRY_SLEEP:-5}"
   for f in "$@"; do
     [ -f "$f" ] || continue
     name=$(basename "$f")
-    if wrangler r2 object put "${prefix}/${name}" --file "$f" \
-         --cache-control "public, max-age=300" --remote; then
-      echo "OK $name"
-    else
-      echo "FAIL $name"
-      return 1
-    fi
+    for attempt in 1 2 3; do
+      if wrangler r2 object put "${prefix}/${name}" --file "$f" \
+           --cache-control "public, max-age=300" --remote; then
+        echo "OK $name"
+        continue 2
+      fi
+      if [ "$attempt" -lt 3 ]; then
+        echo "::warning::R2 upload of $name failed (attempt $attempt of 3), retrying" >&2
+        sleep $((attempt * step))
+      fi
+    done
+    echo "FAIL $name"
+    return 1
   done
 }
 

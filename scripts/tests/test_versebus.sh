@@ -298,6 +298,7 @@ wrangler() {
   esac
 }
 
+export VB_R2_RETRY_SLEEP=0
 check_not "vb_sh_r2_upload_all returns non-zero when an upload fails" \
   vb_sh_r2_upload_all "bucket/prefix" "$tmpdir/b.parquet" "$tmpdir/a.parquet"
 if grep -q "a.parquet" "$wrangler_log"; then
@@ -305,9 +306,36 @@ if grep -q "a.parquet" "$wrangler_log"; then
 else
   pass "fail-fast: no further uploads attempted after the first failure"
 fi
+b_tries=$(grep -c "b.parquet" "$wrangler_log")
+if [ "$b_tries" -eq 3 ]; then
+  pass "a persistently failing file is tried exactly 3 times before giving up"
+else
+  fail "a persistently failing file was tried $b_tries times, want 3"
+fi
 
 check "vb_sh_r2_upload_all succeeds when all uploads succeed" \
   vb_sh_r2_upload_all "bucket/prefix" "$tmpdir/a.parquet"
+
+# 5a'. A one-off failure is retried: b.parquet fails on its first put only,
+#      so the call succeeds and a.parquet (after it) is still uploaded.
+: > "$wrangler_log"
+b_flag="$tmpdir/b_failed_once"
+rm -f "$b_flag"
+wrangler() {
+  echo "$*" >> "$wrangler_log"
+  case "$*" in
+    *b.parquet*) if [ ! -f "$b_flag" ]; then : > "$b_flag"; return 1; fi; return 0 ;;
+    *) return 0 ;;
+  esac
+}
+check "vb_sh_r2_upload_all succeeds when a file fails once then uploads" \
+  vb_sh_r2_upload_all "bucket/prefix" "$tmpdir/b.parquet" "$tmpdir/a.parquet"
+if [ "$(grep -c "b.parquet" "$wrangler_log")" -eq 2 ] && grep -q "a.parquet" "$wrangler_log"; then
+  pass "retry: b.parquet put twice, then a.parquet uploaded"
+else
+  fail "retry: expected b.parquet x2 then a.parquet; log: $(tr '\n' '|' < "$wrangler_log")"
+fi
+unset VB_R2_RETRY_SLEEP
 
 # 5b. vb_sh_r2_manifest_last refuses when upload_errors != 0.
 out_r2_refused="$tmpdir/r2_refused.json"
