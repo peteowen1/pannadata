@@ -12,6 +12,17 @@ BLOG_COMP_TO_CODE <- c(
 BLOG_COMPS <- names(BLOG_COMP_TO_CODE)
 BLOG_CODES <- unname(BLOG_COMP_TO_CODE)
 
+# Club leagues that get a match-stats-<code>.parquet box-score shard but are
+# deliberately NOT in BLOG_COMP_TO_CODE (pannadata#190). game-logs.parquet
+# already carries BEL / MEX / SAU, so the blog's Player Stats page counts them,
+# but without a shard its League filter cannot offer them. Keeping them out of
+# BLOG_COMP_TO_CODE avoids pulling them into the standings / chains / league-xg
+# steps and the ratings whitelist, which that map also drives (same reasoning as
+# the World Cup shard in rebuild_match_stats.R).
+MATCH_STATS_EXTRA_COMP_TO_CODE <- c(
+  Belgian_First_Division = "BEL", Liga_MX = "MEX", Saudi_League = "SAU"
+)
+
 # Competitions whose SHOTS we want in match-shots.parquet / predictions xG, even
 # though they are NOT first-class blog leagues (no BLOG_CODE, no match-stats
 # file, no league badge). The World Cup is keyed by tournament YEAR not a club
