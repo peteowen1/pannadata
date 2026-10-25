@@ -13,6 +13,7 @@ Data is saved to pannadata/data/opta/ with structure:
 - pannadata/data/opta/events/{league}/{season}.parquet
 - pannadata/data/opta/lineups/{league}/{season}.parquet
 - pannadata/data/opta/fixtures/{league}/{season}.parquet
+- pannadata/data/opta/possession/{league}/{season}.parquet  (opt-in: --types all possession)
 
 Usage:
     python scrape_opta.py                           # Scrape all leagues, current season
@@ -940,8 +941,16 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
         d.mkdir(parents=True, exist_ok=True)
 
     # Determine which data types to scrape
+    # "possession" is opt-in: "all" does not include it (issue #192). It is a
+    # separate feed (one more API call per match) and its consolidated file needs
+    # a restore step in the workflow before it may be uploaded, or each run would
+    # publish only its own new matches over the history.
+    want_possession = scrape_types is not None and "possession" in scrape_types
     if scrape_types is None or "all" in scrape_types:
         scrape_types = ["player_stats", "shots", "shot_events", "match_events", "events", "lineups", "fixtures"]
+    if want_possession:
+        output_dirs["possession"] = opta_dir / "possession" / competition
+        output_dirs["possession"].mkdir(parents=True, exist_ok=True)
     fixtures_only = scrape_types == ["fixtures"]
 
     # Use manifest to check for existing matches
@@ -978,6 +987,7 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
     all_match_events = []  # ALL events with x/y coords (~2000/match)
     all_events = []
     all_lineups = []
+    all_possession = []
     new_matches_scraped = 0
     new_manifest_records = []  # Track new matches for manifest update
 
@@ -1092,6 +1102,17 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
                 match_events = scraper.extract_all_match_events(event_data)
                 all_match_events.extend([asdict(e) for e in match_events])
                 has_events = True
+
+            # Possession feed: best-effort, never touches the manifest or the
+            # tables above (a failure only means this match has no possession rows).
+            if want_possession:
+                try:
+                    possession_data = scraper.get_possession(match_id)
+                    if possession_data:
+                        all_possession.extend(
+                            scraper.extract_possession(possession_data, match_id))
+                except Exception as e:  # noqa: BLE001 - optional feed must not abort the scrape
+                    logger.warning("Possession feed failed for match %s: %s", match_id, e)
 
             # Add manifest record for this match
             # Don't mark as event_unavailable if match is recent (< 7 days old)
@@ -1236,6 +1257,13 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
             output_dirs["lineups"] / f"{season_name}.parquet",
             ["match_id", "player_id"]
         )
+        if want_possession:
+            results["possession"] = combine_and_save(
+                all_possession,
+                output_dirs["possession"] / f"{season_name}.parquet",
+                ["match_id", "wave_index"],
+                replace_matches=True,
+            )
 
     # Save fixture data (always overwritten with latest from API)
     if all_fixture_records:
@@ -1310,9 +1338,10 @@ def main():
                        help="Scrape only the N most recent seasons per league")
     parser.add_argument("--types", nargs="+",
                        choices=["all", "fixtures", "player_stats", "shots", "shot_events",
-                                "match_events", "events", "lineups"],
+                                "match_events", "events", "lineups", "possession"],
                        default=["all"],
-                       help="Data types to scrape (default: all)")
+                       help="Data types to scrape (default: all). 'possession' is opt-in "
+                            "and not part of 'all': pass '--types all possession'")
     parser.add_argument("--tier", type=int, default=0,
                        help="Only scrape competitions with tier <= N (0 = no filter)")
     parser.add_argument("--heal-cap", type=int, default=200,

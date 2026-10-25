@@ -45,6 +45,9 @@ def _get_dedup_cols(table_type):
                 'player_on_id', 'player_off_id']
     elif table_type == 'fixtures':
         return ['match_id']
+    elif table_type == 'possession':
+        # one row per possessionWave element; wave_index is unique within a match
+        return ['match_id', 'wave_index']
     else:
         # player_stats, lineups, shots, fixtures (all other table types)
         return ['match_id', 'player_id']
@@ -715,7 +718,7 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
                         print(f"  ERROR: Failed to read {f}: {e}")
                         errors += 1
 
-                if table_type == 'events':
+                if table_type in ('events', 'possession'):
                     dfs = _drop_rescraped_matches(dfs, new_dfs)
                 dfs = dfs + new_dfs
                 del new_dfs
