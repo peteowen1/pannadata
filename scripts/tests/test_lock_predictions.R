@@ -20,4 +20,23 @@ stopifnot(!anyDuplicated(l2$match_id), nrow(l2) == 2)
 # a match first seen already played gets no lock
 l3 <- lock_predictions(rbind(cur2, mk("m9", "2026-10-02", "played", .4)), l2, t2)
 stopifnot(!"m9" %in% l3$match_id)
+# retrodictions: played out-of-fit rows are frozen on first sight, train rows never
+mks <- function(id, date, status, pH, split) transform(mk(id, date, status, pH), split = split)
+cur4 <- rbind(transform(cur2, split = c("test", "fixture")),
+              mks("r1", "2026-09-20", "played", .7, "test"),
+              mks("r2", "2025-11-01", "played", .4, "val"),
+              transform(mks("t1", "2024-11-01", "played", NA, "train"), prob_D = NA, prob_A = NA))
+l4 <- lock_predictions(cur4, l2, t2)
+stopifnot(l4$lock_source[l4$match_id == "r1"] == "retrodiction",
+          l4$lock_source[l4$match_id == "r2"] == "retrodiction",
+          !"t1" %in% l4$match_id,                                   # in-sample: never recorded
+          l4$lock_source[l4$match_id == "m1"] == "daily",           # a pre-match lock stays pre-match
+          l4$prob_H_pre[l4$match_id == "m1"] == .5)
+# next run re-scores r1 to .2: the first-sight value stands
+cur5 <- cur4; cur5$prob_H[cur5$match_id == "r1"] <- .2
+l5 <- lock_predictions(cur5, l4, t2 + 86400)
+stopifnot(l5$prob_H_pre[l5$match_id == "r1"] == .7, l5$locked_at[l5$match_id == "r1"] == "2026-10-03T05:00:00Z",
+          !anyDuplicated(l5$match_id), nrow(l5) == nrow(l4))
+# old predictions without a split column insert no retrodictions
+stopifnot(nrow(lock_predictions(cur2, l2, t2)) == 2)
 cat("test_lock_predictions: all passed\n")
