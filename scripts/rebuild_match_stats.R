@@ -5,6 +5,11 @@ dir.create("blog", showWarnings = FALSE)
 source("scripts/league_config.R")
 comp_to_code <- BLOG_COMP_TO_CODE
 
+# MATCH_STATS_ONLY (env, comma-separated codes, e.g. "SAU") builds just those
+# shards, for a quick local check. Unset in CI, so everything is built.
+only <- Sys.getenv("MATCH_STATS_ONLY", "")
+if (nzchar(only)) comp_to_code <- comp_to_code[comp_to_code %in% strsplit(only, ",")[[1]]]
+
 # Use arrow dataset for lazy evaluation — avoids loading 247MB into R memory at once
 ds <- open_dataset("source/opta_player_stats.parquet", format = "parquet")
 
@@ -79,18 +84,29 @@ for (comp in names(comp_to_code)) {
   build_shard(comp, comp_to_code[comp], drop_thin = TRUE)
 }
 
+# Club leagues with a shard but no BLOG_COMP_TO_CODE entry (pannadata#190):
+# Belgium, Mexico, Saudi Arabia. Club shards, so thin early seasons are cut as
+# above.
+extra <- MATCH_STATS_EXTRA_COMP_TO_CODE
+if (nzchar(only)) extra <- extra[extra %in% strsplit(only, ",")[[1]]]
+for (comp in names(extra)) {
+  build_shard(comp, extra[[comp]], drop_thin = TRUE)
+}
+
 # World Cup shard for the blog's WC Player Stats page (R2 key
 # football/match-stats-WC.parquet). Deliberately NOT in BLOG_COMP_TO_CODE —
 # that map also drives standings/chains steps where a tournament doesn't
 # belong. Ships all WC seasons (historical + 2026); the blog page filters
 # by match_date itself, so 2026 rows light up as the tournament is played.
-build_shard("World_Cup", "WC")
+if (!nzchar(only)) build_shard("World_Cup", "WC")
 
 # Sibling tournament shards (pannadata#98 follow-through; blog consumption
 # tracked in inthegame-blog#451). Same all-seasons pattern as the WC shard;
 # codes match the game-logs league labels (EURO / Copa_America / AFCON) so
 # box-score and value rows agree on naming. Coverage in opta_player_stats:
 # Euros 2000-2024 (all 7), Copa 2001-2024 (9), AFCON 2002-2025 (13).
-build_shard("UEFA_Euros", "EURO")
-build_shard("Copa_America", "Copa_America")
-build_shard("AFCON", "AFCON")
+if (!nzchar(only)) {
+  build_shard("UEFA_Euros", "EURO")
+  build_shard("Copa_America", "Copa_America")
+  build_shard("AFCON", "AFCON")
+}
