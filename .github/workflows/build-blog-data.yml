@@ -913,8 +913,9 @@ jobs:
       # — like the chains gate below — so it never blocks shipping the healthy
       # files; it only reddens a degraded run.
       #
-      # HARD-FAIL tier (always-rebuilt every healthy run): the 14 match-stats
-      # shards (13 BLOG_CODES from scripts/league_config.R + WC) plus ratings,
+      # HARD-FAIL tier (always-rebuilt every healthy run): the 17 match-stats
+      # shards (13 BLOG_CODES from scripts/league_config.R + BEL/MEX/SAU from
+      # MATCH_STATS_EXTRA_COMP_TO_CODE + WC) plus ratings,
       # player-details, and match-shots. Any missing → exit 1.
       #
       # WARN tier (optional upstream / pass-through — absence is expected, not
@@ -925,7 +926,7 @@ jobs:
           # 13 BLOG_CODES from scripts/league_config.R + the 4 tournament
           # shards (WC/EURO/Copa_America/AFCON — review catch: the siblings
           # need the same never-built-shard hard-fail the WC shard gets).
-          HARD_MATCH_STATS="ENG ENG2 ESP FRA GER ITA NED POR SCO TUR UCL UEL UECL WC EURO Copa_America AFCON"
+          HARD_MATCH_STATS="ENG ENG2 ESP FRA GER ITA NED POR SCO TUR UCL UEL UECL BEL MEX SAU WC EURO Copa_America AFCON"
           missing=0
           for code in $HARD_MATCH_STATS; do
             f="blog/match-stats-${code}.parquet"
