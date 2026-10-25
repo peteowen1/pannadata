@@ -13,8 +13,10 @@
 #     the model later re-scores it. locked_at is the run time of the last refresh,
 #     so locked_at < kickoff always holds (a day-of kickoff cannot be earlier than
 #     the previous day's run).
-#   - A match first seen on its own match day, or already played, is NOT
-#     inserted: no genuine pre-match forecast exists for it.
+#   - A match first seen on its own match day, or already played, gets no
+#     pre-match lock: no genuine pre-match forecast exists for it. If the
+#     models were not fitted on it, it is kept as lock_source "retrodiction"
+#     instead (see retrodiction_rows() below).
 #
 # Seeding (one-off): predictions-history holds dated daily snapshots since
 # 2026-07-25. seed_from_history() turns them into locked rows (last snapshot
@@ -58,11 +60,29 @@ lock_predictions <- function(current, locked = NULL, run_time = Sys.time()) {
   if (any(is.na(md))) stop("lock_predictions: unparseable match_date in predictions")
   cand <- current[current$status == "fixture" & md > run_date, , drop = FALSE]
   fresh <- as_lock_rows(cand, stamp, "daily")
-  if (is.null(locked) || nrow(locked) == 0) return(fresh)
   # A previously locked row is overwritten only if its match is still a future
   # fixture in the current predictions; everything else is carried over verbatim.
-  keep <- locked[!locked$match_id %in% fresh$match_id, LOCK_COLS]
-  bind_rows(keep, fresh)
+  keep <- if (is.null(locked) || nrow(locked) == 0) NULL else locked[!locked$match_id %in% fresh$match_id, LOCK_COLS]
+  bind_rows(keep, fresh, retrodiction_rows(current, c(keep$match_id, fresh$match_id), stamp))
+}
+
+# Retrodictions (Pete, 2026-10-25; pannaverse docs/plans/HONEST-PREDICTIONS-PLAN.md):
+# a played match the models were NOT fitted on (split "val"/"test") whose
+# number was computed after the match. It is honest out-of-fit but not
+# pre-match, so it carries lock_source "retrodiction", never "daily". Frozen
+# on first sight and never overwritten: panna's step 04 relabels last season
+# from val to train at each season rollover, after which the same match would
+# be in-sample and blanked, so this record is the only copy that survives.
+# Readers that mean "forecast made before kickoff" must filter on lock_source.
+retrodiction_rows <- function(current, already, stamp) {
+  if (!"split" %in% names(current)) {
+    cat("retrodictions: predictions carry no split column (pre-2026-10-25 panna), none inserted\n")
+    return(NULL)
+  }
+  r <- current[current$status == "played" & current$split %in% c("val", "test") &
+                 !is.na(current$prob_H) & !current$match_id %in% already, , drop = FALSE]
+  cat("retrodictions inserted:", nrow(r), "\n")
+  as_lock_rows(r, stamp, "retrodiction")
 }
 
 # history_dir holds predictions_<YYYY-MM-DD>.parquet snapshots.
@@ -102,9 +122,11 @@ main <- function(args) {
   if (anyDuplicated(out$match_id)) stop("duplicate match_id in locked table")
   if (nrow(out) == 0) stop("locked table is empty")
   write_parquet(out, args[3])
-  cat("locked rows written:", nrow(out), "| played with a lock:",
-      sum(out$match_id %in% current$match_id[current$status == "played"]),
-      "| of", sum(current$status == "played" & current$season %in% unique(out$season)),
+  pre <- out[out$lock_source != "retrodiction", ]
+  cat("locked rows written:", nrow(out), "(", sum(out$lock_source == "retrodiction"),
+      "retrodiction ) | played with a pre-match lock:",
+      sum(pre$match_id %in% current$match_id[current$status == "played"]),
+      "| of", sum(current$status == "played" & current$season %in% unique(pre$season)),
       "played matches in locked seasons\n")
 }
 
