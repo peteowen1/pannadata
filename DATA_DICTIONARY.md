@@ -24,6 +24,7 @@ data/
 │   ├── match_events/{league}/{season}.parquet
 │   ├── lineups/{league}/{season}.parquet
 │   ├── fixtures/{league}/{season}.parquet
+│   ├── possession/{league}/{season}.parquet   # opt-in (--types all possession)
 │   ├── xmetrics/{league}/{season}.parquet
 │   ├── events_consolidated/           # Per-league consolidated events
 │   │   └── events_{league}.parquet
@@ -338,6 +339,7 @@ High-level match events: goals, cards, substitutions.
 | `player_on_name` | chr | Substitute coming on name (subs only) |
 | `player_off_id` | int | Player coming off (subs only) |
 | `player_off_name` | chr | Player coming off name (subs only) |
+| `sub_reason` | chr | Opta's `subReason` on substitutions: `Injury` or `Tactical`; blank on other events and on rows scraped before 2026-10 (issue #192) |
 
 ---
 
@@ -362,8 +364,34 @@ Starting XI, substitutions, positions, and minutes played.
 | `minutes_played` | int | Minutes played |
 | `sub_on_minute` | int | Substitution on minute (0 if starter) |
 | `sub_off_minute` | int | Substitution off minute (0 if played full match) |
+| `sub_position` | chr | Opta's `subPosition` for bench players: Goalkeeper / Defender / Midfielder / Attacker (broad squad role); blank for starters. Null on rows scraped before issue #192 |
+| `captain` | lgl | Team captain flag (`captain` = yes in the feed). Null on older rows |
+| `known_name` | chr | Opta `knownName` (blank when the player has none) |
+| `short_first_name` | chr | Opta `shortFirstName` |
+| `short_last_name` | chr | Opta `shortLastName` |
+| `team_average_age` | dbl | Team `averageAge` for this match, repeated on every row of the team |
+| `team_kit_json` | chr | Team `kit` block as compact JSON (repeated per team row) |
+| `team_official_json` | chr | Team `teamOfficial` block (manager) as compact JSON |
+
+The new columns (everything from `sub_position` down) exist only for matches scraped after issue #192; earlier rows are null until a backfill (see `scripts/opta/README.md`). The same player-level columns (`sub_position`, `captain`, `known_name`, `short_first_name`, `short_last_name`) are also on `opta/player_stats`.
 
 **Note:** Lineups have no score columns. Derive match scores from goal events.
+
+---
+
+## opta/possession
+
+Team possession share over time, from the `possession` feed (`possessionWave`). One row per wave element, per match. **Opt-in**: scraped only when `scrape_opta.py` is run with `--types all possession`, and published as `opta_possession.parquet` only once the daily workflow restores that file (see `scripts/opta/README.md`). Written without a saved payload, so the parsed columns are a best guess: check them against `raw_json` and fix `OptaScraper._POSSESSION_KEYS` if they are NA.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `match_id` | chr | Opta match ID |
+| `wave_index` | int | Position of the element in the feed, unique within a match. **-1 = marker row**: the feed answered but had no `possessionWave`; filter `wave_index >= 0` |
+| `interval` | chr | Interval label from the feed (5-minute and longer intervals share the table) |
+| `period_id` | int | Match period, 0 if absent |
+| `start_minute` / `end_minute` | dbl | Interval bounds in minutes, NA if absent |
+| `home_possession` / `away_possession` | dbl | Possession share for the interval, NA if absent |
+| `raw_json` | chr | The wave element verbatim |
 
 ---
 

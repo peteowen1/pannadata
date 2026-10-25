@@ -214,6 +214,8 @@ class MatchEvent:
     # For goals
     assist_player_id: str = ""
     assist_player_name: str = ""
+    # For substitutions: Opta's subReason ("Injury" / "Tactical"), "" when absent
+    sub_reason: str = ""
 
 
 @dataclass
@@ -234,6 +236,16 @@ class PlayerLineup:
     minutes_played: int = 0
     sub_on_minute: int = 0
     sub_off_minute: int = 0
+    # Fields the feed carries that were previously dropped (issue #192).
+    sub_position: str = ""  # bench players only: Goalkeeper/Defender/Midfielder/Attacker
+    captain: bool = False
+    known_name: str = ""
+    short_first_name: str = ""
+    short_last_name: str = ""
+    # Team-level, repeated on every player row of that team
+    team_average_age: float = float("nan")
+    team_kit_json: str = ""
+    team_official_json: str = ""
 
 
 def _to_int_or_0(value) -> int:
@@ -253,6 +265,23 @@ def _to_int_or_0(value) -> int:
         return int(value)
     except (ValueError, TypeError):
         return 0
+
+
+def _is_yes(value) -> bool:
+    """True for the feed's affirmative flags ("yes", true, 1, "true")."""
+    return str(value).strip().lower() in ("yes", "true", "1")
+
+
+def _json_or_empty(value) -> str:
+    """Compact JSON for a dict/list feed block, "" when absent."""
+    return json.dumps(value, separators=(",", ":"), sort_keys=True) if value else ""
+
+
+def _to_float_or_nan(value) -> float:
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return float("nan")
 
 
 def _to_str_or_none(value) -> Optional[str]:
@@ -1030,6 +1059,12 @@ class OptaScraper:
                     "position": player.get("position", ""),
                     "position_side": player.get("positionSide", ""),
                     "formation_place": player.get("formationPlace", ""),
+                    # issue #192: previously dropped player-level fields
+                    "sub_position": player.get("subPosition", "") or "",
+                    "captain": _is_yes(player.get("captain")),
+                    "known_name": player.get("knownName", "") or "",
+                    "short_first_name": player.get("shortFirstName", "") or "",
+                    "short_last_name": player.get("shortLastName", "") or "",
                     # pannadata#112: the MA1 lineup/player block has never been
                     # observed to carry dateOfBirth/birthDate (confirmed absent
                     # across 234k+ locally-archived raw payloads, 2000-2026) —
@@ -1184,6 +1219,7 @@ class OptaScraper:
                 player_on_name=sub.get("playerOnName", ""),
                 player_off_id=sub.get("playerOffId", ""),
                 player_off_name=sub.get("playerOffName", ""),
+                sub_reason=sub.get("subReason", "") or "",
             ))
 
         return events
@@ -1375,6 +1411,9 @@ class OptaScraper:
             team_info = team_map.get(team_id, {})
             team_name = team_info.get("name", "Unknown")
             team_position = team_info.get("position", "")
+            team_average_age = _to_float_or_nan(lineup.get("averageAge"))
+            team_kit_json = _json_or_empty(lineup.get("kit"))
+            team_official_json = _json_or_empty(lineup.get("teamOfficial"))
 
             for player in lineup.get("player", []):
                 player_id = player.get("playerId", "")
@@ -1450,9 +1489,92 @@ class OptaScraper:
                     minutes_played=mins_played,
                     sub_on_minute=sub_on,
                     sub_off_minute=sub_off,
+                    sub_position=player.get("subPosition", "") or "",
+                    captain=_is_yes(player.get("captain")),
+                    known_name=player.get("knownName", "") or "",
+                    short_first_name=player.get("shortFirstName", "") or "",
+                    short_last_name=player.get("shortLastName", "") or "",
+                    team_average_age=team_average_age,
+                    team_kit_json=team_kit_json,
+                    team_official_json=team_official_json,
                 ))
 
         return lineups
+
+    # Key-name candidates for the possession feed. UNVERIFIED: written without a
+    # saved payload (issue #192), so every wave element is also kept verbatim in
+    # raw_json. Check one real payload and trim these lists.
+    _POSSESSION_KEYS = {
+        "interval": ("interval", "intervalLength", "type", "name", "label"),
+        "period_id": ("periodId", "period"),
+        "start_minute": ("startMinute", "startMin", "fromMinute", "start", "from"),
+        "end_minute": ("endMinute", "endMin", "toMinute", "end", "to"),
+        "home": ("home", "homePossession", "homeValue"),
+        "away": ("away", "awayPossession", "awayValue"),
+    }
+
+    @classmethod
+    def _possession_pick(cls, element: Dict, field: str):
+        for key in cls._POSSESSION_KEYS[field]:
+            if key in element and element[key] is not None:
+                return element[key]
+        return None
+
+    @classmethod
+    def _find_possession_wave(cls, data):
+        """possessionWave sits at the top level or under liveData; None if absent."""
+        if not isinstance(data, dict):
+            return None
+        if "possessionWave" in data:
+            return data["possessionWave"]
+        return cls._find_possession_wave(data.get("liveData"))
+
+    def extract_possession(self, possession_data: Dict, match_id: str = "") -> List[Dict]:
+        """Flatten the possession feed's possessionWave into one row per element.
+
+        Elements of different interval lengths (5-minute and longer) share the
+        table and are told apart by `interval`; `wave_index` numbers the elements
+        in feed order and is unique within a match. A payload with no wave gives
+        a single marker row (wave_index -1) so a backfill can tell "fetched,
+        empty" from "never fetched"; consumers filter wave_index >= 0.
+        """
+        if not possession_data:
+            return []
+        match_id = match_id or possession_data.get("matchInfo", {}).get("id", "")
+        wave = self._find_possession_wave(possession_data)
+
+        # A dict of interval label -> list of elements is also accepted.
+        groups = []
+        if isinstance(wave, dict):
+            groups = [(str(k), v) for k, v in wave.items() if isinstance(v, list)]
+        elif isinstance(wave, list):
+            groups = [(None, wave)]
+
+        rows = []
+        for label, elements in groups:
+            for element in elements:
+                if not isinstance(element, dict):
+                    continue
+                interval = self._possession_pick(element, "interval")
+                rows.append({
+                    "match_id": match_id,
+                    "wave_index": len(rows),
+                    "interval": str(interval) if interval is not None else (label or ""),
+                    "period_id": _to_int_or_0(self._possession_pick(element, "period_id")),
+                    "start_minute": _to_float_or_nan(self._possession_pick(element, "start_minute")),
+                    "end_minute": _to_float_or_nan(self._possession_pick(element, "end_minute")),
+                    "home_possession": _to_float_or_nan(self._possession_pick(element, "home")),
+                    "away_possession": _to_float_or_nan(self._possession_pick(element, "away")),
+                    "raw_json": json.dumps(element, separators=(",", ":"), sort_keys=True),
+                })
+        if not rows:
+            rows.append({
+                "match_id": match_id, "wave_index": -1, "interval": "",
+                "period_id": 0, "start_minute": float("nan"), "end_minute": float("nan"),
+                "home_possession": float("nan"), "away_possession": float("nan"),
+                "raw_json": "",
+            })
+        return rows
 
     @staticmethod
     def validate_lineups(lineups: List[PlayerLineup], match_id: str = "") -> List[str]:
