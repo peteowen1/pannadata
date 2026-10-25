@@ -37,6 +37,11 @@ cur5 <- cur4; cur5$prob_H[cur5$match_id == "r1"] <- .2
 l5 <- lock_predictions(cur5, l4, t2 + 86400)
 stopifnot(l5$prob_H_pre[l5$match_id == "r1"] == .7, l5$locked_at[l5$match_id == "r1"] == "2026-10-03T05:00:00Z",
           !anyDuplicated(l5$match_id), nrow(l5) == nrow(l4))
+# season rollover: r1/r2 become in-sample (split "train", numbers blanked); their frozen rows survive untouched
+cur6 <- cur5; ro <- cur6$match_id %in% c("r1", "r2")
+cur6$split[ro] <- "train"; cur6[ro, c("prob_H", "prob_D", "prob_A")] <- NA
+l6 <- lock_predictions(cur6, l5, t2 + 2 * 86400)
+stopifnot(identical(l6[l6$match_id %in% c("r1", "r2"), ], l5[l5$match_id %in% c("r1", "r2"), ]))
 # old predictions without a split column insert no retrodictions
 stopifnot(nrow(lock_predictions(cur2, l2, t2)) == 2)
 cat("test_lock_predictions: all passed\n")

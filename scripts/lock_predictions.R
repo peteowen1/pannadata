@@ -122,9 +122,11 @@ main <- function(args) {
   if (anyDuplicated(out$match_id)) stop("duplicate match_id in locked table")
   if (nrow(out) == 0) stop("locked table is empty")
   write_parquet(out, args[3])
-  cat("locked rows written:", nrow(out), "| played with a lock:",
-      sum(out$match_id %in% current$match_id[current$status == "played"]),
-      "| of", sum(current$status == "played" & current$season %in% unique(out$season)),
+  pre <- out[out$lock_source != "retrodiction", ]
+  cat("locked rows written:", nrow(out), "(", sum(out$lock_source == "retrodiction"),
+      "retrodiction ) | played with a pre-match lock:",
+      sum(pre$match_id %in% current$match_id[current$status == "played"]),
+      "| of", sum(current$status == "played" & current$season %in% unique(pre$season)),
       "played matches in locked seasons\n")
 }
 
