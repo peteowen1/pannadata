@@ -24,7 +24,6 @@ data/
 │   ├── match_events/{league}/{season}.parquet
 │   ├── lineups/{league}/{season}.parquet
 │   ├── fixtures/{league}/{season}.parquet
-│   ├── possession/{league}/{season}.parquet   # opt-in (--types all possession)
 │   ├── xmetrics/{league}/{season}.parquet
 │   ├── events_consolidated/           # Per-league consolidated events
 │   │   └── events_{league}.parquet
@@ -376,22 +375,6 @@ Starting XI, substitutions, positions, and minutes played.
 The new columns (everything from `sub_position` down) exist only for matches scraped after issue #192; earlier rows are null until a backfill (see `scripts/opta/README.md`). The same player-level columns (`sub_position`, `captain`, `known_name`, `short_first_name`, `short_last_name`) are also on `opta/player_stats`.
 
 **Note:** Lineups have no score columns. Derive match scores from goal events.
-
----
-
-## opta/possession
-
-Team possession share over time, from the `possession` feed (`possessionWave`). One row per wave element, per match. **Opt-in**: scraped only when `scrape_opta.py` is run with `--types all possession`, and published as `opta_possession.parquet` only once the daily workflow restores that file (see `scripts/opta/README.md`). Written without a saved payload, so the parsed columns are a best guess: check them against `raw_json` and fix `OptaScraper._POSSESSION_KEYS` if they are NA.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `match_id` | chr | Opta match ID |
-| `wave_index` | int | Position of the element in the feed, unique within a match. **-1 = marker row**: the feed answered but had no `possessionWave`; filter `wave_index >= 0` |
-| `interval` | chr | Interval label from the feed (5-minute and longer intervals share the table) |
-| `period_id` | int | Match period, 0 if absent |
-| `start_minute` / `end_minute` | dbl | Interval bounds in minutes, NA if absent |
-| `home_possession` / `away_possession` | dbl | Possession share for the interval, NA if absent |
-| `raw_json` | chr | The wave element verbatim |
 
 ---
 
