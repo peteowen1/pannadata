@@ -338,6 +338,7 @@ High-level match events: goals, cards, substitutions.
 | `player_on_name` | chr | Substitute coming on name (subs only) |
 | `player_off_id` | int | Player coming off (subs only) |
 | `player_off_name` | chr | Player coming off name (subs only) |
+| `sub_reason` | chr | Opta's `subReason` on substitutions: `Injury` or `Tactical`; blank on other events and on rows scraped before 2026-10 (issue #192) |
 
 ---
 
@@ -362,6 +363,16 @@ Starting XI, substitutions, positions, and minutes played.
 | `minutes_played` | int | Minutes played |
 | `sub_on_minute` | int | Substitution on minute (0 if starter) |
 | `sub_off_minute` | int | Substitution off minute (0 if played full match) |
+| `sub_position` | chr | Opta's `subPosition` for bench players: Goalkeeper / Defender / Midfielder / Attacker (broad squad role); blank for starters. Null on rows scraped before issue #192 |
+| `captain` | lgl | Team captain flag (`captain` = yes in the feed). Null on older rows |
+| `known_name` | chr | Opta `knownName` (blank when the player has none) |
+| `short_first_name` | chr | Opta `shortFirstName` |
+| `short_last_name` | chr | Opta `shortLastName` |
+| `team_average_age` | dbl | Team `averageAge` for this match, repeated on every row of the team |
+| `team_kit_json` | chr | Team `kit` block as compact JSON (repeated per team row) |
+| `team_official_json` | chr | Team `teamOfficial` block (manager) as compact JSON |
+
+The new columns (everything from `sub_position` down) exist only for matches scraped after issue #192; earlier rows are null until a backfill (see `scripts/opta/README.md`). The same player-level columns (`sub_position`, `captain`, `known_name`, `short_first_name`, `short_last_name`) are also on `opta/player_stats`.
 
 **Note:** Lineups have no score columns. Derive match scores from goal events.
 
