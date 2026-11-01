@@ -78,6 +78,25 @@ GitHub Releases: peteowen1/pannadata @ opta-latest
 | events | Goals, cards, substitutions with timing |
 | lineups | Starting XI, subs, minutes played |
 
+### Fields added under issue #192
+
+- `lineups` and `player_stats`: `sub_position`, `captain`, `known_name`, `short_first_name`, `short_last_name`; `lineups` also `team_average_age`, `team_kit_json`, `team_official_json`.
+- `events`: `sub_reason` (Injury / Tactical) on substitutions.
+- The possession feed (`OptaScraper.get_possession()`) is still not called by the scraper: no real payload could be fetched when this was done, so no parser was shipped (see the issue #192 thread).
+
+### Backfill plan for past matches (nothing run yet)
+
+The daily scrape only processes matches not in the manifest, so the new lineup/`player_stats`/`events` columns are null for past matches until they are re-fetched. They all come from the `matchstats` feed, so the cheapest route is a small script modelled on `rebuild_events.py` that refetches only `matchstats` (1 call a match). Sized from `opta-manifest.parquet` (266,921 matches; 252,303 with lineups) at the scraper's 1-2 s pause per call (~1.5 s average):
+
+| Scope | Matches | Calls | Time |
+|-------|---------|-------|------|
+| matchstats only, season start >= 2025 | 32,592 | 32.6k | ~14 h |
+| matchstats only, >= 2023 | 67,682 | 67.7k | ~28 h |
+| matchstats only, >= 2020 | 117,153 | 117k | ~49 h |
+| `--force` re-scrape (stats + events), >= 2025 | 32,592 | 65k | ~27 h |
+
+Suggested start: the current season, split by league across several runs. `lineups`/`player_stats` merge by `(match_id, player_id)` so re-fetched rows overwrite and old rows keep null in the new columns; `events` rows for a re-scraped match are replaced by the consolidator.
+
 ## Key Columns (player_stats)
 
 ### Shooting
