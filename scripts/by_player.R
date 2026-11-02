@@ -304,7 +304,7 @@ rechunk_game_logs_by_league <- function(path, rows = 20000L) {
   if (rdr$num_rows != nrow(df)) stop(sprintf("%s: %d rows written, expected %d", path, rdr$num_rows, nrow(df)))
   expect_rg <- ceiling(nrow(df) / rows)
   if (rdr$num_row_groups != expect_rg) stop(sprintf("%s: wrote %d row groups, expected %d", path, rdr$num_row_groups, expect_rg))
-  rm(rdr)
+  rm(rdr); invisible(gc())  # Windows: release the reader's handle before the rename
   if (!file.rename(tmp, path)) stop(path, ": could not replace the original with the re-chunked copy")
   cat(sprintf("%s: %d rows, %d row group(s), %.2f MB\n", path, nrow(df), as.integer(expect_rg), file.info(path)$size / 1024^2))
   invisible(as.integer(expect_rg))
