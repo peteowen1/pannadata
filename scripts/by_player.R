@@ -276,6 +276,54 @@ write_game_logs_by_league <- function(gl, path) {
 
 GAME_LOGS_SEASON_RE <- "^game-logs-[0-9]{4}-[0-9]{4}\\.parquet$"
 
+# Rewrites each game-logs-<season>.parquet in place as league-sorted,
+# 20,000-row groups (pannadata#153). The files come from panna step 10b as ONE
+# row group, so /football/world-cup-player, which keeps `league == "WC"` (3,272
+# of 194,971 rows for 2025-26), decoded all of it. With league leading, each
+# group's min/max on `league` lets a reader skip every group that cannot hold
+# the league: 10 groups for 2025-26, WC in the last one. Rows keep their
+# existing order inside a league (stable radix sort; panna already writes them
+# league-sorted, so this is normally a no-op reorder), and the columns and
+# values are untouched. 20,000 rows over 10,000: measured on 2025-26 (pyarrow,
+# snappy) the file is 21.8 MB as one group, 26.9 MB at 20,000 and 29.8 MB at
+# 10,000, because the string columns' dictionaries are rebuilt per group; the
+# footer is 72 KB against 135 KB. A season under `rows` rows stays one group.
+# Failure-soft per file: the original stays in place.
+rechunk_game_logs_by_league <- function(path, rows = 20000L) {
+  df <- as.data.frame(arrow::read_parquet(path))
+  if (!is.character(df$league)) stop(path, ": league is ", class(df$league)[1], ", expected a plain string column")
+  if (anyNA(df$league)) stop(sprintf("%s: %d rows with NA league", path, sum(is.na(df$league))))
+  df <- df[order(df$league, method = "radix"), , drop = FALSE]
+  rownames(df) <- NULL
+  tbl <- arrow::arrow_table(df)
+  tbl$metadata$r <- NULL  # R attributes in the footer, as by_player.R's other writers
+  tmp <- paste0(path, ".tmp")
+  on.exit(unlink(tmp), add = TRUE)
+  arrow::write_parquet(tbl, tmp, chunk_size = rows, compression = "snappy")
+  rdr <- arrow::ParquetFileReader$create(tmp)
+  if (rdr$num_rows != nrow(df)) stop(sprintf("%s: %d rows written, expected %d", path, rdr$num_rows, nrow(df)))
+  expect_rg <- ceiling(nrow(df) / rows)
+  if (rdr$num_row_groups != expect_rg) stop(sprintf("%s: wrote %d row groups, expected %d", path, rdr$num_row_groups, expect_rg))
+  rm(rdr); invisible(gc())  # Windows: release the reader's handle before the rename
+  if (!file.rename(tmp, path)) stop(path, ": could not replace the original with the re-chunked copy")
+  cat(sprintf("%s: %d rows, %d row group(s), %.2f MB\n", path, nrow(df), as.integer(expect_rg), file.info(path)$size / 1024^2))
+  invisible(as.integer(expect_rg))
+}
+
+build_game_logs_chunks <- function(blog_dir = "blog") {
+  srcs <- list.files(blog_dir, pattern = GAME_LOGS_SEASON_RE, full.names = TRUE)
+  failed <- character()
+  for (src in srcs) {
+    tryCatch(rechunk_game_logs_by_league(src),
+             error = function(e) {
+               failed <<- c(failed, src)
+               message("::warning::", src, " left as panna wrote it (one row group): ", conditionMessage(e))
+             })
+  }
+  cat(sprintf("game-logs league-sorted row groups: %d of %d written\n", length(srcs) - length(failed), length(srcs)))
+  invisible(failed)
+}
+
 build_by_league_copies <- function(blog_dir = "blog") {
   srcs <- list.files(blog_dir, pattern = GAME_LOGS_SEASON_RE, full.names = TRUE)
   if (length(srcs) == 0L) message("::warning::no game-logs-<season>.parquet in ", blog_dir, ", so no -by-league copies this run")
@@ -325,6 +373,7 @@ if (sys.nframe() == 0L) {
   args <- commandArgs(trailingOnly = TRUE)
   blog_dir <- if (length(args) > 0) args[1] else "blog"
   build_by_player_copies(blog_dir)
+  build_game_logs_chunks(blog_dir)
   build_by_league_copies(blog_dir)
   build_player_skills_pct(blog_dir)
 }
