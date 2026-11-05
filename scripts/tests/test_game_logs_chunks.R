@@ -46,11 +46,12 @@ grp_has_wc <- vapply(seq_len(rdr$num_row_groups) - 1L, function(i) {
   "WC" %in% as.data.frame(rdr$ReadRowGroup(i))$league
 }, logical(1))
 chk("WC confined to fewer groups than the file has", sum(grp_has_wc) < 4L, TRUE)
+rm(rdr); invisible(gc())  # Windows: release the handle, or the rename below is refused
 
 # build_game_logs_chunks() touches only game-logs-<season> files
 other <- file.path(dir, "game-logs-2025-2026-by-league.parquet")
 write_parquet(gl, other)
-build_game_logs_chunks(dir)
+chk("build_game_logs_chunks: no file left un-chunked", length(build_game_logs_chunks(dir)), 0L)
 chk("by-league copy untouched", ParquetFileReader$create(other)$num_row_groups, 1L)
 
 if (failed > 0L) { cat(failed, "check(s) failed\n"); quit(status = 1) }
