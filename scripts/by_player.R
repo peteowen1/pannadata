@@ -20,6 +20,14 @@
 
 suppressPackageStartupMessages(library(arrow))
 
+# Size in bytes of a parquet file's footer: the 4-byte little-endian length
+# just before the closing "PAR1" magic.
+parquet_footer_bytes <- function(path) {
+  con <- file(path, "rb"); on.exit(close(con))
+  seek(con, file.size(path) - 8L)
+  readBin(con, "integer", 1L, size = 4L, endian = "little")
+}
+
 # Same rows and columns as `df`, sorted by by[1] (the key a page filters on)
 # then by[-1], in byte order (method = "radix", the order parquet min/max
 # statistics compare in), packed into row groups of up to `rows` rows that
@@ -73,8 +81,7 @@ write_parquet_packed <- function(df, path, by, rows = 5000L, max_footer = 900000
   n_rg <- rdr$num_row_groups
   if (n_rg != length(sizes)) stop(sprintf("%s: wrote %d row groups, expected %d", path, n_rg, length(sizes)))
   if (rdr$num_rows != nrow(df)) stop(sprintf("%s: %d rows written, expected %d", path, rdr$num_rows, nrow(df)))
-  con <- file(path, "rb"); seek(con, file.size(path) - 8L)
-  footer <- readBin(con, "integer", 1L, size = 4L, endian = "little"); close(con)
+  footer <- parquet_footer_bytes(path)
   if (footer > max_footer) stop(sprintf("%s: footer is %d bytes (limit %d) with %d row groups; raise `rows`", path, footer, as.integer(max_footer), n_rg))
   cat(sprintf("%s: %d rows, %d distinct %s, %d row groups (rows per group: min %d, median %d, max %d; largest %s %d rows), footer %d KB, %.2f MB\n",
               path, nrow(df), length(run$lengths), key, n_rg, min(sizes), as.integer(stats::median(sizes)), max(sizes),
@@ -85,6 +92,28 @@ write_parquet_packed <- function(df, path, by, rows = 5000L, max_footer = 900000
 write_parquet_by_player <- function(df, path, by = "player_id", rows = 5000L) {
   if (by[1] != "player_id") stop(path, ": by-player file needs player_id as the first sort key")
   write_parquet_packed(df, path, by = by, rows = rows)
+}
+
+# write_parquet_by_player for a file that has to fit under `max_footer` without
+# the caller knowing how many columns it will have: writes with `rows` per group
+# and, if the footer comes out over `max_footer`, rewrites with `grow` x larger
+# groups until it fits (the footer is row groups x columns, so wider files need
+# bigger groups: the all-seasons game-logs file has 57 columns, and 5,000-row
+# groups gave a footer over 2 MB). Gives up after `max_tries` writes, leaving
+# the last file in place for the caller to remove. Returns the `rows` used.
+write_parquet_by_player_fit <- function(df, path, by = BY_PLAYER_SORT, rows = 5000L,
+                                        max_footer = 900000, grow = 1.5, max_tries = 6L) {
+  if (by[1] != "player_id") stop(path, ": by-player file needs player_id as the first sort key")
+  for (i in seq_len(max_tries)) {
+    write_parquet_packed(df, path, by = by, rows = rows, max_footer = Inf)
+    footer <- parquet_footer_bytes(path)
+    if (footer <= max_footer) return(invisible(rows))
+    cat(sprintf("%s: footer %d KB over the %d KB limit with %d-row groups, retrying with larger groups\n",
+                path, footer %/% 1024L, as.integer(max_footer) %/% 1024L, as.integer(rows)))
+    rows <- as.integer(ceiling(rows * grow))
+  }
+  stop(sprintf("%s: footer still over %d bytes after %d writes (last try %d-row groups)",
+               path, as.integer(max_footer), as.integer(max_tries), as.integer(rows)))
 }
 
 # match-stats-<CODE>-by-team.parquet (pannadata#164 comment 6028785255), for
@@ -369,6 +398,89 @@ build_by_player_copies <- function(blog_dir = "blog") {
   invisible(failed)
 }
 
+# match-stats-by-player.parquet and game-logs-all-by-player.parquet (pannadata#193):
+# ONE file over every league and season, sorted by player_id, for a player
+# search that has to cover every league a player has played in. The blog's
+# game finder otherwise reads all 20 match-stats-<code> shards (1.67M rows) to
+# keep a few hundred, plus one game-logs-<season>-by-league read per season.
+# Same layout as the other by-player files (row groups that never split a
+# player, player_id min/max statistics, footer under 900 KB), via
+# write_parquet_by_player_fit. The per-league files are untouched.
+#
+# - match-stats: every match-stats-<code>.parquet shard (clubs and the
+#   WC/EURO/Copa_America/AFCON shards), `league` kept, columns as the shards.
+# - game-logs: every game-logs-<season>.parquet (not the game-logs.parquet
+#   alias, which repeats the newest season). Seasons differ in columns (older
+#   ones have no piero/epv_*, the newest no panna columns yet), so the file has
+#   the union and a season without a column gets NA there.
+# The name is game-logs-ALL-by-player because game-logs-by-player.parquet is
+# already the current-season file /football/player reads.
+MATCH_STATS_ALL_BY_PLAYER <- "match-stats-by-player.parquet"
+GAME_LOGS_ALL_BY_PLAYER   <- "game-logs-all-by-player.parquet"
+ALL_BY_PLAYER_SORT <- c("player_id", "match_date", "match_id")
+
+# Stack data frames that share most columns: columns a frame lacks are added as
+# NA of the type another frame gives that column; column order follows first
+# appearance.
+bind_rows_fill <- function(dfs) {
+  cols <- unique(unlist(lapply(dfs, names), use.names = FALSE))
+  ref <- list()
+  for (d in dfs) for (nm in names(d)) if (is.null(ref[[nm]])) ref[[nm]] <- d[[nm]][0L]
+  dfs <- lapply(dfs, function(d) {
+    d <- as.data.frame(d)
+    for (nm in setdiff(cols, names(d))) d[[nm]] <- ref[[nm]][rep(NA_integer_, nrow(d))]
+    d[, cols, drop = FALSE]
+  })
+  out <- do.call(rbind, dfs)
+  rownames(out) <- NULL
+  out
+}
+
+# Reads `srcs`, stacks them, checks the row count against the files' footers
+# and writes one by-player file. Returns TRUE if written; on any problem
+# removes `out` and returns FALSE with a warning, so a half-read set of shards
+# never ships as "every league".
+write_all_by_player <- function(srcs, out, rows, require_cols = "player_id") {
+  tryCatch({
+    n_src <- sum(vapply(srcs, function(f) arrow::ParquetFileReader$create(f)$num_rows, numeric(1)))
+    # Required columns are checked per file: stacking would fill a missing one with NA
+    df <- bind_rows_fill(lapply(srcs, function(f) {
+      d <- as.data.frame(arrow::read_parquet(f))
+      miss <- setdiff(require_cols, names(d))
+      if (length(miss)) stop(basename(f), " lacks column(s) ", paste(miss, collapse = ", "))
+      d
+    }))
+    if (nrow(df) != n_src) stop(sprintf("%d rows after stacking %d files, the files hold %d", nrow(df), length(srcs), n_src))
+    write_parquet_by_player_fit(df, out, by = ALL_BY_PLAYER_SORT, rows = rows)
+    TRUE
+  }, error = function(e) {
+    unlink(out)
+    message("::warning::", out, " NOT written: ", conditionMessage(e))
+    FALSE
+  })
+}
+
+build_all_by_player <- function(blog_dir = "blog") {
+  ms <- list.files(blog_dir, pattern = "^match-stats-.+\\.parquet$", full.names = TRUE)
+  ms <- ms[!grepl("-by-(player|team)\\.parquet$", ms)]
+  gl <- list.files(blog_dir, pattern = GAME_LOGS_SEASON_RE, full.names = TRUE)
+  jobs <- list(
+    list(srcs = ms, out = file.path(blog_dir, MATCH_STATS_ALL_BY_PLAYER), rows = 6000L, req = c("player_id", "match_date", "match_id", "league")),
+    list(srcs = gl, out = file.path(blog_dir, GAME_LOGS_ALL_BY_PLAYER),   rows = 15000L, req = c("player_id", "match_date", "match_id", "league"))
+  )
+  ok <- 0L
+  for (j in jobs) {
+    if (length(j$srcs) == 0L) {
+      # Expected in sync-game-logs-r2.yml, which downloads no match-stats
+      cat(basename(j$out), ": no source files in ", blog_dir, ", not written\n", sep = "")
+      next
+    }
+    ok <- ok + write_all_by_player(j$srcs, j$out, j$rows, j$req)
+  }
+  cat(sprintf("all-leagues by-player files: %d written\n", ok))
+  invisible(ok)
+}
+
 if (sys.nframe() == 0L) {
   args <- commandArgs(trailingOnly = TRUE)
   blog_dir <- if (length(args) > 0) args[1] else "blog"
@@ -376,4 +488,5 @@ if (sys.nframe() == 0L) {
   build_game_logs_chunks(blog_dir)
   build_by_league_copies(blog_dir)
   build_player_skills_pct(blog_dir)
+  build_all_by_player(blog_dir)
 }
