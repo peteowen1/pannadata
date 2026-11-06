@@ -267,6 +267,35 @@ def _to_int_or_0(value) -> int:
         return 0
 
 
+GOAL_EVENT_STATS = ("goals", "goalAssist", "ownGoals")
+
+
+def goal_event_counts(live_data: Dict) -> Dict[str, Dict[str, int]]:
+    """Per-player goals, assists and own goals from the payload's goal list.
+
+    panna#431: before 2015-16 most matches carry an EMPTY per-player stat
+    block (EPL 2013-14: 331 of 376 matches), so "goals" read as missing for
+    nearly every scorer, while liveData.goal still lists every goal with its
+    scorer and assister. Where both exist they agree exactly (EPL 2012-13 to
+    2018-19, zero mismatches): goals = type G + PG, ownGoals = type OG,
+    goalAssist = assistPlayerId on any goal type.
+
+    Returns {stat: {player_id: count}} with only non-zero counts.
+    """
+    out = {k: {} for k in GOAL_EVENT_STATS}
+    for g in (live_data or {}).get("goal", []) or []:
+        gtype = g.get("type")
+        scorer = g.get("scorerId")
+        if scorer:
+            key = "goals" if gtype in ("G", "PG") else "ownGoals" if gtype == "OG" else None
+            if key:
+                out[key][scorer] = out[key].get(scorer, 0) + 1
+        assister = g.get("assistPlayerId")
+        if assister:
+            out["goalAssist"][assister] = out["goalAssist"].get(assister, 0) + 1
+    return out
+
+
 def _is_yes(value) -> bool:
     """True for the feed's affirmative flags ("yes", true, 1, "true")."""
     return str(value).strip().lower() in ("yes", "true", "1")
@@ -1032,6 +1061,8 @@ class OptaScraper:
 
         # Process lineups
         lineups = match_data.get("liveData", {}).get("lineUp", [])
+        goal_counts = goal_event_counts(match_data.get("liveData", {}))
+        filled_from_goal_events = 0
 
         for lineup in lineups:
             team_id = lineup.get("contestantId", "")
@@ -1108,7 +1139,21 @@ class OptaScraper:
                 if non_numeric > 0:
                     print(f"  Warning: {non_numeric} non-numeric stat value(s) coerced to 0 for player {row.get('player_name', '?')} in match {match_id}")
 
+                # panna#431: fill goals/assists/own goals from the goal list
+                # when the stat block omits them. Never overrides a value the
+                # stat block sent.
+                pid = row["player_id"]
+                for stat_name in GOAL_EVENT_STATS:
+                    n = goal_counts[stat_name].get(pid, 0)
+                    if n > 0 and stat_name not in row:
+                        row[stat_name] = n
+                        filled_from_goal_events += 1
+
                 rows.append(row)
+
+        if filled_from_goal_events > 0:
+            print(f"  Note: {filled_from_goal_events} goal/assist/own-goal value(s) filled from liveData.goal "
+                  f"in match {match_id} (stat block omitted them)")
 
         return pd.DataFrame(rows)
 
