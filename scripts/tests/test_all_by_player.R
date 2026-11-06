@@ -239,6 +239,26 @@ quietly(ok3 <- build_all_by_player(bd3))
 chk("shard without league: nothing written", ok3, 0L)
 chk("shard without league: stale output removed", file.exists(file.path(bd3, MATCH_STATS_ALL_BY_PLAYER)), FALSE)
 
+# A missing expected shard or season writes nothing and removes stale output
+bd7 <- file.path(td, "blog7"); dir.create(bd7)
+write_parquet(mk_ms("ENG", c("a", "b"), 2L), file.path(bd7, "match-stats-ENG.parquet"))
+write_parquet(mk_gl("2023-2024", c("a", "b")), file.path(bd7, "game-logs-2023-2024.parquet"))
+invisible(file.create(file.path(bd7, MATCH_STATS_ALL_BY_PLAYER)))
+invisible(file.create(file.path(bd7, GAME_LOGS_ALL_INDEX)))
+quietly(ok8 <- build_all_by_player(bd7, expect_match_stats = c("ENG", "ESP"), expect_game_logs = c("2023-2024", "2024-2025")))
+chk("missing expected sources: nothing written", ok8, 0L)
+chk("missing expected shard: stale match-stats output removed", file.exists(file.path(bd7, MATCH_STATS_ALL_BY_PLAYER)), FALSE)
+chk("missing expected season: stale index removed", file.exists(file.path(bd7, GAME_LOGS_ALL_INDEX)), FALSE)
+# ...and with the expected lists met, both are written
+quietly(ok9 <- build_all_by_player(bd7, expect_match_stats = "ENG", expect_game_logs = "2023-2024"))
+chk("expected sources all present: both written", ok9, 2L)
+# The lists come from space-separated env vars; unset means no check
+Sys.unsetenv(c("ALL_BY_PLAYER_MATCH_STATS", "ALL_BY_PLAYER_GAME_LOGS"))
+chk("unset env: no expected files", expected_from_env("ALL_BY_PLAYER_MATCH_STATS"), character(0))
+Sys.setenv(ALL_BY_PLAYER_MATCH_STATS = " ENG  WC ")
+chk("env list split on spaces", expected_from_env("ALL_BY_PLAYER_MATCH_STATS"), c("ENG", "WC"))
+Sys.unsetenv("ALL_BY_PLAYER_MATCH_STATS")
+
 # prove this harness can fail
 local({
   before <- failed

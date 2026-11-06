@@ -79,11 +79,13 @@ write_parquet_packed <- function(df, path, by, rows = 5000L, max_footer = 900000
   sink$close()
   rdr <- arrow::ParquetFileReader$create(path)
   n_rg <- rdr$num_row_groups
-  if (n_rg != length(sizes)) stop(sprintf("%s: wrote %d row groups, expected %d", path, n_rg, length(sizes)))
-  if (rdr$num_rows != nrow(df)) stop(sprintf("%s: %d rows written, expected %d", path, rdr$num_rows, nrow(df)))
-  # Let go of the reader before anything renames or rewrites the file: on
-  # Windows an open (memory-mapped) reader blocks that (error 1224).
+  n_rows <- rdr$num_rows
+  # Let go of the reader before anything renames, rewrites or (on a failed check
+  # below) deletes the file: on Windows an open (memory-mapped) reader blocks
+  # that (error 1224).
   rm(rdr); invisible(gc())
+  if (n_rg != length(sizes)) stop(sprintf("%s: wrote %d row groups, expected %d", path, n_rg, length(sizes)))
+  if (n_rows != nrow(df)) stop(sprintf("%s: %d rows written, expected %d", path, n_rows, nrow(df)))
   footer <- parquet_footer_bytes(path)
   if (footer > max_footer) stop(sprintf("%s: footer is %d bytes (limit %d) with %d row groups; raise `rows`", path, footer, as.integer(max_footer), n_rg))
   cat(sprintf("%s: %d rows, %d distinct %s, %d row groups (rows per group: min %d, median %d, max %d; largest %s %d rows), footer %d KB, %.2f MB\n",
@@ -577,20 +579,50 @@ write_game_logs_all_by_player <- function(srcs, blog_dir, rows, require_cols = "
   })
 }
 
-build_all_by_player <- function(blog_dir = "blog") {
+# The files a complete source set must contain, from the workflow (space-
+# separated): ALL_BY_PLAYER_MATCH_STATS lists league codes (match-stats-<CODE>),
+# ALL_BY_PLAYER_GAME_LOGS lists seasons (game-logs-<season>). Unset or empty =
+# no check (local runs, the tests). Without it a shard or season that failed to
+# build or download would publish a smaller file as "every league": the build
+# only ever sees the files that happen to be in blog/.
+expected_from_env <- function(var) {
+  v <- trimws(Sys.getenv(var, ""))
+  if (!nzchar(v)) character(0) else strsplit(v, "[[:space:]]+")[[1]]
+}
+
+# TRUE if every expected file is among srcs; otherwise a warning naming the
+# missing ones and FALSE.
+sources_complete <- function(what, srcs, expected_files) {
+  miss <- setdiff(expected_files, basename(srcs))
+  if (length(miss)) {
+    message("::warning::", what, " NOT written: ", length(miss), " expected source file(s) missing (",
+            paste(miss, collapse = ", "), "), so it would not cover every league and season")
+    return(FALSE)
+  }
+  TRUE
+}
+
+build_all_by_player <- function(blog_dir = "blog",
+                                expect_match_stats = expected_from_env("ALL_BY_PLAYER_MATCH_STATS"),
+                                expect_game_logs = expected_from_env("ALL_BY_PLAYER_GAME_LOGS")) {
   ms <- list.files(blog_dir, pattern = "^match-stats-.+\\.parquet$", full.names = TRUE)
   ms <- ms[!grepl("-by-(player|team)\\.parquet$", ms)]
   gl <- list.files(blog_dir, pattern = GAME_LOGS_SEASON_RE, full.names = TRUE)
   req <- c("player_id", "match_date", "match_id", "league")
   ok <- 0L
+  ms_out <- file.path(blog_dir, MATCH_STATS_ALL_BY_PLAYER)
   if (length(ms) == 0L) {
     # Expected in sync-game-logs-r2.yml, which downloads no match-stats
     cat(MATCH_STATS_ALL_BY_PLAYER, ": no source files in ", blog_dir, ", not written\n", sep = "")
+  } else if (!sources_complete(MATCH_STATS_ALL_BY_PLAYER, ms, sprintf("match-stats-%s.parquet", expect_match_stats))) {
+    unlink(ms_out)   # an older copy in blog/ must not ship in its place
   } else {
-    ok <- ok + write_all_by_player(ms, file.path(blog_dir, MATCH_STATS_ALL_BY_PLAYER), 6000L, req)
+    ok <- ok + write_all_by_player(ms, ms_out, 6000L, req)
   }
   if (length(gl) == 0L) {
     cat(GAME_LOGS_ALL_PARTS_STEM, ": no source files in ", blog_dir, ", not written\n", sep = "")
+  } else if (!sources_complete(GAME_LOGS_ALL_PARTS_STEM, gl, sprintf("game-logs-%s.parquet", expect_game_logs))) {
+    unlink(list.files(blog_dir, pattern = GAME_LOGS_ALL_PARTS_RE, full.names = TRUE))
   } else {
     ok <- ok + write_game_logs_all_by_player(gl, blog_dir, 15000L, req)
   }
