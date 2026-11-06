@@ -29,13 +29,13 @@ jobs:
     # the job BEFORE the R2 upload step, shipping nothing at all.
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: r-lib/actions/setup-r@v2
+      - uses: r-lib/actions/setup-r@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
         with:
           use-public-rspm: true
 
-      - uses: r-lib/actions/setup-r-dependencies@v2
+      - uses: r-lib/actions/setup-r-dependencies@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
         with:
           packages: |
             any::arrow
@@ -864,9 +864,29 @@ jobs:
       # player-skills-pct.parquet and adds primary_position to
       # player-index.parquet from blog/player-skills.parquet (pannadata#182),
       # so it must stay after the "Download and filter player skills" step.
+      #
+      # The all-leagues files (match-stats-by-player.parquet and the
+      # game-logs-all-by-player parts + index, pannadata#193) are written only
+      # when every source below is present, so a shard or season that failed
+      # never publishes a smaller file as "every league". When one is not
+      # written, R2 keeps the last complete copy and the gate after the upload
+      # turns the run red. MATCH_STATS list = HARD_MATCH_STATS in that gate;
+      # seasons = every game_logs_<season>.parquet on blog-latest.
       - name: Build per-player, per-team and per-league copies of match-stats and game-logs
         continue-on-error: true
-        run: Rscript scripts/by_player.R blog
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          export ALL_BY_PLAYER_MATCH_STATS="ENG ENG2 ESP FRA GER ITA NED POR SCO TUR UCL UEL UECL BEL MEX SAU WC EURO Copa_America AFCON"
+          ALL_BY_PLAYER_GAME_LOGS=$(gh release view blog-latest --json assets --jq '.assets[].name' \
+            | sed -n 's/^game_logs_\([0-9]\{4\}-[0-9]\{4\}\)\.parquet$/\1/p' | tr '\n' ' ')
+          if [ -z "$ALL_BY_PLAYER_GAME_LOGS" ]; then
+            # Never fall back to "no check": that is the partial publish this guards
+            echo "::warning::could not list game_logs seasons on blog-latest; the all-leagues game-logs parts will not be built"
+            ALL_BY_PLAYER_GAME_LOGS="unlisted"
+          fi
+          export ALL_BY_PLAYER_GAME_LOGS
+          Rscript scripts/by_player.R blog
 
       - name: Strip oversized R metadata from parquets
         # Browsers download a parquet's whole footer before any data; a grouped
@@ -899,6 +919,12 @@ jobs:
           # The live worker's weak-foot table (JSON, not parquet), when built.
           if [ "$upload_errors" -eq 0 ] && [ -f blog/shot-foot-history.json ]; then
             vb_sh_r2_upload_all "inthegame-data/football" blog/shot-foot-history.json || upload_errors=1
+          fi
+          # The index of the game-logs-all-by-player parts (pannadata#193), after
+          # the parts it lists (blog/*.parquet above). Parts from an earlier run
+          # that this index no longer names stay on R2, unread.
+          if [ "$upload_errors" -eq 0 ] && [ -f blog/game-logs-all-by-player-index.json ]; then
+            vb_sh_r2_upload_all "inthegame-data/football" blog/game-logs-all-by-player-index.json || upload_errors=1
           fi
           if [ "$upload_errors" -gt 0 ]; then
             echo "::error::R2 upload failed (fail-fast) — bus_manifest.json NOT updated; previous manifest remains the commit record"
@@ -936,7 +962,11 @@ jobs:
               missing=$((missing + 1))
             fi
           done
-          for f in blog/ratings.parquet blog/player-details.parquet blog/match-shots.parquet; do
+          # The all-leagues by-player files (pannadata#193) are skipped, never
+          # shipped partial, when a source is missing or a check fails; R2 then
+          # keeps the last complete copy, and this makes the run say so.
+          for f in blog/ratings.parquet blog/player-details.parquet blog/match-shots.parquet \
+                   blog/match-stats-by-player.parquet blog/game-logs-all-by-player-index.json; do
             if [ ! -f "$f" ]; then
               echo "::error::Missing expected artifact: $f (load-bearing build step skipped — stale R2 object)"
               missing=$((missing + 1))

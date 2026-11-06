@@ -36,18 +36,18 @@ jobs:
       # checkout-free for speed (the gh downloads below pass --repo explicitly
       # for that reason) -- don't widen this into a full checkout.
       - name: Checkout versebus.sh and by_player.R only
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: |
             scripts/versebus.sh
             scripts/by_player.R
           sparse-checkout-cone-mode: false
 
-      - uses: r-lib/actions/setup-r@v2
+      - uses: r-lib/actions/setup-r@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
         with:
           use-public-rspm: true
 
-      - uses: r-lib/actions/setup-r-dependencies@v2
+      - uses: r-lib/actions/setup-r-dependencies@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
         with:
           packages: |
             any::arrow
@@ -91,9 +91,22 @@ jobs:
       # game-logs-by-player.parquet and one game-logs-<season>-by-league.parquet
       # per season. Additive and continue-on-error, as there: a failed copy
       # leaves the page on the original file.
+      # The game-logs-all-by-player parts + index (pannadata#193) are built only
+      # when every season on blog-latest is here (see build-blog-data.yml);
+      # otherwise R2 keeps the last complete set and the last step goes red.
       - name: Build by-player and by-league copies of game-logs
         continue-on-error: true
-        run: Rscript scripts/by_player.R blog
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ALL_BY_PLAYER_GAME_LOGS=$(gh release view blog-latest --repo peteowen1/pannadata --json assets --jq '.assets[].name' \
+            | sed -n 's/^game_logs_\([0-9]\{4\}-[0-9]\{4\}\)\.parquet$/\1/p' | tr '\n' ' ')
+          if [ -z "$ALL_BY_PLAYER_GAME_LOGS" ]; then
+            echo "::warning::could not list game_logs seasons on blog-latest; the all-leagues game-logs parts will not be built"
+            ALL_BY_PLAYER_GAME_LOGS="unlisted"
+          fi
+          export ALL_BY_PLAYER_GAME_LOGS
+          Rscript scripts/by_player.R blog
 
       - name: List files to sync
         run: ls -lh blog/game-logs*.parquet
@@ -117,9 +130,22 @@ jobs:
           # future || true / if-wrap around the upload call.
           upload_errors=0
           vb_sh_r2_upload_all "inthegame-data/football" blog/game-logs*.parquet || upload_errors=1
+          # The parts' index, after the parts (pannadata#193)
+          if [ "$upload_errors" -eq 0 ] && [ -f blog/game-logs-all-by-player-index.json ]; then
+            vb_sh_r2_upload_all "inthegame-data/football" blog/game-logs-all-by-player-index.json || upload_errors=1
+          fi
           if [ "$upload_errors" -gt 0 ]; then
             echo "::error::R2 upload failed (fail-fast) — bus_manifest.json NOT updated; previous manifest remains the commit record"
             exit 1
           fi
           vb_sh_r2_manifest_last "inthegame-data/football" "$upload_errors" "r2_bus_manifest.json" blog/game-logs*.parquet
           echo "game-logs synced to R2."
+
+      # After the upload, so the healthy files still ship: a skipped
+      # all-leagues build leaves R2 on its last complete set, and says so here.
+      - name: Fail run if the all-leagues game-logs parts were not built
+        run: |
+          if [ ! -f blog/game-logs-all-by-player-index.json ]; then
+            echo "::error::blog/game-logs-all-by-player-index.json not built (see the by-player step's warnings); R2 keeps the previous parts"
+            exit 1
+          fi
