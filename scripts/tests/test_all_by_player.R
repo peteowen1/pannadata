@@ -84,12 +84,14 @@ chk("player_id must lead the sort", grepl("player_id as the first sort key", err
 
 # --- build_all_by_player on a small blog dir ---
 bd <- file.path(td, "blog"); dir.create(bd)
-mk_ms <- function(league, ids, n_each) {
+mk_ms <- function(league, ids, n_each, start = as.Date("2024-08-01"), season = "2024-2025") {
   d <- data.frame(
     player_id = rep(ids, each = n_each), league = league,
-    match_date = as.Date("2024-08-01") + rep(seq_len(n_each) * 7L, times = length(ids)),
-    match_id = sprintf("%s-%d", league, rep(seq_len(n_each), times = length(ids))),
-    goals = rep(1:2, length.out = length(ids) * n_each), stringsAsFactors = FALSE)
+    match_date = start + rep(seq_len(n_each) * 7L, times = length(ids)),
+    match_id = sprintf("%s-%s-%d", league, season, rep(seq_len(n_each), times = length(ids))),
+    goals = rep(1:2, length.out = length(ids) * n_each),
+    player_name = paste0("Name ", rep(ids, each = n_each)), team_name = paste0(league, " FC"), season = season,
+    stringsAsFactors = FALSE)
   d[sample(nrow(d)), ]
 }
 # Player "mover" appears in both leagues
@@ -118,11 +120,46 @@ chk("both files written", ok, 2L)
 ms <- rd(file.path(bd, MATCH_STATS_ALL_BY_PLAYER))
 chk("match-stats: rows = both shards only", nrow(ms), 3L * 5L + 2L * 3L)
 chk("match-stats: league kept", sort(unique(ms$league)), c("ENG", "WC"))
-chk("match-stats: columns as the shards", names(ms), c("player_id", "league", "match_date", "match_id", "goals"))
+chk("match-stats: columns as the shards, plus opponent", names(ms), c("player_id", "league", "match_date", "match_id", "goals", "player_name", "team_name", "season", "opponent"))
+
+# add_opponent: the other club in the match; NA when the match has one club or three
+ao <- add_opponent(data.frame(
+  match_id  = c("m1", "m1", "m1", "m2", "m3", "m3", "m3", NA),
+  team_name = c("Arsenal", "Arsenal", "Chelsea", "Leeds", "A", "B", "C", "Arsenal"), stringsAsFactors = FALSE))
+chk("opponent: each side gets the other", ao$opponent[1:3], c("Chelsea", "Chelsea", "Arsenal"))
+chk("opponent: a one-club match is NA", ao$opponent[4], NA_character_)
+chk("opponent: a three-club match is NA", ao$opponent[5:7], rep(NA_character_, 3))
+chk("opponent: no match_id is NA", ao$opponent[8], NA_character_)
 chk("match-stats: no by-player/by-team rows read back in", "zzz" %in% ms$player_id, FALSE)
 chk("match-stats: sorted by player_id then match_date",
     order(ms$player_id, ms$match_date, ms$match_id, method = "radix"), seq_len(nrow(ms)))
 chk("match-stats: mover has both leagues together", sort(unique(ms$league[ms$player_id == "mover"])), c("ENG", "WC"))
+
+# The player list, written beside match-stats-by-player from the same rows
+pl <- rd(file.path(bd, MATCH_STATS_PLAYERS))
+chk("players: one row per player in match-stats", sort(pl$player_id), sort(unique(ms$player_id)))
+chk("players: columns", names(pl), c("player_id", "player_name", "team_name", "league", "first_season", "last_season", "games"))
+chk("players: games = their match-stats rows", pl$games[pl$player_id == "mover"], 5L + 3L)
+chk("players: sorted by name", order(pl$player_name, pl$player_id, method = "radix"), seq_len(nrow(pl)))
+chk("players: a WC-only player keeps the WC row", pl$league[pl$player_id == "c"], "WC")
+chk("players: the shard list never reads the player list back in", nrow(rd(file.path(bd, MATCH_STATS_ALL_BY_PLAYER))), nrow(ms))
+
+# player_list_from_match_stats: the label comes from the latest CLUB game, not a
+# later tournament; seasons span every game, tournaments included
+pls <- player_list_from_match_stats(rbind(
+  mk_ms("ESP", "x", 2L, as.Date("2021-09-01"), "2021-2022"),
+  mk_ms("ENG", "x", 2L, as.Date("2023-09-01"), "2023-2024"),
+  mk_ms("WC",  "x", 2L, as.Date("2024-06-20"), "2024")))
+pls_x <- pls[pls$player_id == "x", ]
+chk("players: latest club over a later World Cup", c(pls_x$league, pls_x$team_name), c("ENG", "ENG FC"))
+chk("players: first and last season over every game", c(pls_x$first_season, pls_x$last_season), c(2021L, 2024L))
+# A tournament season string sorts below its own year's club season as text
+# ("2026 C..." < "2026-2027"); as start years they tie
+pls2 <- player_list_from_match_stats(rbind(
+  mk_ms("ENG", "y", 1L, as.Date("2025-09-01"), "2025-2026"),
+  mk_ms("WC",  "y", 1L, as.Date("2026-06-20"), "2026 Canada-Mexico-USA")))
+chk("players: tournament season counts as its start year", pls2$last_season, 2026L)
+chk("players: games over every league", pls_x$games, 6L)
 
 part_files <- function(dir) sort(list.files(dir, pattern = "^game-logs-all-by-player-part-[0-9]+\\.parquet$", full.names = TRUE))
 read_parts <- function(dir) do.call(rbind, lapply(part_files(dir), rd))
@@ -248,6 +285,7 @@ invisible(file.create(file.path(bd7, GAME_LOGS_ALL_INDEX)))
 quietly(ok8 <- build_all_by_player(bd7, expect_match_stats = c("ENG", "ESP"), expect_game_logs = c("2023-2024", "2024-2025")))
 chk("missing expected sources: nothing written", ok8, 0L)
 chk("missing expected shard: stale match-stats output removed", file.exists(file.path(bd7, MATCH_STATS_ALL_BY_PLAYER)), FALSE)
+chk("missing expected shard: no player list", file.exists(file.path(bd7, MATCH_STATS_PLAYERS)), FALSE)
 chk("missing expected season: stale index removed", file.exists(file.path(bd7, GAME_LOGS_ALL_INDEX)), FALSE)
 # ...and with the expected lists met, both are written
 quietly(ok9 <- build_all_by_player(bd7, expect_match_stats = "ENG", expect_game_logs = "2023-2024"))
