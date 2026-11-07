@@ -120,7 +120,16 @@ chk("both files written", ok, 2L)
 ms <- rd(file.path(bd, MATCH_STATS_ALL_BY_PLAYER))
 chk("match-stats: rows = both shards only", nrow(ms), 3L * 5L + 2L * 3L)
 chk("match-stats: league kept", sort(unique(ms$league)), c("ENG", "WC"))
-chk("match-stats: columns as the shards", names(ms), c("player_id", "league", "match_date", "match_id", "goals", "player_name", "team_name", "season"))
+chk("match-stats: columns as the shards, plus opponent", names(ms), c("player_id", "league", "match_date", "match_id", "goals", "player_name", "team_name", "season", "opponent"))
+
+# add_opponent: the other club in the match; NA when the match has one club or three
+ao <- add_opponent(data.frame(
+  match_id  = c("m1", "m1", "m1", "m2", "m3", "m3", "m3", NA),
+  team_name = c("Arsenal", "Arsenal", "Chelsea", "Leeds", "A", "B", "C", "Arsenal"), stringsAsFactors = FALSE))
+chk("opponent: each side gets the other", ao$opponent[1:3], c("Chelsea", "Chelsea", "Arsenal"))
+chk("opponent: a one-club match is NA", ao$opponent[4], NA_character_)
+chk("opponent: a three-club match is NA", ao$opponent[5:7], rep(NA_character_, 3))
+chk("opponent: no match_id is NA", ao$opponent[8], NA_character_)
 chk("match-stats: no by-player/by-team rows read back in", "zzz" %in% ms$player_id, FALSE)
 chk("match-stats: sorted by player_id then match_date",
     order(ms$player_id, ms$match_date, ms$match_id, method = "radix"), seq_len(nrow(ms)))

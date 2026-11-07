@@ -393,7 +393,9 @@ BY_PLAYER_SORT <- c("player_id", "season", "match_date", "match_id")
 
 build_by_player_copies <- function(blog_dir = "blog") {
   ms <- list.files(blog_dir, pattern = "^match-stats-.+\\.parquet$", full.names = TRUE)
-  ms <- ms[!grepl("-by-(player|team)\\.parquet$", ms)]
+  # match-stats-players.parquet (build_all_by_player) is a list, not a league
+  # shard: a re-run over the same blog/ would otherwise copy it per player/team
+  ms <- ms[!grepl("-by-(player|team)\\.parquet$", ms) & basename(ms) != MATCH_STATS_PLAYERS]
   gl <- file.path(blog_dir, "game-logs.parquet")
   if (!file.exists(gl)) message("::warning::", gl, " not present, so no game-logs-by-player.parquet this run")
   # One job per output file: (source, output, writer)
@@ -456,6 +458,24 @@ MATCH_STATS_PLAYERS <- "match-stats-players.parquet"
 # Tournament shards: a player's label names their latest CLUB, so a World Cup
 # game after the season does not relabel a club player with a country.
 ALL_BY_PLAYER_TOURNAMENTS <- c("WC", "EURO", "Copa_America", "AFCON")
+
+# `opponent`: the other club in the row's match_id, NA unless the match has
+# exactly two team_names. A by-player read holds one player's rows, so the
+# blog cannot work this out from the other side's players as it does from a
+# whole league shard; done here from every shard, it uses the same club names.
+add_opponent <- function(df) {
+  u <- unique(df[!is.na(df$match_id) & !is.na(df$team_name), c("match_id", "team_name")])
+  u <- u[order(u$match_id, u$team_name, method = "radix"), , drop = FALSE]
+  n <- table(u$match_id)
+  first <- u[!duplicated(u$match_id), , drop = FALSE]
+  last  <- u[!duplicated(u$match_id, fromLast = TRUE), , drop = FALSE]
+  two <- as.vector(n[first$match_id]) == 2L
+  t1 <- setNames(first$team_name[two], first$match_id[two])
+  t2 <- setNames(last$team_name[two], last$match_id[two])
+  a <- unname(t1[df$match_id]); b <- unname(t2[df$match_id])
+  df$opponent <- ifelse(is.na(a) | is.na(df$team_name), NA_character_, ifelse(df$team_name == a, b, a))
+  df
+}
 
 # player_id, player_name, team_name, league (all from the latest club game, else
 # the latest game), first_season, last_season (start years, integer), games. Sorted by player_name
@@ -554,6 +574,7 @@ check_all_by_player_size <- function(path) {
 write_all_by_player <- function(srcs, out, rows, require_cols = "player_id", players_out = NULL) {
   tryCatch({
     df <- read_stacked_sources(srcs, require_cols)
+    if (!is.null(players_out)) df <- add_opponent(df)
     write_parquet_by_player_fit(df, out, by = ALL_BY_PLAYER_SORT, rows = rows)
     check_all_by_player_size(out)
     if (!is.null(players_out)) write_player_list(player_list_from_match_stats(df), players_out)
