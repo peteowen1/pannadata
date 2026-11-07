@@ -966,7 +966,7 @@ jobs:
           # shipped partial, when a source is missing or a check fails; R2 then
           # keeps the last complete copy, and this makes the run say so.
           for f in blog/ratings.parquet blog/player-details.parquet blog/match-shots.parquet \
-                   blog/match-stats-by-player.parquet blog/game-logs-all-by-player-index.json; do
+                   blog/match-stats-by-player.parquet blog/match-stats-players.parquet blog/game-logs-all-by-player-index.json; do
             if [ ! -f "$f" ]; then
               echo "::error::Missing expected artifact: $f (load-bearing build step skipped — stale R2 object)"
               missing=$((missing + 1))

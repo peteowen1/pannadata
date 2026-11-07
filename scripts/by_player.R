@@ -448,6 +448,52 @@ ALL_BY_PLAYER_SORT <- c("player_id", "match_date", "match_id")
 # (MAX_UPLOAD_SIZE_BYTES, wrangler 4.83) with room for the next season's growth.
 ALL_BY_PLAYER_MAX_BYTES <- 250e6
 
+# match-stats-players.parquet: one row per player in match-stats-by-player, for
+# the blog Game Finder's "Every league" player box. The search index the site
+# already has covers rated players only (19,985 on 2026-11-07, against 38,428
+# here), and reading the names out of the 75 MB file is 1.67M rows in a browser.
+MATCH_STATS_PLAYERS <- "match-stats-players.parquet"
+# Tournament shards: a player's label names their latest CLUB, so a World Cup
+# game after the season does not relabel a club player with a country.
+ALL_BY_PLAYER_TOURNAMENTS <- c("WC", "EURO", "Copa_America", "AFCON")
+
+# player_id, player_name, team_name, league (all from the latest club game, else
+# the latest game), first_season, last_season (start years, integer), games. Sorted by player_name
+# then player_id. `df` rows need not be sorted.
+player_list_from_match_stats <- function(df) {
+  d <- df[, c("player_id", "player_name", "team_name", "league", "season", "match_date", "match_id")]
+  d <- d[!is.na(d$player_id), , drop = FALSE]
+  if (!nrow(d)) stop("no player rows to list")
+  d <- d[order(d$player_id, d$match_date, d$match_id, method = "radix"), , drop = FALSE]
+  last <- !duplicated(d$player_id, fromLast = TRUE)
+  club <- d[!(d$league %in% ALL_BY_PLAYER_TOURNAMENTS), , drop = FALSE]
+  club_last <- club[!duplicated(club$player_id, fromLast = TRUE), c("player_id", "player_name", "team_name", "league")]
+  out <- d[last, c("player_id", "player_name", "team_name", "league")]
+  hit <- match(out$player_id, club_last$player_id)
+  has <- !is.na(hit)
+  out[has, c("player_name", "team_name", "league")] <- club_last[hit[has], c("player_name", "team_name", "league")]
+  # As START years: a club season reads "2024-2025" but a tournament "2026
+  # Canada-Mexico-USA", so the strings do not sort as seasons do.
+  start <- suppressWarnings(as.integer(substr(d$season, 1L, 4L)))
+  if (anyNA(start)) stop(sum(is.na(start)), " rows with a season that does not start with a year")
+  out$first_season <- as.integer(tapply(start, d$player_id, min)[out$player_id])
+  out$last_season  <- as.integer(tapply(start, d$player_id, max)[out$player_id])
+  out$games <- as.integer(table(d$player_id)[out$player_id])
+  out <- out[order(out$player_name, out$player_id, method = "radix"), , drop = FALSE]
+  rownames(out) <- NULL
+  out
+}
+
+write_player_list <- function(players, path) {
+  tbl <- arrow::arrow_table(players)
+  tbl$metadata$r <- NULL   # R attributes in the footer (see write_parquet_packed)
+  tmp <- paste0(path, ".tmp")
+  arrow::write_parquet(tbl, tmp, compression = "snappy")
+  if (!file.rename(tmp, path)) { unlink(tmp); stop("could not move ", tmp, " to ", path) }
+  cat(sprintf("%s: %d players, %.2f MB\n", path, nrow(players), file.size(path) / 1e6))
+  invisible(path)
+}
+
 # Stack data frames that share most columns: columns a frame lacks are added as
 # NA of the type the other frames give that column; column order follows first
 # appearance. A column whose type differs between frames is an error, not a
@@ -501,14 +547,19 @@ check_all_by_player_size <- function(path) {
 # match-stats-by-player.parquet. Returns TRUE if written; on a problem removes
 # `out` and returns FALSE with a warning, so a half-read set of shards never
 # ships as "every league". A file at ALL_BY_PLAYER_MAX_BYTES or over is a hard error.
-write_all_by_player <- function(srcs, out, rows, require_cols = "player_id") {
+#
+# With `players_out`, also writes the list of every player in it (see
+# player_list_from_match_stats), from the same rows, so the two always agree;
+# either failing removes both.
+write_all_by_player <- function(srcs, out, rows, require_cols = "player_id", players_out = NULL) {
   tryCatch({
     df <- read_stacked_sources(srcs, require_cols)
     write_parquet_by_player_fit(df, out, by = ALL_BY_PLAYER_SORT, rows = rows)
     check_all_by_player_size(out)
+    if (!is.null(players_out)) write_player_list(player_list_from_match_stats(df), players_out)
     TRUE
   }, error = function(e) {
-    unlink(out)
+    unlink(c(out, players_out))
     if (inherits(e, "all_by_player_too_big")) stop(e)
     message("::warning::", out, " NOT written: ", conditionMessage(e))
     FALSE
@@ -606,18 +657,19 @@ build_all_by_player <- function(blog_dir = "blog",
                                 expect_match_stats = expected_from_env("ALL_BY_PLAYER_MATCH_STATS"),
                                 expect_game_logs = expected_from_env("ALL_BY_PLAYER_GAME_LOGS")) {
   ms <- list.files(blog_dir, pattern = "^match-stats-.+\\.parquet$", full.names = TRUE)
-  ms <- ms[!grepl("-by-(player|team)\\.parquet$", ms)]
+  ms <- ms[!grepl("-by-(player|team)\\.parquet$", ms) & basename(ms) != MATCH_STATS_PLAYERS]
   gl <- list.files(blog_dir, pattern = GAME_LOGS_SEASON_RE, full.names = TRUE)
   req <- c("player_id", "match_date", "match_id", "league")
   ok <- 0L
   ms_out <- file.path(blog_dir, MATCH_STATS_ALL_BY_PLAYER)
+  pl_out <- file.path(blog_dir, MATCH_STATS_PLAYERS)
   if (length(ms) == 0L) {
     # Expected in sync-game-logs-r2.yml, which downloads no match-stats
     cat(MATCH_STATS_ALL_BY_PLAYER, ": no source files in ", blog_dir, ", not written\n", sep = "")
   } else if (!sources_complete(MATCH_STATS_ALL_BY_PLAYER, ms, sprintf("match-stats-%s.parquet", expect_match_stats))) {
-    unlink(ms_out)   # an older copy in blog/ must not ship in its place
+    unlink(c(ms_out, pl_out))   # older copies in blog/ must not ship in their place
   } else {
-    ok <- ok + write_all_by_player(ms, ms_out, 6000L, req)
+    ok <- ok + write_all_by_player(ms, ms_out, 6000L, req, players_out = pl_out)
   }
   if (length(gl) == 0L) {
     cat(GAME_LOGS_ALL_PARTS_STEM, ": no source files in ", blog_dir, ", not written\n", sep = "")
