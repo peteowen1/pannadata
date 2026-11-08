@@ -54,5 +54,38 @@ write_parquet(gl, other)
 chk("build_game_logs_chunks: no file left un-chunked", length(build_game_logs_chunks(dir)), 0L)
 chk("by-league copy untouched", ParquetFileReader$create(other)$num_row_groups, 1L)
 
+# The current-season alias game-logs.parquet (pannadata#224): sorted by match_id,
+# not league, in 20,000-row groups. Each group covers a contiguous match_id range,
+# so a match_id read can skip the groups that cannot hold it.
+set.seed(224)
+n_m <- 25000L
+al <- data.frame(
+  match_id = sprintf("m%05d", sample.int(2000L, n_m, replace = TRUE)),
+  player_id = sprintf("p%05d", seq_len(n_m)),
+  league = sample(c("WC", "ENG", "ESP"), n_m, replace = TRUE),
+  epv = round(runif(n_m), 3),
+  stringsAsFactors = FALSE
+)
+alias_dir <- tempfile("alias"); dir.create(alias_dir)
+alias <- file.path(alias_dir, "game-logs.parquet")
+write_parquet(al, alias)  # one row group, match_id unsorted
+chk("alias: no failures", length(build_game_logs_chunks(alias_dir)), 0L)
+ra <- ParquetFileReader$create(alias)
+chk("alias: 2 row groups at 20,000 rows", ra$num_row_groups, 2L)
+out_a <- as.data.frame(read_parquet(alias))
+chk("alias: same row count", nrow(out_a), n_m)
+chk("alias: sorted by match_id", identical(order(out_a$match_id, method = "radix"), seq_len(n_m)), TRUE)
+want_a <- al[order(al$match_id, method = "radix"), ]; rownames(want_a) <- NULL
+chk("alias: same rows, stable within match_id", out_a$player_id, want_a$player_id)
+chk("alias: same values", out_a$epv, want_a$epv)
+rng <- lapply(seq_len(ra$num_row_groups) - 1L, function(i) range(as.data.frame(ra$ReadRowGroup(i))$match_id))
+contiguous <- all(vapply(seq_len(length(rng) - 1L), function(k) rng[[k]][2] <= rng[[k + 1L]][1], logical(1)))
+chk("alias: groups contiguous on match_id", contiguous, TRUE)
+# a match whose rows sit in one group: a match_id read skips the other group
+hits <- vapply(unique(out_a$match_id), function(m)
+  sum(vapply(rng, function(r) m >= r[1] && m <= r[2], logical(1))), integer(1))
+chk("alias: some match_id lives in one group", any(hits == 1L), TRUE)
+rm(ra); invisible(gc())
+
 if (failed > 0L) { cat(failed, "check(s) failed\n"); quit(status = 1) }
 cat("all game-logs chunk checks passed\n")
