@@ -336,11 +336,14 @@ GAME_LOGS_SEASON_RE <- "^game-logs-[0-9]{4}-[0-9]{4}\\.parquet$"
 # 10,000, because the string columns' dictionaries are rebuilt per group; the
 # footer is 72 KB against 135 KB. A season under `rows` rows stays one group.
 # Failure-soft per file: the original stays in place.
-rechunk_game_logs_by_league <- function(path, rows = 20000L) {
+# `by` is the column the rows are sorted on: "league" for the per-season files,
+# "match_id" for the current-season alias (pannadata#224, see build_game_logs_chunks).
+rechunk_game_logs_by_league <- function(path, rows = 20000L, by = "league") {
   df <- as.data.frame(arrow::read_parquet(path))
-  if (!is.character(df$league)) stop(path, ": league is ", class(df$league)[1], ", expected a plain string column")
-  if (anyNA(df$league)) stop(sprintf("%s: %d rows with NA league", path, sum(is.na(df$league))))
-  df <- df[order(df$league, method = "radix"), , drop = FALSE]
+  if (!by %in% names(df)) stop(path, ": no ", by, " column")
+  if (!is.character(df[[by]])) stop(path, ": ", by, " is ", class(df[[by]])[1], ", expected a plain string column")
+  if (anyNA(df[[by]])) stop(sprintf("%s: %d rows with NA %s", path, sum(is.na(df[[by]])), by))
+  df <- df[order(df[[by]], method = "radix"), , drop = FALSE]
   rownames(df) <- NULL
   tbl <- arrow::arrow_table(df)
   tbl$metadata$r <- NULL  # R attributes in the footer, as by_player.R's other writers
@@ -357,17 +360,33 @@ rechunk_game_logs_by_league <- function(path, rows = 20000L) {
   invisible(as.integer(expect_rg))
 }
 
+# The current-season alias game-logs.parquet (pannadata#224) is re-chunked
+# sorted by match_id, not league: football/match-chains filters it on match_id,
+# and in a league-sorted file one match's rows are spread over every group. The
+# per-season files stay league-sorted (their readers filter on league). Its
+# other readers read the whole file, which the row groups don't change, apart
+# from the per-group dictionaries. Measured on the 2026-11-08 alias (54,010 rows,
+# R arrow, snappy): 4.67 MiB as one group, 5.85 MiB at 20,000 rows (3 groups),
+# 8.06 MiB at 5,000 (11 groups). 20,000 is the default: a match's rows are
+# contiguous, so only the two matches that straddle a boundary read two groups,
+# and a match_id read touches one group of three; 5,000 would cut that to one
+# of eleven but grow the file 73%, not 25%.
+GAME_LOGS_ALIAS <- "game-logs.parquet"
+
 build_game_logs_chunks <- function(blog_dir = "blog") {
   srcs <- list.files(blog_dir, pattern = GAME_LOGS_SEASON_RE, full.names = TRUE)
+  alias <- file.path(blog_dir, GAME_LOGS_ALIAS)
+  jobs <- c(lapply(srcs, function(src) list(src = src, by = "league")),
+            if (file.exists(alias)) list(list(src = alias, by = "match_id")))
   failed <- character()
-  for (src in srcs) {
-    tryCatch(rechunk_game_logs_by_league(src),
+  for (j in jobs) {
+    tryCatch(rechunk_game_logs_by_league(j$src, by = j$by),
              error = function(e) {
-               failed <<- c(failed, src)
-               message("::warning::", src, " left as panna wrote it (one row group): ", conditionMessage(e))
+               failed <<- c(failed, j$src)
+               message("::warning::", j$src, " left as panna wrote it (one row group): ", conditionMessage(e))
              })
   }
-  cat(sprintf("game-logs league-sorted row groups: %d of %d written\n", length(srcs) - length(failed), length(srcs)))
+  cat(sprintf("game-logs re-sorted row groups: %d of %d written\n", length(jobs) - length(failed), length(jobs)))
   invisible(failed)
 }
 
