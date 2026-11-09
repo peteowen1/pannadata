@@ -247,6 +247,18 @@ jobs:
             echo "::warning::team_strength.parquet not available — Team Ratings falls back to the top-20 panna sum"
           fi
 
+          # Keeper style (panna#452): club style + in-season shift per club-season,
+          # written by panna skills step 01c and registered for blog-latest by
+          # predictions step 10e. The site's live PSV scorer needs it to build the
+          # five `_kadj` keeper stats; already hyphen-named, so it passes straight
+          # through to R2 as football/keeper-style.parquet (+ .csv beside it is
+          # not uploaded: the R2 loop ships blog/*.parquet only).
+          if gh release download blog-latest -p "keeper-style.parquet" -D blog/; then
+            echo "Downloaded keeper-style.parquet"
+          else
+            echo "::warning::keeper-style.parquet not available — live keeper PSV cannot build the _kadj stats"
+          fi
+
           # Action WPA (per-action win-probability-added — optional, used by
           # chain builder for blog match-page WPA without worker calls).
           # Sharded per league-season as action_wpa_<league>_<season>.parquet
@@ -976,7 +988,8 @@ jobs:
           # WARN tier — optional upstream downloads / pass-throughs. Absence is
           # surfaced for visibility but does not fail the run.
           for f in blog/player-positions.parquet blog/player-skills.parquet blog/player-skills-pct.parquet \
-                   blog/predictions.parquet blog/predictions-locked.parquet blog/shootout-wpa.parquet; do
+                   blog/predictions.parquet blog/predictions-locked.parquet blog/shootout-wpa.parquet \
+                   blog/keeper-style.parquet; do
             [ -f "$f" ] || echo "::warning::Optional artifact missing: $f"
           done
           ls blog/game-logs*.parquet 1>/dev/null 2>&1 || echo "::warning::Optional artifact missing: blog/game-logs*.parquet"
