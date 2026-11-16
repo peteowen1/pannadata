@@ -678,21 +678,46 @@ if (file.exists(squads_path) && dedup_key == "player_id") {
     # here too, or the earlier BLOG_COMP_EXCLUDE filtering gets silently
     # undone by this override running after it.
     filter(!league %in% BLOG_COMP_EXCLUDE) |>
-    select(player_id, squad_team = team, squad_league = league)
+    select(player_id, team, team_id, league, season)
   panna_ratings <- panna_ratings |>
     mutate(player_id = as.character(.data[[dedup_key]]))
   n_from_squads <- sum(panna_ratings$player_id %in% squads$player_id)
-  panna_ratings <- panna_ratings |>
-    left_join(squads, by = "player_id") |>
-    mutate(
-      team = ifelse(!is.na(squad_team), squad_team, team),
-      league = ifelse(!is.na(squad_league), squad_league, league)
-    ) |>
-    select(-squad_team, -squad_league)
+
+  # Availability (pannadata#232): in_club_squad / squads_last3, and the same
+  # team/league override as before, all from add_squad_availability().
+  # Match-day squads come from opta_lineups (started or bench), matched to the
+  # club on team_id. Failure-soft: without lineups the squads override still
+  # applies and squads_last3 is NA.
+  source("scripts/squad_availability.R")
+  squad_lineups <- tryCatch({
+    if (!file.exists(lineups_path)) stop("source/opta_lineups.parquet absent")
+    # Only recent matches matter (a club's last 3), and the file is ~9.5M rows.
+    cutoff <- format(Sys.Date() - 400, "%Y-%m-%d")
+    arrow::open_dataset(lineups_path) |>
+      filter(match_date >= cutoff) |>
+      select(match_id, match_date, player_id, team_id, season) |>
+      collect() |> as.data.frame()
+  }, error = function(e) {
+    cat("::warning::squads_last3 will be NA (no lineups): ", conditionMessage(e), "\n", sep = "")
+    data.frame(match_id = character(0), match_date = character(0), player_id = character(0),
+               team_id = character(0), season = character(0))
+  })
+  panna_ratings <- add_squad_availability(panna_ratings, squads, squad_lineups)
+  rm(squad_lineups)
   cat("Current squads: overrode team/league for", n_from_squads,
       "of", nrow(panna_ratings), "players (source/squads.parquet)\n")
+  # Coverage tripwire: a column that is 100% empty means a join key drifted.
+  cat(sprintf("Availability: in_club_squad TRUE %d / FALSE %d / NA %d; squads_last3 non-NA %d (0 = %d)\n",
+              sum(panna_ratings$in_club_squad %in% TRUE), sum(panna_ratings$in_club_squad %in% FALSE),
+              sum(is.na(panna_ratings$in_club_squad)), sum(!is.na(panna_ratings$squads_last3)),
+              sum(panna_ratings$squads_last3 %in% 0L)))
+  if (all(is.na(panna_ratings$squads_last3)))
+    cat("::warning::squads_last3 is NA for every player -- check opta_lineups team_id / season against squads.parquet\n")
 } else {
-  cat("::warning::source/squads.parquet absent or dedup_key != player_id — team/league stay end-of-last-rated-season (pannadata#123)\n")
+  cat("::warning::source/squads.parquet absent or dedup_key != player_id — team/league stay end-of-last-rated-season (pannadata#123); in_club_squad / squads_last3 are NA (pannadata#232)\n")
+  # Keep the published schema stable.
+  panna_ratings$in_club_squad <- NA
+  panna_ratings$squads_last3  <- NA_integer_
 }
 
 # ── Piero: pool-independent composite player rating ──────────────────────────
