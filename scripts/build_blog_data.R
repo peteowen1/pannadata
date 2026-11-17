@@ -874,7 +874,8 @@ if (any(is_replacement_row(panna_ratings))) {
 # Returning players (panna#497, pannadata#232): `returning` = back from 60+ days without minutes and inside his first
 # 900 minutes, or out 60+ days now; `panna_returning` = Panna with 85% of the lead over replacement kept while
 # returning (= panna otherwise). For the team page; `panna` itself is unchanged. See scripts/returning.R.
-if (file.exists(lineups_path) && dedup_key == "player_id" && length(panna_replacement_level) == 1L) {
+if (file.exists(lineups_path) && dedup_key == "player_id" && length(panna_replacement_level) == 1L &&
+    is.finite(panna_replacement_level)) {
   ret_cut <- as.character(ref_date - 1095)   # computed outside the arrow query (arrow cannot evaluate it inside)
   lu_ret <- as.data.frame(arrow::open_dataset(lineups_path) |>
     dplyr::filter(match_date >= ret_cut) |>
