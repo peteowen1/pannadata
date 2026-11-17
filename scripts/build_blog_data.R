@@ -4,6 +4,7 @@ library(dplyr)
 # Shared blog league config (BLOG_COMP_EXCLUDE — comps we drop from blog outputs).
 source("scripts/league_config.R")
 source("scripts/quality_gates.R")
+source("scripts/current_club.R")
 
 # Player ratings - latest season xRAPM + SPM
 for (f in c("source/seasonal_xrapm.parquet", "source/seasonal_spm.parquet", "source/player_metadata.parquet")) {
@@ -488,7 +489,7 @@ stopifnot(
 RECENCY_DAYS <- 548L  # ~18 months
 lineups_path <- "source/opta_lineups.parquet"
 if (file.exists(lineups_path)) {
-  lu <- arrow::read_parquet(lineups_path, col_select = c(dedup_key, "match_date", "competition"))
+  lu <- arrow::read_parquet(lineups_path, col_select = c(dedup_key, "match_date", "competition", "team_id", "team_name"))
   lu <- as.data.frame(lu)
   lu[[dedup_key]] <- as.character(lu[[dedup_key]])
   lu$match_date <- as.Date(substr(as.character(lu$match_date), 1, 10))
@@ -532,7 +533,7 @@ if (file.exists(lineups_path)) {
     "Cup|Kupa|Pokal|Coppa|Copa|Coupe|Taca|Taça|Beker|Trophy|Trophee|Trophée|Shield|Supercopa|",
     "Supercup|Super_Cup|Champions_League|CAF_CL|Confederation|Libertadores|",
     "Sudamericana|Qualifiers|World_Cup|AFCON|_America|Euros?$|Nations|Gold_Cup|",
-    "Asian_Cup|Play_?[Oo]ff|Gulf_Champions")
+    "Asian_Cup|Play_?[Oo]ff|Gulf_Champions|Friendl")   # Friendl: Intl_Friendlies is national-team (pannadata#234)
   is_league_comp <- lu$competition %in% BLOG_COMPS |
     !grepl(cup_intl_rx, lu$competition, ignore.case = TRUE)
   cat(sprintf("last_rated_league: %d competitions classified as leagues, %d as cup/intl (eyeball for a cup leaking through the shim)\n",
@@ -542,6 +543,18 @@ if (file.exists(lineups_path)) {
     slice_max(match_date, n = 1, with_ties = FALSE) |> ungroup() |>
     select(all_of(dedup_key), last_rated_league = competition)
   last_app <- left_join(last_app, last_league, by = dedup_key)
+  # latest DOMESTIC league appearance (European club comps excluded), for the club fallback
+  # of players the squads feed does not list (pannadata#234; scripts/current_club.R)
+  last_dom <- lu[is_league_comp & !lu$competition %in% c("UCL", "UEL", "Conference_League"), ] |>
+    group_by(.data[[dedup_key]]) |>
+    slice_max(match_date, n = 1, with_ties = FALSE) |> ungroup() |>
+    select(all_of(dedup_key), last_dom_league = competition, last_dom_team_id = team_id, last_dom_date = match_date)
+  last_app <- left_join(last_app, last_dom, by = dedup_key)
+  # one name per club: the newest team_name Opta uses for each team_id (pannadata#234)
+  club_names_by_id <- newest_name_by_id(lu)
+  # distinct(), not unique(): on the 8.8M-row lineups unique() took 129 s and 4.9 GB of R heap,
+  # distinct() 3 s and 0.55 GB, same 508,663 rows (measured 2026-11-17)
+  club_lu <- dplyr::distinct(lu[, c("team_name", "competition", "team_id", "match_date")])
   # last_rated_season: authoritative — a player is "rated" in a season iff they
   # appear in seasonal_xrapm for it. Drift-proof (same data that built the rating).
   last_rated <- seasonal_xrapm |>
@@ -682,6 +695,7 @@ if (file.exists(squads_path) && dedup_key == "player_id") {
   panna_ratings <- panna_ratings |>
     mutate(player_id = as.character(.data[[dedup_key]]))
   n_from_squads <- sum(panna_ratings$player_id %in% squads$player_id)
+  in_squads_vec <- panna_ratings$player_id %in% squads$player_id
   panna_ratings <- panna_ratings |>
     left_join(squads, by = "player_id") |>
     mutate(
@@ -692,8 +706,26 @@ if (file.exists(squads_path) && dedup_key == "player_id") {
   cat("Current squads: overrode team/league for", n_from_squads,
       "of", nrow(panna_ratings), "players (source/squads.parquet)\n")
 } else {
-  cat("::warning::source/squads.parquet absent or dedup_key != player_id — team/league stay end-of-last-rated-season (pannadata#123)\n")
+  cat("::warning::source/squads.parquet absent or dedup_key != player_id — team/league fall back to the latest league appearance / end-of-last-rated-season (pannadata#123)\n")
+  in_squads_vec <- rep(FALSE, nrow(panna_ratings))
 }
+# Players the squads feed does not list: club and league of their latest LEAGUE appearance
+# if it is recent, then one name per club (pannadata#234; see scripts/current_club.R).
+if (exists("club_names_by_id") && "last_dom_team_id" %in% names(panna_ratings)) {
+  panna_ratings$in_squads <- in_squads_vec
+  panna_ratings <- apply_last_league_club(panna_ratings, club_names_by_id, ref_date,
+                                          exclude_leagues = BLOG_COMP_EXCLUDE)
+  cf <- attr(panna_ratings, "club_fallback")
+  cat(sprintf("Not in squads: %d with a domestic league appearance in the last 180 days, %d given its club/league, %d of those changed\n",
+              cf[["eligible"]], cf[["applied"]], cf[["changed"]]))
+  panna_ratings <- canonical_club_names(panna_ratings, club_lu, club_names_by_id)
+  cat(sprintf("Club names: %d rows renamed to the club's newest Opta name\n", attr(panna_ratings, "club_renamed")))
+  panna_ratings$in_squads <- NULL
+  rm(club_lu)
+}
+panna_ratings$last_dom_league <- NULL   # working columns, not published
+panna_ratings$last_dom_team_id <- NULL
+panna_ratings$last_dom_date <- NULL
 
 # ── Piero: pool-independent composite player rating ──────────────────────────
 # Faithful R port of inthegame-blog/football/player-rating.js
