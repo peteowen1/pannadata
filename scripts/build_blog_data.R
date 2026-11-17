@@ -5,6 +5,7 @@ library(dplyr)
 source("scripts/league_config.R")
 source("scripts/quality_gates.R")
 source("scripts/current_club.R")
+source("scripts/returning.R")
 
 # Player ratings - latest season xRAPM + SPM
 for (f in c("source/seasonal_xrapm.parquet", "source/seasonal_spm.parquet", "source/player_metadata.parquet")) {
@@ -97,6 +98,10 @@ if (!identical(career_tag, CAREER_PANNA_SIGN_CONVENTION)) {
 # 364,603-minute total, inside the ratings table the site ranks players from.
 # Keyed on player_id where available (the id is literally "replacement");
 # dedup_key can be player_name, where the same row reads "Replacement Level".
+# replacement level, kept for the returning-player adjustment (scripts/returning.R) before the row is dropped
+panna_replacement_level <- if ("player_id" %in% names(career_panna)) {
+  career_panna$panna[career_panna$player_id == "replacement"]
+} else numeric(0)
 n_before <- nrow(career_panna)
 career_panna <- if ("player_id" %in% names(career_panna)) {
   career_panna[career_panna$player_id != "replacement", , drop = FALSE]
@@ -865,6 +870,33 @@ if (requireNamespace("jsonlite", quietly = TRUE)) {
 # latest-season xrapm 2026-10-20), so check the output, not just the inputs.
 if (any(is_replacement_row(panna_ratings))) {
   stop("the replacement-pool row reached ratings.parquet; it is a model artefact, not a player")
+}
+# Returning players (panna#497, pannadata#232): `returning` = back from 60+ days without minutes and inside his first
+# 900 minutes, or out 60+ days now; `panna_returning` = Panna with 85% of the lead over replacement kept while
+# returning (= panna otherwise). For the team page; `panna` itself is unchanged. See scripts/returning.R.
+if (file.exists(lineups_path) && dedup_key == "player_id" && length(panna_replacement_level) == 1L) {
+  ret_cut <- as.character(ref_date - 1095)   # computed outside the arrow query (arrow cannot evaluate it inside)
+  lu_ret <- as.data.frame(arrow::open_dataset(lineups_path) |>
+    dplyr::filter(match_date >= ret_cut) |>
+    dplyr::select(player_id, team_id, match_id, match_date, minutes_played) |> dplyr::collect())
+  rst <- returner_status(lu_ret, ref_date + 1)   # as at the day after the newest lineup: every match counts
+  rm(lu_ret)
+  m_ret <- match(as.character(panna_ratings$player_id), rst$player_id)
+  panna_ratings$returning <- rst$returning[m_ret] %in% TRUE
+  panna_ratings$days_out <- ifelse(panna_ratings$returning, rst$days_out[m_ret], NA_real_)
+  panna_ratings$panna_returning <- round(returner_adjusted_panna(panna_ratings$panna, panna_replacement_level,
+                                                                 panna_ratings$returning), 4)
+  cat(sprintf("Returning players: %d of %d flagged (replacement level %.4f); mean Panna change when flagged %.4f
+",
+              sum(panna_ratings$returning), nrow(panna_ratings), panna_replacement_level,
+              mean((panna_ratings$panna_returning - panna_ratings$panna)[panna_ratings$returning], na.rm = TRUE)))
+} else {
+  cat("::warning::returning-player columns not built (no lineups, dedup_key != player_id, or no replacement row); ",
+      "ratings.parquet ships returning = FALSE and panna_returning = panna
+", sep = "")
+  panna_ratings$returning <- FALSE
+  panna_ratings$days_out <- NA_real_
+  panna_ratings$panna_returning <- panna_ratings$panna
 }
 write_parquet(panna_ratings, "blog/ratings.parquet")
 cat("ratings:", nrow(panna_ratings), "players (season", latest_season, ")\n")
