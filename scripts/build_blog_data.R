@@ -714,6 +714,7 @@ if (file.exists(squads_path) && dedup_key == "player_id") {
   cat("::warning::source/squads.parquet absent or dedup_key != player_id — team/league fall back to the latest league appearance / end-of-last-rated-season (pannadata#123)\n")
   in_squads_vec <- rep(FALSE, nrow(panna_ratings))
   panna_ratings$squad_team_id <- NA_character_
+  squads_missing <- TRUE   # in_club_squad ships NA (unknown), not FALSE
 }
 # Players the squads feed does not list: club and league of their latest LEAGUE appearance
 # if it is recent, then one name per club (pannadata#234; see scripts/current_club.R).
@@ -884,7 +885,7 @@ if (file.exists(lineups_path) && dedup_key == "player_id" && length(panna_replac
   rst <- returner_status(lu_ret, ref_date + 1)   # as at the day after the newest lineup: every match counts
   # Availability (pannadata#232): in the club's current squads feed, and match-day squads (started or bench) in the
   # club's last 3 matches, all competitions. Keyed on the squads feed's team_id, never on team names.
-  panna_ratings$in_club_squad <- !is.na(panna_ratings$squad_team_id)
+  panna_ratings$in_club_squad <- if (exists("squads_missing")) NA else !is.na(panna_ratings$squad_team_id)
   lu3 <- data.table::as.data.table(lu_ret)[, .(team_id, match_id, md = substr(as.character(match_date), 1, 10), player_id)]
   clubm <- unique(lu3[team_id %in% panna_ratings$squad_team_id, .(team_id, match_id, md)])
   data.table::setorder(clubm, team_id, -md)
@@ -915,7 +916,7 @@ if (file.exists(lineups_path) && dedup_key == "player_id" && length(panna_replac
   panna_ratings$returning <- FALSE
   panna_ratings$days_out <- NA_real_
   panna_ratings$panna_returning <- panna_ratings$panna
-  panna_ratings$in_club_squad <- !is.na(panna_ratings$squad_team_id)
+  panna_ratings$in_club_squad <- if (exists("squads_missing")) NA else !is.na(panna_ratings$squad_team_id)
   panna_ratings$squads_last3 <- NA_integer_
 }
 panna_ratings$squad_team_id <- NULL   # working column, not published
