@@ -552,7 +552,9 @@ if (file.exists(lineups_path)) {
   last_app <- left_join(last_app, last_dom, by = dedup_key)
   # one name per club: the newest team_name Opta uses for each team_id (pannadata#234)
   club_names_by_id <- newest_name_by_id(lu)
-  club_lu <- unique(lu[, c("team_name", "competition", "team_id", "match_date")])
+  # distinct(), not unique(): on the 8.8M-row lineups unique() took 129 s and 4.9 GB of R heap,
+  # distinct() 3 s and 0.55 GB, same 508,663 rows (measured 2026-11-17)
+  club_lu <- dplyr::distinct(lu[, c("team_name", "competition", "team_id", "match_date")])
   # last_rated_season: authoritative — a player is "rated" in a season iff they
   # appear in seasonal_xrapm for it. Drift-proof (same data that built the rating).
   last_rated <- seasonal_xrapm |>
