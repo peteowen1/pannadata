@@ -922,10 +922,43 @@ class OptaScraper:
         20 `coach` and 22 `assistant coach`, and those 42 staff entries are
         exactly the 42 with a null `position`. Publishing them unfiltered would
         put coaches in the ratings as clubless players.
+
+        Paged (pannadata#234): the feed returns 20 clubs per page by default,
+        so without paging every league with more than 20 clubs silently lost
+        the last ones alphabetically (Championship 20 of 24, MLS and Argentina
+        20 of 30, checked live 2026-11-17: _pgSz=100 gives 24, page 2 the
+        missing 4). Asks for 100 per page and follows pages until a short one.
+        Returns None if page 1 fails (same contract as before) and also if a
+        later page fails, so the caller's guards refuse a partial club list
+        instead of writing one.
         """
         endpoint = f"squads/{self.PROVIDER_ID}"
-        params = {"tmcl": tmcl}
-        return self._fetch(endpoint, params)
+        page_size = 100
+        max_pages = 10  # 1,000 clubs in one calendar is implausible
+        clubs: List[Dict] = []
+        first: Optional[Dict] = None
+        for page in range(1, max_pages + 1):
+            data, status = self._fetch_raw(endpoint, {"tmcl": tmcl, "_pgSz": str(page_size), "_pgNm": str(page)})
+            if data is None and page > 1 and status == 404:
+                # A page past the end is a 404 (checked live 2026-11-17), so this is
+                # the end of the list when the previous page was exactly full.
+                out = dict(first)
+                out["squad"] = clubs
+                return out
+            if data is None:
+                if page > 1:
+                    print(f"  squads tmcl={tmcl}: page {page} failed after {len(clubs)} clubs; returning nothing rather than a partial list")
+                return None
+            if first is None:
+                first = data
+            got = data.get("squad", [])
+            clubs.extend(got)
+            if len(got) < page_size:
+                out = dict(first)
+                out["squad"] = clubs
+                return out
+        print(f"  squads tmcl={tmcl}: hit the {max_pages}-page cap; returning nothing rather than a partial list")
+        return None
 
     def get_active_tournament_calendar(self, competition: str) -> Optional[Dict]:
         """Resolve the CURRENTLY ACTIVE tournament calendar for a competition.
