@@ -873,16 +873,19 @@ if (requireNamespace("jsonlite", quietly = TRUE)) {
 if (any(is_replacement_row(panna_ratings))) {
   stop("the replacement-pool row reached ratings.parquet; it is a model artefact, not a player")
 }
-# Returning players (panna#497, pannadata#232): `returning` = back from 60+ days without minutes and inside his first
-# 900 minutes, or out 60+ days now; `panna_returning` = Panna with 85% of the lead over replacement kept while
-# returning (= panna otherwise). For the team page; `panna` itself is unchanged. See scripts/returning.R.
+# Returning players (panna#497, pannadata#232; scripts/returning.R). `panna_returning` = Panna keeping
+# (1 - 0.25 * rust) of the lead over replacement, where rust rises with the club matches he missed (an unused-sub
+# game counts 0.75) and drains to 0 over his first 1,800 minutes back (no cliffs; Pete 2026-11-17). `returning` = the page tag: discount of 20% or more
+# (display only; the number itself has no threshold). `days_out` / `club_matches_missed` describe that absence.
+# For the team page; `panna` itself is unchanged.
+RETURNING_TAG_MIN_DISCOUNT <- 0.20   # Pete 2026-11-18: tags ~25% of squad players
 if (file.exists(lineups_path) && dedup_key == "player_id" && length(panna_replacement_level) == 1L &&
     is.finite(panna_replacement_level)) {
   ret_cut <- as.character(ref_date - 1095)   # computed outside the arrow query (arrow cannot evaluate it inside)
   lu_ret <- as.data.frame(arrow::open_dataset(lineups_path) |>
     dplyr::filter(match_date >= ret_cut) |>
     dplyr::select(player_id, team_id, match_id, match_date, minutes_played) |> dplyr::collect())
-  rst <- returner_status(lu_ret, ref_date + 1)   # as at the day after the newest lineup: every match counts
+  rst <- returner_rust(lu_ret, ref_date + 1)   # as at the day after the newest lineup: every match counts
   # Availability (pannadata#232): in the club's current squads feed, and match-day squads (started or bench) in the
   # club's last 3 matches, all competitions. Keyed on the squads feed's team_id, never on team names.
   panna_ratings$in_club_squad <- if (exists("squads_missing")) NA else !is.na(panna_ratings$squad_team_id)
@@ -895,26 +898,26 @@ if (file.exists(lineups_path) && dedup_key == "player_id" && length(panna_replac
   key_r <- paste(panna_ratings$squad_team_id, panna_ratings$player_id)
   n3 <- cnt$n[match(key_r, paste(cnt$team_id, cnt$player_id))]
   panna_ratings$squads_last3 <- ifelse(panna_ratings$in_club_squad, data.table::fcoalesce(as.integer(n3), 0L), NA_integer_)
-  cat(sprintf("Availability: %d of %d in a current club squad; of those, %d in none of the club's last 3 match-day squads (%d clubs)
-",
+  cat(sprintf("Availability: %d of %d in a current club squad; of those, %d in none of the club's last 3 match-day squads (%d clubs)\n",
               sum(panna_ratings$in_club_squad), nrow(panna_ratings),
               sum(panna_ratings$squads_last3 == 0L, na.rm = TRUE), data.table::uniqueN(last3$team_id)))
   rm(lu_ret, lu3, clubm, last3, inm, cnt)
   m_ret <- match(as.character(panna_ratings$player_id), rst$player_id)
-  panna_ratings$returning <- rst$returning[m_ret] %in% TRUE
+  rust <- data.table::fcoalesce(rst$rust[m_ret], 0)
+  panna_ratings$panna_returning <- round(returner_adjusted_panna(panna_ratings$panna, panna_replacement_level, rust), 4)
+  panna_ratings$returning <- 0.25 * rust >= RETURNING_TAG_MIN_DISCOUNT   # 0.25 = returner_adjusted_panna()'s max_discount
   panna_ratings$days_out <- ifelse(panna_ratings$returning, rst$days_out[m_ret], NA_real_)
-  panna_ratings$panna_returning <- round(returner_adjusted_panna(panna_ratings$panna, panna_replacement_level,
-                                                                 panna_ratings$returning), 4)
-  cat(sprintf("Returning players: %d of %d flagged (replacement level %.4f); mean Panna change when flagged %.4f
-",
-              sum(panna_ratings$returning), nrow(panna_ratings), panna_replacement_level,
+  panna_ratings$club_matches_missed <- ifelse(panna_ratings$returning, rst$club_matches_missed[m_ret], NA_real_)
+  cat(sprintf("Returning players: %d of %d tagged (discount >= %.0f%%; replacement level %.4f); %d with any discount; mean Panna change when tagged %.4f\n",
+              sum(panna_ratings$returning), nrow(panna_ratings), 100 * RETURNING_TAG_MIN_DISCOUNT, panna_replacement_level,
+              sum(rust > 0.001),
               mean((panna_ratings$panna_returning - panna_ratings$panna)[panna_ratings$returning], na.rm = TRUE)))
 } else {
   cat("::warning::returning-player columns not built (no lineups, dedup_key != player_id, or no replacement row); ",
-      "ratings.parquet ships returning = FALSE and panna_returning = panna
-", sep = "")
+      "ratings.parquet ships returning = FALSE and panna_returning = panna\n", sep = "")
   panna_ratings$returning <- FALSE
   panna_ratings$days_out <- NA_real_
+  panna_ratings$club_matches_missed <- NA_real_
   panna_ratings$panna_returning <- panna_ratings$panna
   panna_ratings$in_club_squad <- if (exists("squads_missing")) NA else !is.na(panna_ratings$squad_team_id)
   panna_ratings$squads_last3 <- NA_integer_
