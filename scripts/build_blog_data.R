@@ -897,11 +897,20 @@ if (file.exists(lineups_path) && dedup_key == "player_id" && length(panna_replac
   cnt <- inm[, .(n = .N), by = .(team_id, player_id)]
   key_r <- paste(panna_ratings$squad_team_id, panna_ratings$player_id)
   n3 <- cnt$n[match(key_r, paste(cnt$team_id, cnt$player_id))]
-  panna_ratings$squads_last3 <- ifelse(panna_ratings$in_club_squad, data.table::fcoalesce(as.integer(n3), 0L), NA_integer_)
+  # A club with fewer than 3 matches in the lineup feed (none, a newly promoted side, a cup-only week) has no "last 3"
+  # to be absent from, so its players get NA, not 0 (pannadata#240). Only a club with 3 matches can say "in none".
+  club_nm <- last3[, .(nm = .N), by = team_id]
+  nm_r <- club_nm$nm[match(as.character(panna_ratings$squad_team_id), as.character(club_nm$team_id))]
+  nm_r[is.na(nm_r)] <- 0L
+  has3 <- panna_ratings$in_club_squad %in% TRUE & nm_r >= 3L
+  panna_ratings$squads_last3 <- ifelse(has3, data.table::fcoalesce(as.integer(n3), 0L), NA_integer_)
+  thin_clubs <- unique(panna_ratings$squad_team_id[panna_ratings$in_club_squad %in% TRUE & nm_r < 3L])
   cat(sprintf("Availability: %d of %d in a current club squad; of those, %d in none of the club's last 3 match-day squads (%d clubs)\n",
-              sum(panna_ratings$in_club_squad), nrow(panna_ratings),
+              sum(panna_ratings$in_club_squad, na.rm = TRUE), nrow(panna_ratings),
               sum(panna_ratings$squads_last3 == 0L, na.rm = TRUE), data.table::uniqueN(last3$team_id)))
-  rm(lu_ret, lu3, clubm, last3, inm, cnt)
+  cat(sprintf("Availability: %d squad clubs have fewer than 3 matches in the lineup feed; squads_last3 is NA for their %d players\n",
+              length(thin_clubs), sum(panna_ratings$in_club_squad %in% TRUE & nm_r < 3L)))
+  rm(lu_ret, lu3, clubm, last3, inm, cnt, club_nm, nm_r, has3, thin_clubs)
   m_ret <- match(as.character(panna_ratings$player_id), rst$player_id)
   rust <- data.table::fcoalesce(rst$rust[m_ret], 0)
   panna_ratings$panna_returning <- round(returner_adjusted_panna(panna_ratings$panna, panna_replacement_level, rust), 4)
