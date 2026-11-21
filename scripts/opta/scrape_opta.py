@@ -546,15 +546,12 @@ def is_future_season(season_name: str) -> bool:
         return year > current_year
 
 
-# How far past "today" to keep fetching an in-progress season's date windows
-# even without --include-future (pannadata#119). Windows are ~2 months and
-# don't overlap, so 65 days guarantees the window immediately after "today"
-# is always reached regardless of where "today" falls inside the current
-# window. Without this, every league's fixture rows beyond the currently-open
-# window silently never entered opta_fixtures.parquet — the daily cron never
-# passes --include-future (that flag is reserved for one-time pre-season
-# full-bracket seeds, e.g. WC2026), so predictions.parquet ended up with zero
-# forward-looking rows for any domestic/club competition.
+# How far ahead a not-yet-started season may begin and still enter the scrape
+# plan (pannadata#119): season_starts_within_lookahead() uses it so the daily
+# cron picks up next season's announced fixtures weeks before August, without
+# --include-future (reserved for one-time long-range seeds, e.g. WC2026). It
+# does NOT cut the date windows inside a planned season: those are all fetched
+# (pannadata#241), or fixture rows stopped ~65 days past "today".
 FIXTURE_LOOKAHEAD_DAYS = 65
 
 # Tournaments that don't follow the "name year IS the year it was played in"
@@ -984,19 +981,17 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
     all_fixture_records = []
 
     for start_date, end_date in date_ranges:
-        if start_date > today_iso and not include_future:
-            window_start = datetime.strptime(start_date, "%Y-%m-%d").date()
-            days_ahead = (window_start - datetime.now().date()).days
-            if days_ahead > FIXTURE_LOOKAHEAD_DAYS:
-                print(f"\nSkipping future window {start_date} to {end_date} "
-                      f"(starts {days_ahead}d ahead, beyond {FIXTURE_LOOKAHEAD_DAYS}d lookahead)")
-                continue
-            print(f"\nFetching near-term future window {start_date} to {end_date} "
-                  f"(within {FIXTURE_LOOKAHEAD_DAYS}d lookahead, pannadata#119: keep upcoming "
-                  f"fixtures flowing; fixture records only, no played matches expected)")
-        elif start_date > today_iso:
+        # Every window of a season that made the scrape plan is fetched, however
+        # far ahead it starts (pannadata#241). The 65-day lookahead used to skip
+        # windows here too, so with today at 21 Nov 2026 the Feb-Jul 2027 windows
+        # were never requested and opta_fixtures.parquet stopped at 31 Jan 2027
+        # for every league not seeded by hand (POR, TUR, NED, ENG2, SCO). A
+        # future window holds fixture rows only (no played matches, so no
+        # per-match calls); an empty one is a single 404. The lookahead still
+        # decides which SEASONS enter the plan (season_starts_within_lookahead).
+        if start_date > today_iso:
             print(f"\nFetching future window {start_date} to {end_date} "
-                  f"(--include-future: fixture records only, no played matches expected)")
+                  f"(fixture records only, no played matches expected)")
         print(f"\nFetching {start_date} to {end_date}...")
 
         matches = scraper.get_season_matches(season_id, start_date, end_date)
