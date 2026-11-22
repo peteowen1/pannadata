@@ -53,7 +53,8 @@ def _get_dedup_cols(table_type):
 def _drop_rescraped_matches(existing_dfs, new_dfs):
     """Drop stored rows for every match present in the new per-season files.
 
-    A re-scraped match supersedes all its stored events. Keyed dedup alone keeps
+    A re-scraped match supersedes all its stored rows in that table (per table:
+    a match absent from the new files of one table keeps its rows there). Keyed dedup alone keeps
     stale rows whose key (minute) changed between scraper versions: the
     pannadata#173 / N003 phantom 0:00 copies. Returns the filtered existing frames.
     """
@@ -715,7 +716,13 @@ def consolidate_opta(opta_dir="opta", output_dir="opta"):
                         print(f"  ERROR: Failed to read {f}: {e}")
                         errors += 1
 
-                if table_type == 'events':
+                # Every table, not only events (pannadata#245): Opta revises a
+                # match after the first scrape and can withdraw rows (a shot
+                # reclassified as a ball touch keeps its event_id but is no longer
+                # in shot_events). The keyed dedup below only overwrites rows that
+                # come back, so a withdrawn row would stay. Fixtures are left to
+                # the keyed dedup: one row per match, nothing to withdraw.
+                if table_type != 'fixtures':
                     dfs = _drop_rescraped_matches(dfs, new_dfs)
                 dfs = dfs + new_dfs
                 del new_dfs
