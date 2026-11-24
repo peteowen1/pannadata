@@ -3,7 +3,8 @@
 # Downloads event files from opta-latest release as needed.
 # Usage: Rscript scripts/build_chains_ci.R
 # Requires: source/opta_lineups.parquet (pre-downloaded)
-# Outputs: blog/chains-{CODE}.parquet
+# Outputs: blog/chains-{CODE}.parquet, plus blog/chains-{CODE}-{YYYY}-{YY}.parquet
+#          for the newest seasons of each comp (pannadata#229)
 
 library(arrow)
 library(dplyr)
@@ -90,6 +91,7 @@ cat("Lineups loaded:", nrow(match_teams), "matches\n\n")
 
 source("scripts/league_config.R")
 source("scripts/chain_numbering.R")
+source("scripts/chain_seasons.R")
 # World Cup shard for the blog's WC match pages (Territorial/Pass Map; #64).
 # Deliberately NOT added to BLOG_COMP_TO_CODE — that map also drives
 # ratings/player-details/standings steps where a tournament doesn't belong.
@@ -176,33 +178,27 @@ KEEP_ALL_SEASONS_COMPS <- c("World_Cup")
 # filename/URL-safe, so shard on that rather than the full label.
 SEASON_SHARD_COMPS <- c("World_Cup")
 
-for (comp in blog_comps) {
-  event_file <- file.path(src_dir, paste0("events_", comp, ".parquet"))
+# Past-season chains files (pannadata#229, the blog's Football Play Finder):
+# besides chains-<CODE>.parquet (unchanged), write chains-<CODE>-<YYYY>-<YY>.parquet
+# for the newest CHAINS_SEASON_FILES seasons of each comp. Each season is
+# numbered on its own (chain_number restarts at 1), so the main file's
+# numbering is not touched. Bounded to a few seasons on purpose: the work is
+# roughly CHAINS_SEASON_FILES x the events per comp, and every file is a
+# download for the blog. Set to 1L to switch the extra work off in effect (the
+# newest season's file then just repeats the main file) or 0L to drop it.
+# Not applied to KEEP_ALL_SEASONS_COMPS (World_Cup has its own per-tournament
+# shards above). epv_credit is NA in past-season files: action_equity.parquet
+# is the current-season alias, so older matches are uncovered.
+CHAINS_SEASON_FILES <- 3L
 
-  # Download if not present (CI downloads one at a time to save disk)
-  if (!file.exists(event_file)) {
-    cat("Downloading events_", comp, ".parquet...\n", sep = "")
-    dl <- system2("gh", c("release", "download", "opta-latest",
-      "-p", paste0("events_", comp, ".parquet"), "-D", src_dir),
-      stdout = TRUE, stderr = TRUE)
-    if (!file.exists(event_file)) { cat("  SKIP (download failed)\n"); next }
-  }
-
-  cat(comp, ": ", sep = "")
-  # One comp's failure must not starve every comp after it in the loop — that
-  # failure mode left ESP..TUR chains stale on R2 for 3 months and UCL/UEL/UECL
-  # never built (the loop died at Championship on a join type error while the
-  # workflow step is continue-on-error). Errors are recorded in join_failures
-  # and raised after all comps have had their turn.
-  tryCatch({
-  events <- normalize_keys(read_parquet(event_file))
-  seasons <- sort(unique(events$season), decreasing = TRUE)
-  if (nrow(events) > 200000 && length(seasons) > 1 && !(comp %in% KEEP_ALL_SEASONS_COMPS)) {
-    events <- events |> filter(season == seasons[1])
-  }
-  cat(nrow(events), " events (", seasons[1], ") ... ", sep = "")
-
-  events <- events |>
+# Number the chains of one events table and join the optional EPV credit and
+# WPA columns. `ev` must already be filtered to the seasons wanted in this
+# file. Returns list(chains = <data frame or NULL>, failure = <message or NULL>);
+# a join that inflates rows or falls under MIN_JOIN_MATCH_FRAC comes back as a
+# failure, never as a written file. `warn_no_overlap = FALSE` for past-season
+# files, where no overlap with the current-season lookups is expected.
+build_chain_table <- function(ev, comp, warn_no_overlap = TRUE) {
+  ev <- ev |>
     filter(!type_id %in% non_play_types) |>
     arrange(match_id, period_id, minute, second, event_id)
 
@@ -215,10 +211,10 @@ for (comp in blog_comps) {
   # full proof, the deliberate deviation from the original plan sketch, and
   # the validation record (pannadata#76 is the original motivation for both
   # transparency rules).
-  events$chain_number <- compute_chain_numbers(
-    events, dead_ball_types, keeper_rebound_types, duel_contest_types)
+  ev$chain_number <- compute_chain_numbers(
+    ev, dead_ball_types, keeper_rebound_types, duel_contest_types)
 
-  chain_states <- events |>
+  chain_states <- ev |>
     group_by(chain_number) |>
     summarise(
       final_state = case_when(
@@ -232,7 +228,7 @@ for (comp in blog_comps) {
       .groups = "drop"
     )
 
-  chains <- events |>
+  chains <- ev |>
     left_join(chain_states, by = "chain_number") |>
     group_by(match_id, chain_number) |>
     mutate(display_order = row_number()) |>
@@ -246,7 +242,9 @@ for (comp in blog_comps) {
       player_id, player_name, team_id,
       x = round(x, 1), y = round(y, 1),
       end_x = round(end_x, 1), end_y = round(end_y, 1),
-      type_id = as.integer(type_id), outcome = as.integer(outcome),
+      type_id = as.integer(type_id),
+      type_name = add_type_name(type_id),
+      outcome = as.integer(outcome),
       final_state, period_id = as.integer(period_id),
       minute = as.integer(minute), second = as.integer(second),
       is_shot = type_id %in% shot_types,
@@ -270,37 +268,35 @@ for (comp in blog_comps) {
     # (match_id, event_id) is unique within a match, so the left join must not
     # add rows. If it ever does, action_equity has duplicate keys and the join
     # is scattering credit across rows (and corrupting display_order) — skip
-    # this comp rather than write a corrupted parquet.
+    # this file rather than write a corrupted parquet.
     if (nrow(chains) != n_before) {
-      join_failures <- c(join_failures, sprintf(
-        "%s: epv_credit join inflated chains %d -> %d rows (duplicate (match_id, event_id) in action_equity)",
-        comp, n_before, nrow(chains)))
       cat("  SKIP ", comp, " — epv_credit join inflated rows (recorded, continuing)\n", sep = "")
-      next
+      return(list(chains = NULL, failure = sprintf(
+        "%s: epv_credit join inflated chains %d -> %d rows (duplicate (match_id, event_id) in action_equity)",
+        comp, n_before, nrow(chains))))
     }
     # Coverage floor, scoped to matches present in action_equity (the
     # `match_id %in% equity_match_ids` filter). Uncovered matches legitimately
     # have no credit — e.g. older seasons the current-season equity alias omits
-    # (low-volume comps keep all seasons; see the 200k season filter above) — so
-    # measure the SPADL match rate only over covered matches. Healthy ~85%; a
-    # sharp drop there means the event_id scheme drifted between action_equity
-    # and events_<comp>.parquet.
+    # (low-volume comps keep all seasons; see the 200k season filter in the
+    # loop) — so measure the SPADL match rate only over covered matches.
+    # Healthy ~85%; a sharp drop there means the event_id scheme drifted
+    # between action_equity and events_<comp>.parquet.
     n_eq <- sum(!is.na(chains$epv_credit))
-    covered <- chains$match_id %in% equity_match_ids
-    if (any(covered)) {
-      frac <- mean(!is.na(chains$epv_credit[covered]))
+    chk <- chain_coverage_check(chains$epv_credit, chains$match_id,
+                                equity_match_ids, MIN_JOIN_MATCH_FRAC)
+    if (chk$n_covered > 0L) {
       cat("  epv_credit: ", n_eq, "/", nrow(chains), " actions (",
-          sprintf("%.1f%%", 100 * frac), " of ", sum(covered),
+          sprintf("%.1f%%", 100 * chk$frac), " of ", chk$n_covered,
           " covered)\n", sep = "")
-      if (frac < MIN_JOIN_MATCH_FRAC) {
-        join_failures <- c(join_failures, sprintf(
-          "%s: epv_credit matched only %.1f%% of actions in covered matches (floor %.0f%%) — action_equity.parquet is likely stale or misaligned with events_%s.parquet",
-          comp, 100 * frac, 100 * MIN_JOIN_MATCH_FRAC, comp))
-        cat("  SKIP ", comp, " — epv_credit coverage ", sprintf("%.1f%%", 100 * frac),
+      if (!chk$ok) {
+        cat("  SKIP ", comp, " — epv_credit coverage ", sprintf("%.1f%%", 100 * chk$frac),
             " below floor (recorded, continuing)\n", sep = "")
-        next
+        return(list(chains = NULL, failure = sprintf(
+          "%s: epv_credit matched only %.1f%% of actions in covered matches (floor %.0f%%) — action_equity.parquet is likely stale or misaligned with events_%s.parquet",
+          comp, 100 * chk$frac, 100 * MIN_JOIN_MATCH_FRAC, comp)))
       }
-    } else {
+    } else if (warn_no_overlap) {
       # No overlap at all. Legitimate for a comp out of the alias's season/comp
       # set, but also the signature of a match_id scheme drift — warn loudly
       # (not just cat) since we are shipping an all-NA epv_credit column.
@@ -321,33 +317,76 @@ for (comp in blog_comps) {
                                       wp, wpa, wpa_actor, wpa_receiver),
                 by = c("match_id", "event_id"))
     if (nrow(chains) != n_before) {
-      join_failures <- c(join_failures, sprintf(
-        "%s: wpa join inflated chains %d -> %d rows (duplicate (match_id, event_id) in action_wpa)",
-        comp, n_before, nrow(chains)))
       cat("  SKIP ", comp, " — wpa join inflated rows (recorded, continuing)\n", sep = "")
-      next
+      return(list(chains = NULL, failure = sprintf(
+        "%s: wpa join inflated chains %d -> %d rows (duplicate (match_id, event_id) in action_wpa)",
+        comp, n_before, nrow(chains))))
     }
     n_wpa <- sum(!is.na(chains$wpa))
-    covered <- chains$match_id %in% wpa_match_ids
-    if (any(covered)) {
-      frac <- mean(!is.na(chains$wpa[covered]))
+    chk <- chain_coverage_check(chains$wpa, chains$match_id,
+                                wpa_match_ids, MIN_JOIN_MATCH_FRAC)
+    if (chk$n_covered > 0L) {
       cat("  wpa: ", n_wpa, "/", nrow(chains), " actions (",
-          sprintf("%.1f%%", 100 * frac), " of ", sum(covered),
+          sprintf("%.1f%%", 100 * chk$frac), " of ", chk$n_covered,
           " covered)\n", sep = "")
-      if (frac < MIN_JOIN_MATCH_FRAC) {
-        join_failures <- c(join_failures, sprintf(
-          "%s: wpa matched only %.1f%% of actions in covered matches (floor %.0f%%) — action_wpa_*.parquet is likely stale or misaligned with events_%s.parquet",
-          comp, 100 * frac, 100 * MIN_JOIN_MATCH_FRAC, comp))
-        cat("  SKIP ", comp, " — wpa coverage ", sprintf("%.1f%%", 100 * frac),
+      if (!chk$ok) {
+        cat("  SKIP ", comp, " — wpa coverage ", sprintf("%.1f%%", 100 * chk$frac),
             " below floor (recorded, continuing)\n", sep = "")
-        next
+        return(list(chains = NULL, failure = sprintf(
+          "%s: wpa matched only %.1f%% of actions in covered matches (floor %.0f%%) — action_wpa_*.parquet is likely stale or misaligned with events_%s.parquet",
+          comp, 100 * chk$frac, 100 * MIN_JOIN_MATCH_FRAC, comp)))
       }
-    } else {
+    } else if (warn_no_overlap) {
       warning(sprintf(
         "%s: wpa join matched 0 of %d chain actions — no overlap with action_wpa; shipping an all-NA wpa column (season/comp mismatch or match_id drift?)",
         comp, nrow(chains)), call. = FALSE, immediate. = TRUE)
     }
   }
+
+  list(chains = chains, failure = NULL)
+}
+
+for (comp in blog_comps) {
+  event_file <- file.path(src_dir, paste0("events_", comp, ".parquet"))
+
+  # Download if not present (CI downloads one at a time to save disk)
+  if (!file.exists(event_file)) {
+    cat("Downloading events_", comp, ".parquet...\n", sep = "")
+    dl <- system2("gh", c("release", "download", "opta-latest",
+      "-p", paste0("events_", comp, ".parquet"), "-D", src_dir),
+      stdout = TRUE, stderr = TRUE)
+    if (!file.exists(event_file)) { cat("  SKIP (download failed)\n"); next }
+  }
+
+  cat(comp, ": ", sep = "")
+  # One comp's failure must not starve every comp after it in the loop — that
+  # failure mode left ESP..TUR chains stale on R2 for 3 months and UCL/UEL/UECL
+  # never built (the loop died at Championship on a join type error while the
+  # workflow step is continue-on-error). Errors are recorded in join_failures
+  # and raised after all comps have had their turn.
+  tryCatch({
+  events <- normalize_keys(read_parquet(event_file))
+  seasons <- sort(unique(events$season), decreasing = TRUE)
+
+  # Seasons that also get their own file; their events are set aside before the
+  # main table is cut down to the latest season (large comps), so the big
+  # event table can be freed.
+  season_file_seasons <- if (comp %in% KEEP_ALL_SEASONS_COMPS) character(0) else
+    chain_newest_seasons(seasons, CHAINS_SEASON_FILES)
+  season_events <- events |> filter(season %in% season_file_seasons)
+
+  if (nrow(events) > 200000 && length(seasons) > 1 && !(comp %in% KEEP_ALL_SEASONS_COMPS)) {
+    events <- events |> filter(season == seasons[1])
+  }
+  cat(nrow(events), " events (", seasons[1], ") ... ", sep = "")
+  main_seasons <- unique(as.character(events$season))
+
+  res <- build_chain_table(events, comp)
+  if (!is.null(res$failure)) {
+    join_failures <- c(join_failures, res$failure)
+    next
+  }
+  chains <- res$chains
 
   league_code <- comp_to_code[comp]
   out_path <- file.path(out_dir, paste0("chains-", league_code, ".parquet"))
@@ -368,8 +407,37 @@ for (comp in blog_comps) {
     }
   }
 
+  # Per-season files (pannadata#229; see CHAINS_SEASON_FILES above). The main
+  # file is already written, so a failure here is recorded (CI goes red) but
+  # never costs the main file. When the main table IS exactly this one season
+  # (large comps), its chains are reused instead of rebuilt.
+  for (s in season_file_seasons) {
+    s_path <- chain_season_file(league_code, s, out_dir)
+    tryCatch({
+      if (identical(main_seasons, s)) {
+        s_chains <- chains
+      } else {
+        s_res <- build_chain_table(season_events |> filter(season == s), comp,
+                                   warn_no_overlap = FALSE)
+        if (!is.null(s_res$failure)) {
+          join_failures <- c(join_failures, sprintf("%s (season %s)", s_res$failure, s))
+          next
+        }
+        s_chains <- s_res$chains
+      }
+      write_parquet(s_chains, s_path)
+      cat("  season ", s, ": ", nrow(s_chains), " chains -> ", s_path, "\n", sep = "")
+    }, error = function(e) {
+      join_failures <<- c(join_failures,
+                          sprintf("%s (season %s): %s", comp, s, conditionMessage(e)))
+      cat("  FAIL ", comp, " season ", s, " — ", conditionMessage(e),
+          " (recorded, continuing)\n", sep = "")
+    })
+    if (exists("s_chains", inherits = FALSE)) rm(s_chains)
+  }
+
   # Free memory before next league
-  rm(events, chains, chain_states); gc(verbose = FALSE)
+  rm(events, season_events, chains, res); gc(verbose = FALSE)
   }, error = function(e) {
     join_failures <<- c(join_failures,
                         sprintf("%s: %s", comp, conditionMessage(e)))
