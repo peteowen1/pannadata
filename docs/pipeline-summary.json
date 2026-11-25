@@ -1,0 +1,803 @@
+{
+ "repo": "peteowen1/pannadata",
+ "doc_path": "docs/PIPELINE.md",
+ "title": "pannadata pipeline",
+ "about": "How the football data gets from Opta to the site's R2 store, on GitHub Actions: the daily Opta scrape here, then the ratings and match predictions in the panna repo (see that repo's pipeline guide), then the blog data build here, which publishes what the site reads. Each stage starts the next by sending a repository_dispatch message; this guide times each stage on its own and does not follow one chain of runs across repos.",
+ "newest_run_utc": "2026-11-24T17:03:20Z",
+ "newest_run_sydney": "25 Nov 2026, 4:03am",
+ "pipelines": [
+  {
+   "name": "Daily Opta scrape",
+   "workflow": "daily-opta-scrape.yml",
+   "about": "Fetches new Opta matches for the current season, merges them into the consolidated tables, scores new shots for xG and post-shot xG (xGOT), and publishes everything to the opta-latest release. Only the scheduled runs are counted, not manual backfills. Tuesday to Sunday it scrapes competition tiers 1 and 2; Monday it scrapes every tier (the scrape limit rises from 35 to 120 minutes), so Monday runs are the slow ones.",
+   "triggers": "GitHub's own schedule, set for 5am UTC each day. GitHub starts it hours late (the five runs used began between midnight and 3am Sydney time). When it succeeds it sends opta-scrape-complete to the panna repo, which starts both the Predictions Pipeline and the Opta RAPM/SPM Pipeline there.",
+   "median_s": 1753.0,
+   "min_s": 1587.0,
+   "max_s": 3693.0,
+   "runs": [
+    {
+     "id": 45426597919,
+     "url": "https://github.com/peteowen1/pannadata/actions/runs/45426597919",
+     "event": "schedule",
+     "branch": "main",
+     "title": "Daily Opta Scrape",
+     "started_utc": "2026-11-24T15:32:02Z",
+     "started_sydney": "25 Nov 2026, 2:32am",
+     "wall_s": 1753.0,
+     "queued_s": 3.0
+    },
+    {
+     "id": 45207463775,
+     "url": "https://github.com/peteowen1/pannadata/actions/runs/45207463775",
+     "event": "schedule",
+     "branch": "main",
+     "title": "Daily Opta Scrape",
+     "started_utc": "2026-11-23T15:38:20Z",
+     "started_sydney": "24 Nov 2026, 2:38am",
+     "wall_s": 3693.0,
+     "queued_s": 2.0
+    },
+    {
+     "id": 45025556405,
+     "url": "https://github.com/peteowen1/pannadata/actions/runs/45025556405",
+     "event": "schedule",
+     "branch": "main",
+     "title": "Daily Opta Scrape",
+     "started_utc": "2026-11-22T13:04:35Z",
+     "started_sydney": "23 Nov 2026, 12:04am",
+     "wall_s": 1881.0,
+     "queued_s": 2.0
+    },
+    {
+     "id": 44907857427,
+     "url": "https://github.com/peteowen1/pannadata/actions/runs/44907857427",
+     "event": "schedule",
+     "branch": "main",
+     "title": "Daily Opta Scrape",
+     "started_utc": "2026-11-21T13:14:25Z",
+     "started_sydney": "22 Nov 2026, 12:14am",
+     "wall_s": 1587.0,
+     "queued_s": 2.0
+    },
+    {
+     "id": 44747831205,
+     "url": "https://github.com/peteowen1/pannadata/actions/runs/44747831205",
+     "event": "schedule",
+     "branch": "main",
+     "title": "Daily Opta Scrape",
+     "started_utc": "2026-11-20T13:50:21Z",
+     "started_sydney": "21 Nov 2026, 12:50am",
+     "wall_s": 1686.0,
+     "queued_s": 2.0
+    }
+   ],
+   "jobs": [
+    {
+     "name": "scrape",
+     "about": "One job: restore the data already on the opta-latest release, scrape what is new, rebuild the consolidated tables, score shots, upload, then start the panna repo",
+     "legs": 1,
+     "median_s": 1753.0,
+     "min_s": 1587.0,
+     "max_s": 3693.0,
+     "leg_median_s": 1753.0,
+     "slowest_leg_median_s": 1753.0,
+     "runs_seen": 5,
+     "steps": [
+      {
+       "name": "Set up job",
+       "about": "GitHub starts the machine and downloads the actions this job uses",
+       "source": "builtin",
+       "median_s": 2.0,
+       "min_s": 1.0,
+       "max_s": 3.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Checkout pannadata",
+       "about": "Downloads this repo's code onto the machine",
+       "source": "config",
+       "median_s": 1.0,
+       "min_s": 1.0,
+       "max_s": 5.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Setup Python",
+       "about": "Installs Python 3.11 with a cache of the pip packages",
+       "source": "config",
+       "median_s": 2.0,
+       "min_s": 2.0,
+       "max_s": 4.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Install Python dependencies",
+       "about": "Installs the scraper's Python packages from scripts/opta/requirements.txt",
+       "source": "config",
+       "median_s": 8.0,
+       "min_s": 6.0,
+       "max_s": 9.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Restore opta-latest from GitHub Releases",
+       "about": "Downloads the manifest of matches already scraped and the consolidated tables (player stats, shots, events, lineups, fixtures and the per-league events files) from the opta-latest release, so this run adds to them instead of starting empty; fails if a file that should be there is missing",
+       "source": "config",
+       "median_s": 152.0,
+       "min_s": 96.0,
+       "max_s": 225.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Run Opta scraper",
+       "about": "Runs scripts/opta/scrape_opta.py: asks the Opta API for matches not yet in the manifest (the latest season of each competition; tiers 1 and 2, or every tier on Mondays) and saves one small parquet file per match, league and table",
+       "source": "config",
+       "median_s": 665.0,
+       "min_s": 434.0,
+       "max_s": 2305.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Scrape stats job summary",
+       "about": "Writes a table of what the scrape fetched, per league and season, onto the run's summary page",
+       "source": "config",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 0.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Build consolidated parquet files",
+       "about": "Runs scripts/opta/consolidate_opta.py: merges the new per-match files into the single opta_*.parquet tables and the per-league events files, one league at a time to save memory, and rebuilds opta-catalog.json",
+       "source": "config",
+       "median_s": 401.0,
+       "min_s": 268.0,
+       "max_s": 458.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Verify events_consolidated coverage vs player_stats",
+       "about": "Runs scripts/opta/check_events_coverage.py: stops the run before upload if any league's events file is missing more than 20 matches that the player stats have, for the current season",
+       "source": "config",
+       "median_s": 4.0,
+       "min_s": 3.0,
+       "max_s": 6.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Setup R for xG enrichment",
+       "about": "Installs R for the shot scoring below",
+       "source": "config",
+       "median_s": 31.0,
+       "min_s": 29.0,
+       "max_s": 43.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Install R dependencies for xG",
+       "about": "Installs the R packages the shot scoring needs (arrow, dplyr, xgboost, data.table, cli)",
+       "source": "config",
+       "median_s": 26.0,
+       "min_s": 23.0,
+       "max_s": 32.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Enrich shots with xG + xGOT",
+       "about": "Fills in shots that are missing details and scores them: repairs shot rows from the stored events, adds goalmouth placement, then downloads the xG v5 and xGOT v3 models from the models release and scores shots with no value yet (scripts/score_shots_context.R); an error here is recorded and fails the run at the end, after the upload",
+       "source": "config",
+       "median_s": 131.0,
+       "min_s": 99.0,
+       "max_s": 147.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Build player profiles (DOB/nationality/height)",
+       "about": "Runs scripts/opta/build_player_profiles.py: one row per player with date of birth, nationality and height, taken from the reep register because Opta's feed has none of them (best effort; a failure does not fail the run)",
+       "source": "config",
+       "median_s": 76.0,
+       "min_s": 57.0,
+       "max_s": 130.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Upload to GitHub Releases",
+       "about": "Uploads the consolidated tables, the event-less match list, the catalog and only the events files that changed this run to the opta-latest release; the match manifest goes up last, and only if every earlier upload worked, followed by bus_manifest.json",
+       "source": "config",
+       "median_s": 150.0,
+       "min_s": 67.0,
+       "max_s": 406.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Summary",
+       "about": "Prints the manifest size and the number of files built",
+       "source": "config",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 0.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Build current club squads",
+       "about": "Runs scripts/opta/build_squads.py to build squads.parquet (who is at each club right now) and uploads it to opta-latest; best effort, keeping the old file if it fails",
+       "source": "config",
+       "median_s": 149.0,
+       "min_s": 148.0,
+       "max_s": 154.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Trigger panna predictions pipeline",
+       "about": "Sends opta-scrape-complete to the panna repo, which starts its predictions and ratings runs (tries three times)",
+       "source": "config",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 1.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Fail on failed fixture windows",
+       "about": "Ends the run red if any fixture window failed on its first page (an Opta outage or rate limit), after everything else has been published",
+       "source": "config",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 0.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Post Install R dependencies for xG",
+       "about": "Clean-up for an earlier step (saves caches, removes credentials)",
+       "source": "builtin",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 2.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Post Setup Python",
+       "about": "Clean-up for an earlier step (saves caches, removes credentials)",
+       "source": "builtin",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 0.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Post Checkout pannadata",
+       "about": "Clean-up for an earlier step (saves caches, removes credentials)",
+       "source": "builtin",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 1.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Complete job",
+       "about": "GitHub closes the job and cleans up the machine",
+       "source": "builtin",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 0.0,
+       "n": 5,
+       "of": 5
+      }
+     ],
+     "stages": {},
+     "stage_notes": {},
+     "stage_about": {}
+    }
+   ],
+   "phases": [
+    {
+     "jobs": [
+      "scrape"
+     ],
+     "median_s": 1753.0,
+     "min_s": 1587.0,
+     "max_s": 3693.0,
+     "slowest": "scrape",
+     "parallel": false
+    }
+   ],
+   "critical_path": [
+    "scrape"
+   ],
+   "slowest_steps": [
+    {
+     "job": "scrape",
+     "step": "Run Opta scraper",
+     "about": "Runs scripts/opta/scrape_opta.py: asks the Opta API for matches not yet in the manifest (the latest season of each competition; tiers 1 and 2, or every tier on Mondays) and saves one small parquet file per match, league and table",
+     "median_s": 665.0
+    },
+    {
+     "job": "scrape",
+     "step": "Build consolidated parquet files",
+     "about": "Runs scripts/opta/consolidate_opta.py: merges the new per-match files into the single opta_*.parquet tables and the per-league events files, one league at a time to save memory, and rebuilds opta-catalog.json",
+     "median_s": 401.0
+    },
+    {
+     "job": "scrape",
+     "step": "Restore opta-latest from GitHub Releases",
+     "about": "Downloads the manifest of matches already scraped and the consolidated tables (player stats, shots, events, lineups, fixtures and the per-league events files) from the opta-latest release, so this run adds to them instead of starting empty; fails if a file that should be there is missing",
+     "median_s": 152.0
+    },
+    {
+     "job": "scrape",
+     "step": "Upload to GitHub Releases",
+     "about": "Uploads the consolidated tables, the event-less match list, the catalog and only the events files that changed this run to the opta-latest release; the match manifest goes up last, and only if every earlier upload worked, followed by bus_manifest.json",
+     "median_s": 150.0
+    },
+    {
+     "job": "scrape",
+     "step": "Build current club squads",
+     "about": "Runs scripts/opta/build_squads.py to build squads.parquet (who is at each club right now) and uploads it to opta-latest; best effort, keeping the old file if it fails",
+     "median_s": 149.0
+    }
+   ]
+  },
+  {
+   "name": "Blog data build",
+   "workflow": "build-blog-data.yml",
+   "about": "Takes the ratings and predictions the panna repo published, joins them to the Opta data, builds the parquet files the site reads, and uploads them to the R2 store (inthegame-data, football folder). Only runs started by the panna repo's predictions-complete message are counted.",
+   "triggers": "The panna repo's Predictions Pipeline sends predictions-complete when it finishes publishing (a step near the end there). It can also be started by hand. It starts nothing else: the site reads the R2 files it uploads. It shares a queue with the daily scrape, so the two never write R2 at the same time.",
+   "median_s": 1654.0,
+   "min_s": 1460.0,
+   "max_s": 1723.0,
+   "runs": [
+    {
+     "id": 45444209544,
+     "url": "https://github.com/peteowen1/pannadata/actions/runs/45444209544",
+     "event": "repository_dispatch",
+     "branch": "main",
+     "title": "predictions-complete",
+     "started_utc": "2026-11-24T17:03:20Z",
+     "started_sydney": "25 Nov 2026, 4:03am",
+     "wall_s": 1460.0,
+     "queued_s": 2.0
+    },
+    {
+     "id": 45327694253,
+     "url": "https://github.com/peteowen1/pannadata/actions/runs/45327694253",
+     "event": "repository_dispatch",
+     "branch": "main",
+     "title": "predictions-complete",
+     "started_utc": "2026-11-24T04:37:40Z",
+     "started_sydney": "24 Nov 2026, 3:37pm",
+     "wall_s": 1616.0,
+     "queued_s": 2.0
+    },
+    {
+     "id": 45318372305,
+     "url": "https://github.com/peteowen1/pannadata/actions/runs/45318372305",
+     "event": "repository_dispatch",
+     "branch": "main",
+     "title": "predictions-complete",
+     "started_utc": "2026-11-24T03:16:48Z",
+     "started_sydney": "24 Nov 2026, 2:16pm",
+     "wall_s": 1662.0,
+     "queued_s": 2.0
+    },
+    {
+     "id": 45307479790,
+     "url": "https://github.com/peteowen1/pannadata/actions/runs/45307479790",
+     "event": "repository_dispatch",
+     "branch": "main",
+     "title": "predictions-complete",
+     "started_utc": "2026-11-24T01:46:12Z",
+     "started_sydney": "24 Nov 2026, 12:46pm",
+     "wall_s": 1723.0,
+     "queued_s": 2.0
+    },
+    {
+     "id": 45230616790,
+     "url": "https://github.com/peteowen1/pannadata/actions/runs/45230616790",
+     "event": "repository_dispatch",
+     "branch": "main",
+     "title": "predictions-complete",
+     "started_utc": "2026-11-23T17:42:54Z",
+     "started_sydney": "24 Nov 2026, 4:42am",
+     "wall_s": 1654.0,
+     "queued_s": 2.0
+    }
+   ],
+   "jobs": [
+    {
+     "name": "build",
+     "about": "One job: download the published ratings, predictions and Opta tables, rebuild each blog file, upload them to R2, then check nothing expected is missing",
+     "legs": 1,
+     "median_s": 1654.0,
+     "min_s": 1460.0,
+     "max_s": 1723.0,
+     "leg_median_s": 1654.0,
+     "slowest_leg_median_s": 1654.0,
+     "runs_seen": 5,
+     "steps": [
+      {
+       "name": "Set up job",
+       "about": "GitHub starts the machine and downloads the actions this job uses",
+       "source": "builtin",
+       "median_s": 2.0,
+       "min_s": 1.0,
+       "max_s": 2.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+       "about": "Downloads this repo's code onto the machine",
+       "source": "builtin",
+       "median_s": 1.0,
+       "min_s": 1.0,
+       "max_s": 1.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Run r-lib/actions/setup-r@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05",
+       "about": "Installs R",
+       "source": "builtin",
+       "median_s": 30.0,
+       "min_s": 28.0,
+       "max_s": 32.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Run r-lib/actions/setup-r-dependencies@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05",
+       "about": "Installs the R packages this repo needs (from a cache when it can)",
+       "source": "builtin",
+       "median_s": 32.0,
+       "min_s": 30.0,
+       "max_s": 34.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Download source data",
+       "about": "Downloads from the ratings-data, blog-latest and opta-latest releases: the ratings, predictions, game logs, World Cup files, team strength, shot events, lineups and club squads that the builds below read; fails if a required one is missing",
+       "source": "config",
+       "median_s": 33.0,
+       "min_s": 31.0,
+       "max_s": 63.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Enrich shot xG (belt-and-suspenders \u2014 re-run if upstream is stale)",
+       "about": "Safety check: if more than 15% of the latest season's shots have no xG, fails the build under the current model setting (re-run the daily scrape to fix it); skipped when xG is healthy",
+       "source": "config",
+       "median_s": 4.0,
+       "min_s": 4.0,
+       "max_s": 4.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Build ratings parquet",
+       "about": "Runs scripts/build_blog_data.R: builds ratings.parquet, the player ratings table (xRAPM, SPM, career panna, EPR, PSR and the combined Piero rating) the site's player pages use",
+       "source": "config",
+       "median_s": 232.0,
+       "min_s": 186.0,
+       "max_s": 253.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Enrich WC squads with Piero",
+       "about": "Copies each World Cup squad player's career ratings and Piero rating from ratings.parquet, so the squads match it exactly",
+       "source": "config",
+       "median_s": 2.0,
+       "min_s": 1.0,
+       "max_s": 2.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Build player details parquet",
+       "about": "Runs scripts/build_player_meta.R: one row per player with their team, league and most common position",
+       "source": "config",
+       "median_s": 18.0,
+       "min_s": 14.0,
+       "max_s": 20.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Enrich shots with xGOT",
+       "about": "Under the current model setting this only prints that xGOT comes from the daily scrape and does nothing else",
+       "source": "config",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 0.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Build weak-foot table (live xG)",
+       "about": "Builds shot-foot-history.json: each player's right-footed and left-footed shots so far, which the live xG scorer on the site needs",
+       "source": "config",
+       "median_s": 22.0,
+       "min_s": 18.0,
+       "max_s": 22.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Build shot parquet",
+       "about": "Runs scripts/build_shot_data.R: recent shots with xG for the site's shot charts",
+       "source": "config",
+       "median_s": 3.0,
+       "min_s": 2.0,
+       "max_s": 3.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Download and filter player skills",
+       "about": "Downloads opta_skills.parquet and keeps only the latest season, as player-skills.parquet",
+       "source": "config",
+       "median_s": 3.0,
+       "min_s": 2.0,
+       "max_s": 5.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Build match-shots (xG from enriched source)",
+       "about": "Builds match-shots.parquet: every shot in the blog's competitions plus the World Cup, with team names and the half it was taken in",
+       "source": "config",
+       "median_s": 48.0,
+       "min_s": 41.0,
+       "max_s": 72.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Build match-stats per league",
+       "about": "Runs scripts/rebuild_match_stats.R: one match-stats parquet per league (and per World Cup, Euro, Copa America and AFCON), one league at a time to save memory",
+       "source": "config",
+       "median_s": 17.0,
+       "min_s": 16.0,
+       "max_s": 19.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Build league xG from match-shots",
+       "about": "Builds league-xg.parquet and one team-match xG file per league from the shots",
+       "source": "config",
+       "median_s": 4.0,
+       "min_s": 3.0,
+       "max_s": 5.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Enrich predictions with match-level xG",
+       "about": "Adds each finished match's shot-based xG to predictions.parquet",
+       "source": "config",
+       "median_s": 5.0,
+       "min_s": 5.0,
+       "max_s": 6.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Build chain parquets (one league at a time)",
+       "about": "Runs scripts/build_chains_ci.R: builds the possession-chain files (chains-<league>.parquet, plus the newest seasons separately), downloading each league's events as it goes",
+       "source": "config",
+       "median_s": 377.0,
+       "min_s": 303.0,
+       "max_s": 407.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Build player-positions parquet (detailed pos for blog filter)",
+       "about": "Runs scripts/build_player_positions.R: each player's detailed position (left back, centre mid and so on) per league and season, for the site's position filter",
+       "source": "config",
+       "median_s": 36.0,
+       "min_s": 29.0,
+       "max_s": 39.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Fetch current club squads",
+       "about": "Downloads squads.parquet (who is at each club now) from opta-latest so the site's team column is current",
+       "source": "config",
+       "median_s": 1.0,
+       "min_s": 0.0,
+       "max_s": 1.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Recent predictions",
+       "about": "Writes predictions-recent.parquet: only the last 450 days of predictions, so the site's matches pages load faster",
+       "source": "config",
+       "median_s": 1.0,
+       "min_s": 1.0,
+       "max_s": 1.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Lock pre-match predictions",
+       "about": "Runs scripts/lock_predictions.R: keeps each match's last prediction made before its match day in predictions-locked.parquet (read from R2, added to, never rewritten)",
+       "source": "config",
+       "median_s": 2.0,
+       "min_s": 1.0,
+       "max_s": 2.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Simulate cup competitions (UCL/UEL/UECL)",
+       "about": "Runs scripts/simulate_cup.R: simulates the Champions League, Europa League and Conference League from the latest predictions, as cup-simulations.parquet",
+       "source": "config",
+       "median_s": 21.0,
+       "min_s": 17.0,
+       "max_s": 22.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Build per-player, per-team and per-league copies of match-stats and game-logs",
+       "about": "Runs scripts/by_player.R: re-sorts the match-stats and game-logs files by player and by team so a player or team page reads one small slice instead of the whole league",
+       "source": "config",
+       "median_s": 90.0,
+       "min_s": 81.0,
+       "max_s": 98.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Strip oversized R metadata from parquets",
+       "about": "Rewrites any parquet whose footer is over 1 MB so browsers do not have to download a huge header first",
+       "source": "config",
+       "median_s": 1.0,
+       "min_s": 1.0,
+       "max_s": 1.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Upload to R2",
+       "about": "Installs wrangler, uploads every parquet (and the small JSON files) to the inthegame-data bucket's football folder, then writes r2_bus_manifest.json last; fails before the manifest if any upload failed",
+       "source": "config",
+       "median_s": 643.0,
+       "min_s": 618.0,
+       "max_s": 672.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Fail run if expected blog artifacts are missing",
+       "about": "After the upload, ends the run red if any file that is rebuilt every run is missing (ratings, player details, match-shots and the match-stats files)",
+       "source": "config",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 0.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Fail run if chains had per-comp failures",
+       "about": "After the upload, ends the run red if any competition's chain file failed to build (the others were still uploaded)",
+       "source": "config",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 0.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Post Run r-lib/actions/setup-r-dependencies@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05",
+       "about": "Clean-up for an earlier step (saves caches, removes credentials)",
+       "source": "builtin",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 1.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+       "about": "Clean-up for an earlier step (saves caches, removes credentials)",
+       "source": "builtin",
+       "median_s": 1.0,
+       "min_s": 0.0,
+       "max_s": 1.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Complete job",
+       "about": "GitHub closes the job and cleans up the machine",
+       "source": "builtin",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 0.0,
+       "n": 5,
+       "of": 5
+      }
+     ],
+     "stages": {},
+     "stage_notes": {},
+     "stage_about": {}
+    }
+   ],
+   "phases": [
+    {
+     "jobs": [
+      "build"
+     ],
+     "median_s": 1654.0,
+     "min_s": 1460.0,
+     "max_s": 1723.0,
+     "slowest": "build",
+     "parallel": false
+    }
+   ],
+   "critical_path": [
+    "build"
+   ],
+   "slowest_steps": [
+    {
+     "job": "build",
+     "step": "Upload to R2",
+     "about": "Installs wrangler, uploads every parquet (and the small JSON files) to the inthegame-data bucket's football folder, then writes r2_bus_manifest.json last; fails before the manifest if any upload failed",
+     "median_s": 643.0
+    },
+    {
+     "job": "build",
+     "step": "Build chain parquets (one league at a time)",
+     "about": "Runs scripts/build_chains_ci.R: builds the possession-chain files (chains-<league>.parquet, plus the newest seasons separately), downloading each league's events as it goes",
+     "median_s": 377.0
+    },
+    {
+     "job": "build",
+     "step": "Build ratings parquet",
+     "about": "Runs scripts/build_blog_data.R: builds ratings.parquet, the player ratings table (xRAPM, SPM, career panna, EPR, PSR and the combined Piero rating) the site's player pages use",
+     "median_s": 232.0
+    },
+    {
+     "job": "build",
+     "step": "Build per-player, per-team and per-league copies of match-stats and game-logs",
+     "about": "Runs scripts/by_player.R: re-sorts the match-stats and game-logs files by player and by team so a player or team page reads one small slice instead of the whole league",
+     "median_s": 90.0
+    },
+    {
+     "job": "build",
+     "step": "Build match-shots (xG from enriched source)",
+     "about": "Builds match-shots.parquet: every shot in the blog's competitions plus the World Cup, with team names and the half it was taken in",
+     "median_s": 48.0
+    }
+   ]
+  }
+ ],
+ "warnings": []
+}
