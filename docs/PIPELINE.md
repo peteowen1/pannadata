@@ -10,7 +10,7 @@ Workflow: [`daily-opta-scrape.yml`](https://github.com/peteowen1/pannadata/blob/
 
 Fetches new Opta matches for the current season, merges them into the consolidated tables, scores new shots for xG and post-shot xG (xGOT), and publishes everything to the opta-latest release. Only the scheduled runs are counted, not manual backfills. Tuesday to Sunday it scrapes competition tiers 1 and 2; Monday it scrapes every tier (the scrape limit rises from 35 to 120 minutes), so Monday runs are the slow ones.
 
-**What starts it, and what it starts:** GitHub's own schedule, set for 5am UTC each day. GitHub starts it hours late (the five runs used began between midnight and 3am Sydney time). When it succeeds it sends opta-scrape-complete to the panna repo, which starts both the Predictions Pipeline and the Opta RAPM/SPM Pipeline there.
+**What starts it, and what it starts:** GitHub's own schedule, set for 4pm Sydney time each day in summer. GitHub starts it hours late (the five runs used began between midnight and 3am Sydney time). When it succeeds it sends opta-scrape-complete to the panna repo, which starts both the Predictions Pipeline and the Opta RAPM/SPM Pipeline there.
 
 ### The order jobs run in
 
