@@ -69,6 +69,11 @@ if (has_wpa) {
   cat("No action_wpa_*.parquet files — chains will not include per-action WPA\n")
 }
 
+# Per-shot model xG for chain shot rows (inthegame-blog#336). The workflow's
+# "Download source data" step puts opta_shot_events.parquet in source/ for the
+# shot steps before this one. Read after league_config below sets blog_comps.
+shot_file <- file.path(src_dir, "opta_shot_events.parquet")
+
 # Load lineups once (shared across all leagues)
 lineup_file <- file.path(src_dir, "opta_lineups.parquet")
 if (!file.exists(lineup_file)) stop("Missing: ", lineup_file)
@@ -104,6 +109,32 @@ if (!exists("blog_comps", inherits = FALSE)) {
   blog_comps <- c(BLOG_COMPS, "World_Cup")
   comp_to_code <- c(BLOG_COMP_TO_CODE, World_Cup = "WC")
 }
+# Comps whose equity/wpa/shot-xg join breached a guard. Healthy comps still
+# build and upload; this list is raised as a hard error after the loop.
+join_failures <- character(0)
+
+has_shot_xg <- FALSE
+if (file.exists(shot_file)) {
+  shot_cols <- intersect(c("match_id", "event_id", "competition", "xg", "xgot"),
+                         names(arrow::open_dataset(shot_file)$schema))
+  shot_xg <- tryCatch({
+    shots <- read_parquet(shot_file, col_select = all_of(shot_cols))
+    if ("competition" %in% names(shots)) shots <- shots[shots$competition %in% blog_comps, ]
+    shot_xg_lookup(shots)
+  }, error = function(e) { cat("::error::shot xG lookup failed:", conditionMessage(e), "\n"); NULL })
+  if (exists("shots")) rm(shots)
+  has_shot_xg <- !is.null(shot_xg)
+  if (has_shot_xg) {
+    cat("Shot xG loaded:", length(shot_xg$key), "shots across", length(shot_xg$match_ids),
+        "matches,", sum(!is.na(shot_xg$xg)), "with xg\n\n")
+  } else {
+    join_failures <- c(join_failures, "shot xG lookup failed: chains shipped without xg/xgot")
+  }
+} else {
+  cat("::warning::No", shot_file, "- chains ship without xg/xgot\n")
+  join_failures <- c(join_failures, "opta_shot_events.parquet missing: chains shipped without xg/xgot")
+}
+
 dead_ball_types <- c(2L, 4L, 5L, 6L, 17L, 55L, 56L, 57L, 70L, 80L, 81L)
 non_play_types <- c(18L, 19L, 24L, 27L, 28L, 30L, 32L, 34L, 37L, 40L, 43L, 65L, 68L)
 shot_types <- c(13L, 14L, 15L, 16L)
@@ -144,10 +175,6 @@ duel_contest_types <- c(3L, 7L, 42L, 44L, 45L, 83L)
 # join_failures; the build fails after all healthy comps are built, so one
 # drifted comp doesn't block delivery of the others while CI still goes red.
 MIN_JOIN_MATCH_FRAC <- 0.80
-
-# Comps whose equity/wpa join breached a guard. Healthy comps still build and
-# upload; this list is raised as a hard error after the loop.
-join_failures <- character(0)
 
 # Comps where every scraped season is intentionally kept, even once the
 # combined events file crosses the 200k-row threshold below. The guard exists
@@ -341,6 +368,27 @@ build_chain_table <- function(ev, comp, warn_no_overlap = TRUE) {
         "%s: wpa join matched 0 of %d chain actions — no overlap with action_wpa; shipping an all-NA wpa column (season/comp mismatch or match_id drift?)",
         comp, nrow(chains)), call. = FALSE, immediate. = TRUE)
     }
+  }
+
+  # Per-shot model xG on shot rows (inthegame-blog#336; join_shot_xg() in
+  # chain_seasons.R). Exact key, so the floor is high (SHOT_XG_MIN_FRAC).
+  if (has_shot_xg) {
+    sx <- join_shot_xg(chains, shot_xg, comp)
+    cat("  shot xg: ", sx$n_found, "/", sx$n_shots, " shot rows found (", sx$n_covered,
+        " in covered matches), ", sx$n_xg, " with xg\n", sep = "")
+    # A current-season file whose shots find no match in the shot table at all
+    # would ship all-NA xg green (e.g. a renamed `competition` value). Past-season
+    # files pass warn_no_overlap = FALSE but are covered by the same table, so
+    # the rule is applied to the main file only, the one the blog reads first.
+    if (is.null(sx$failure) && warn_no_overlap && sx$n_shots > 0L && sx$n_covered == 0L) {
+      sx$failure <- sprintf("%s: none of %d shot rows is in a match the shot table has - shipping would leave xg all NA",
+                            comp, sx$n_shots)
+    }
+    if (!is.null(sx$failure)) {
+      cat("  SKIP ", comp, " - ", sx$failure, " (recorded, continuing)\n", sep = "")
+      return(list(chains = NULL, failure = sx$failure))
+    }
+    chains <- sx$chains
   }
 
   list(chains = chains, failure = NULL)
