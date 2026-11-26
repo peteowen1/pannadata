@@ -87,5 +87,46 @@ hits <- vapply(unique(out_a$match_id), function(m)
 chk("alias: some match_id lives in one group", any(hits == 1L), TRUE)
 rm(ra); invisible(gc())
 
+# ng-breakdown -by-league copies (pannadata#230)
+set.seed(230)
+n_ng <- 3000L
+ng <- data.frame(
+  match_id = sprintf("m%03d", sample(1:200, n_ng, replace = TRUE)),
+  player_id = sprintf("p%03d", sample(1:300, n_ng, replace = TRUE)),
+  category = sample(c("pass", "carry", "shot", "own_goal_pool"), n_ng, replace = TRUE),
+  value = round(rnorm(n_ng), 4),
+  league = sample(c("ENG", "ESP", "UCL", "WC", "MEX"), n_ng, replace = TRUE),
+  season = "2025-2026",
+  stringsAsFactors = FALSE
+)
+ng_dir <- tempfile("ng"); dir.create(ng_dir)
+ng_src <- file.path(ng_dir, "ng-breakdown-2025-2026.parquet")
+write_parquet(ng, ng_src)
+write_parquet(ng[1:10, ], file.path(ng_dir, "ng-player-breakdown-2025-2026.parquet"))  # not a season file: ignored
+src_md5 <- unname(tools::md5sum(ng_src))
+chk("ng: no failures", length(build_ng_breakdown_by_league_copies(ng_dir)), 0L)
+ng_out <- file.path(ng_dir, "ng-breakdown-2025-2026-by-league.parquet")
+chk("ng: copy written", file.exists(ng_out), TRUE)
+chk("ng: original untouched", unname(tools::md5sum(ng_src)), src_md5)
+chk("ng: per-player file not copied", file.exists(file.path(ng_dir, "ng-player-breakdown-2025-2026-by-league.parquet")), FALSE)
+rn <- ParquetFileReader$create(ng_out)
+chk("ng: one row group per league", rn$num_row_groups, 5L)
+lg_per_rg <- vapply(seq_len(rn$num_row_groups) - 1L, function(i) length(unique(as.data.frame(rn$ReadRowGroup(i))$league)), integer(1))
+chk("ng: no group mixes leagues", all(lg_per_rg == 1L), TRUE)
+rm(rn); invisible(gc())
+o <- as.data.frame(read_parquet(ng_out))
+chk("ng: same row count", nrow(o), n_ng)
+chk("ng: same columns in order", names(o), names(ng))
+chk("ng: league sorted", is.unsorted(o$league), FALSE)
+key <- function(d) sort(paste(d$match_id, d$player_id, d$category, d$value, d$league, d$season))
+chk("ng: same rows", key(o), key(ng))
+rm(o); invisible(gc())  # Windows: a mapped read blocks the re-run's rewrite (error 1224)
+chk("ng: re-run safe", length(build_ng_breakdown_by_league_copies(ng_dir)), 0L)
+chk("ng: re-run made no copy of the copy", length(list.files(ng_dir, "by-league-by-league")), 0L)
+bad_dir <- tempfile("ngbad"); dir.create(bad_dir)
+write_parquet(ng[, setdiff(names(ng), "league")], file.path(bad_dir, "ng-breakdown-2024-2025.parquet"))
+chk("ng: bad file fails soft", length(suppressMessages(build_ng_breakdown_by_league_copies(bad_dir))), 1L)
+chk("ng: bad file leaves no copy", file.exists(file.path(bad_dir, "ng-breakdown-2024-2025-by-league.parquet")), FALSE)
+
 if (failed > 0L) { cat(failed, "check(s) failed\n"); quit(status = 1) }
 cat("all game-logs chunk checks passed\n")

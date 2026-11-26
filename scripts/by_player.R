@@ -323,6 +323,48 @@ write_game_logs_by_league <- function(gl, path) {
 
 GAME_LOGS_SEASON_RE <- "^game-logs-[0-9]{4}-[0-9]{4}\\.parquet$"
 
+# ng-breakdown-<season>-by-league.parquet (pannadata#230), for the Player Stats
+# "EPV by play type" view: it reads ng-breakdown-<season>.parquet filtered to one
+# league, but panna 10b writes that file as 1-3 row groups in no league order, so
+# every read downloaded the whole season (20.1 MB / 2,264,215 rows for 2025-26).
+# Same layout as the game-logs copy above: same rows and columns, sorted by
+# league, one row group per league, statistics on `league` only. Originals
+# untouched; the blog falls back to the original when the copy is missing.
+NG_BREAKDOWN_SEASON_RE <- "^ng-breakdown-[0-9]{4}-[0-9]{4}\\.parquet$"
+NG_BREAKDOWN_COLS <- c("match_id", "player_id", "category", "value", "league", "season")
+
+write_ng_breakdown_by_league <- function(ng, path) {
+  ng <- as.data.frame(ng)
+  miss <- setdiff(NG_BREAKDOWN_COLS, names(ng))
+  if (length(miss)) stop(path, ": missing column(s) ", paste(miss, collapse = ", "))
+  if (!is.character(ng$league)) stop(path, ": league is ", class(ng$league)[1], ", expected a plain string column")
+  n_rg <- write_parquet_packed(ng, path, by = c("league", "player_id", "match_id", "category"), rows = 1L)
+  n_lg <- length(unique(ng$league))
+  if (n_rg != n_lg) stop(sprintf("%s: %d row groups for %d leagues", path, n_rg, n_lg))
+  invisible(n_rg)
+}
+
+build_ng_breakdown_by_league_copies <- function(blog_dir = "blog") {
+  srcs <- list.files(blog_dir, pattern = NG_BREAKDOWN_SEASON_RE, full.names = TRUE)
+  if (length(srcs) == 0L) {
+    # Normal for sync-game-logs-r2.yml, which downloads no ng-breakdown files
+    cat("no ng-breakdown-<season>.parquet in ", blog_dir, ", so no ng -by-league copies this run\n", sep = "")
+    return(invisible(character()))
+  }
+  failed <- character()
+  for (src in srcs) {
+    out <- sub("\\.parquet$", "-by-league.parquet", src)
+    tryCatch(write_ng_breakdown_by_league(arrow::read_parquet(src), out),
+             error = function(e) {
+               unlink(out)
+               failed <<- c(failed, out)
+               message("::warning::", out, " NOT written (the page falls back to ", basename(src), "): ", conditionMessage(e))
+             })
+  }
+  cat(sprintf("by-league ng-breakdown copies: %d of %d written\n", length(srcs) - length(failed), length(srcs)))
+  invisible(failed)
+}
+
 # Rewrites each game-logs-<season>.parquet in place as league-sorted,
 # 20,000-row groups (pannadata#153). The files come from panna step 10b as ONE
 # row group, so /football/world-cup-player, which keeps `league == "WC"` (3,272
@@ -728,6 +770,7 @@ if (sys.nframe() == 0L) {
   build_by_player_copies(blog_dir)
   build_game_logs_chunks(blog_dir)
   build_by_league_copies(blog_dir)
+  build_ng_breakdown_by_league_copies(blog_dir)
   build_player_skills_pct(blog_dir)
   build_all_by_player(blog_dir)
 }
