@@ -7,10 +7,12 @@ Opta qualifier 102 = goal-mouth y (where the shot crosses the goal-line
 plane, on the 0-100 pitch-width scale; posts ~45.2/54.8) and 103 = z
 (height; crossbar ~38). These are present on EVERY shot — on- and
 off-target — because Opta projects the crossing point even for misses.
-q102 is reliable for on-target-ish shots but scatters for genuine misses
-(type_id 13) — goalmouth_of() prefers q231 for those specifically (see its
-docstring; panna#175/inthegame-blog#489). No working z/height fix exists
-for misses.
+q102 is the crossing point for every shot type, misses included (misses
+spread wide because they go wide). q230/q231 are the GOALKEEPER's x/y, not
+the shot's: reading q231 for misses (Sept-Nov 2026) put 75% of misses between
+the posts (panna#175). To repair those rows, Miss shots' goalmouth_y is
+OVERWRITTEN from q102 on every run (the daily scrape runs this script), while
+every other column/type only fills gaps.
 The scraper now captures them on new matches (opta_scraper.ShotEvent), but
 historical shot rows predate that change. The match_events table —
 events_consolidated/events_<comp>.parquet — stores each event's full
@@ -100,13 +102,8 @@ def goalmouth_of(qualifier_json, type_id=None):
     carry the coordinate. Malformed JSON raises: a one-off repair must
     crash, never impute. Blank/missing coordinate -> None (NaN), never 0.
 
-    q102 (y) is reliable for on-target-ish shots (Post/Saved/Goal) but
-    scatters far outside the goal frame for genuine misses (Miss,
-    type_id 13) -- panna#175/inthegame-blog#489. For Miss shots, prefer
-    q231 (validated via a natural experiment: Post-hit shots, which MUST
-    cross the line at the known post positions 45.2/54.8, land almost
-    exactly there when read via q231), falling back to q102 when q231 is
-    absent (~13-30% of misses depending on era) rather than leaving NA."""
+    q102 (y) for every shot type. type_id is accepted for call compatibility
+    but no longer changes the answer: q231 is the goalkeeper's y (panna#175)."""
     d = json.loads(qualifier_json)
 
     def _f(key):
@@ -118,8 +115,36 @@ def goalmouth_of(qualifier_json, type_id=None):
         # on latin-1/cp1252 responses). A genuinely unparseable value raises.
         return float(v.replace(",", ".") if isinstance(v, str) else v)
 
-    gm_y = (_f("231") if _f("231") is not None else _f("102")) if type_id == MISS_TYPE_ID else _f("102")
-    return gm_y, _f("103")
+    return _f("102"), _f("103")
+
+
+def apply_goalmouth(merged):
+    """Write goalmouth_y/z from the derived gm_y/gm_z columns, in place.
+
+    Coalesce (keep any value already there, fill gaps) for everything EXCEPT
+    Miss shots' goalmouth_y, which is overwritten wherever the events row gave
+    a q102 value: that repairs the rows the q231 parse wrote (panna#175), and
+    is a no-op once they agree. A Miss shot with no derived value keeps its
+    existing one rather than going NA."""
+    is_miss = merged["type_id"] == MISS_TYPE_ID
+    for col, src in (("goalmouth_y", "gm_y"), ("goalmouth_z", "gm_z")):
+        if col not in merged.columns:
+            merged[col] = merged[src]
+            continue
+        before = merged[col].copy()
+        merged[col] = merged[col].fillna(merged[src])
+        if col == "goalmouth_y":
+            fix = is_miss & merged[src].notna()
+            merged.loc[fix, col] = merged.loc[fix, src]
+            changed = int((fix & (before != merged[col])).sum())
+            print(f"Miss shots: goalmouth_y set from q102 on {int(fix.sum()):,} rows "
+                  f"({changed:,} changed this run)")
+    m = merged.loc[is_miss, "goalmouth_y"].dropna()
+    if len(m):
+        inside = ((m >= 45.2) & (m <= 54.8)).mean()
+        print(f"Miss shots inside the post width after backfill: {inside:.1%} of {len(m):,} "
+              "(q231 era read 75%+; a real miss coordinate is spread wide)")
+    return merged.drop(columns=["gm_y", "gm_z"])
 
 
 def main():
@@ -224,14 +249,9 @@ def main():
             "parse/join regression, not the known historical sparsity."
         )
 
-    # Coalesce: keep any value the scraper already wrote, fill the rest.
-    for col in ("goalmouth_y", "goalmouth_z"):
-        src = "gm_y" if col == "goalmouth_y" else "gm_z"
-        if col in shots.columns:
-            merged[col] = merged[col].fillna(merged[src])
-        else:
-            merged[col] = merged[src]
-    merged = merged.drop(columns=["gm_y", "gm_z"])
+    # Coalesce (keep the scraper's values, fill gaps), except Miss goalmouth_y,
+    # which is overwritten from q102 to repair the q231 rows (panna#175).
+    merged = apply_goalmouth(merged)
 
     filled = int(merged["goalmouth_y"].notna().sum())
     print(f"shots with goalmouth_y after backfill: {filled:,} / {len(merged):,} "

@@ -1359,20 +1359,15 @@ class OptaScraper:
                     return None
                 # Opta sometimes returns European-locale decimals ("49,8").
                 return float(v.replace(",", ".") if isinstance(v, str) else v)
-            # q102 is reliable for on-target-ish shots (Post/Saved/Goal) but
-            # scatters far outside the goal frame for genuine misses (Miss,
-            # type_id 13) -- panna#175/inthegame-blog#489. q231 was validated
-            # as a correct y-coordinate via a natural experiment: Post-hit
-            # shots (which MUST cross the line at the known post positions,
-            # 45.2/54.8) land almost exactly there when read via q231. Prefer
-            # it for Miss shots specifically; fall back to q102 if q231 is
-            # absent (~13.6% of misses) rather than leaving the row NA -- no
-            # worse than the pre-fix behaviour for that residual. On-target
-            # shots keep q102 unchanged (already confirmed reliable there).
-            # No working z/height (q103) replacement exists for misses --
-            # q230 tracks shot distance (a confidence score, not a
-            # coordinate), q147 is too sparse (~13.5% presence) to rely on.
-            goalmouth_y = (_gm(231) if _gm(231) is not None else _gm(102)) if type_id == 13 else _gm(102)
+            # q102 is where the shot crosses the goal-line plane, for EVERY shot
+            # type. Misses spread wide on it because misses go wide; that is
+            # not a scaling error. Do NOT use q230/q231 here: they are the
+            # GOALKEEPER's x/y position (panna#175, 26 Nov 2026: on 147k EPL shot
+            # events q230 sits at a goal line ~99% of the time and q231 has sd
+            # ~2.5 around 50 for every shot type, uncorrelated with q102 even on
+            # goals; football-docs labels them gkX/gkY). Reading q231 for misses
+            # (Sept-Nov 2026) put 75% of misses between the posts.
+            goalmouth_y = _gm(102)
             goalmouth_z = _gm(103)
 
             # Own goal (qualifier 28) — same marker panna's SPADL conversion
