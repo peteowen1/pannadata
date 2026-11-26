@@ -8,6 +8,10 @@
 # - chain_newest_seasons(): which seasons get their own file.
 # - chain_coverage_check(): the 80% equity/WPA coverage floor, factored out so
 #   the main file and each past-season file are held to the same rule.
+# - shot_xg_lookup() / join_shot_xg(): per-shot model `xg` / `xgot` on chain
+#   shot rows, from opta_shot_events.parquet by (match_id, event_id)
+#   (inthegame-blog#336), so a chains file sums to the same team xG as
+#   match-shots.parquet and the match pages.
 
 # Opta F24 event names for the type_ids that appear in events_<comp>.parquet.
 # Written from Opta's F24 event list, NOT read from a file in this repo (the
@@ -69,4 +73,63 @@ chain_coverage_check <- function(values, match_id, covered_ids, floor = 0.80) {
   if (!any(covered)) return(list(ok = TRUE, frac = NA_real_, n_covered = 0L))
   frac <- mean(!is.na(values[covered]))
   list(ok = frac >= floor, frac = frac, n_covered = sum(covered))
+}
+
+# --- per-shot xG on chain shot rows (inthegame-blog#336) ---------------------
+# The shot table and the chains come from the same Opta events, so
+# (match_id, event_id) is an exact key: on 27 Nov 2026 all 27,093 shot rows of
+# chains-WC.parquet (16 tournaments) found their shot, type agreeing, none
+# twice. The values are the shot table's own (panna's xG v5 / xGOT v3, scored by
+# score_shots_context.R; the same column match-shots.parquet carries). NA stays
+# NA: own goals and thin-feed shots have no xG by design, and penalties and
+# shootout kicks are kept as the table has them (the blog decides what to count).
+SHOT_XG_MIN_FRAC <- 0.95
+
+# Key the shot table once. Stops on a duplicate key: a duplicate would make the
+# join pick one of two values silently.
+shot_xg_lookup <- function(shots) {
+  for (col in c("match_id", "event_id", "xg")) {
+    if (!col %in% names(shots)) stop("shot table has no `", col, "` column")
+  }
+  key <- paste0(as.character(shots$match_id), "|", sprintf("%.0f", as.numeric(shots$event_id)))
+  d <- anyDuplicated(key)
+  if (d > 0L) stop(sprintf("shot table has duplicate (match_id, event_id) keys, first: %s", key[d]))
+  list(key = key,
+       xg = as.numeric(shots$xg),
+       xgot = if ("xgot" %in% names(shots)) as.numeric(shots$xgot) else rep(NA_real_, length(key)),
+       match_ids = unique(as.character(shots$match_id)))
+}
+
+# Add `xg` and `xgot` to every row (NA off shot rows). Coverage is judged on
+# shot rows in matches the shot table has: under `floor` found, or found but
+# every xG NA, is a failure (the caller skips the file), never a written file.
+# A lookup with no row for any of this file's matches is not judged.
+join_shot_xg <- function(chains, lookup, comp, floor = SHOT_XG_MIN_FRAC) {
+  chains$xg <- NA_real_
+  chains$xgot <- NA_real_
+  out <- list(chains = chains, failure = NULL, n_shots = 0L, n_covered = 0L, n_found = 0L, n_xg = 0L)
+  rows <- which(chains$is_shot %in% TRUE)
+  out$n_shots <- length(rows)
+  if (!length(rows)) return(out)
+  key <- paste0(as.character(chains$match_id[rows]), "|", sprintf("%.0f", as.numeric(chains$event_id[rows])))
+  idx <- match(key, lookup$key)
+  covered <- as.character(chains$match_id[rows]) %in% lookup$match_ids
+  out$n_covered <- sum(covered)
+  out$n_found <- sum(!is.na(idx))
+  # Rounded to 3 dp as match-shots.parquet does (build-blog-data.yml), so a
+  # team's chains xG equals its match-shots xG exactly (penalties are stored
+  # unrounded in the shot table).
+  out$chains$xg[rows] <- round(lookup$xg[idx], 3)
+  out$chains$xgot[rows] <- round(lookup$xgot[idx], 3)
+  out$n_xg <- sum(!is.na(out$chains$xg[rows]))
+  if (out$n_covered == 0L) return(out)
+  frac <- mean(!is.na(idx[covered]))
+  if (frac < floor) {
+    out$failure <- sprintf("%s: shot xg matched only %.1f%% of %d shot rows in covered matches (floor %.0f%%) - opta_shot_events.parquet is likely misaligned with events_%s.parquet",
+                           comp, 100 * frac, out$n_covered, 100 * floor, comp)
+  } else if (out$n_xg == 0L) {
+    out$failure <- sprintf("%s: shot xg found %d of %d shot rows but every xg is NA - the shot table's xg column is empty for this comp",
+                           comp, out$n_found, out$n_covered)
+  }
+  out
 }

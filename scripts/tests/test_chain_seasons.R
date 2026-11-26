@@ -41,4 +41,29 @@ stopifnot(r$ok, is.na(r$frac), r$n_covered == 0L)
 r <- chain_coverage_check(c(rep(1, 8), NA, NA), rep("a", 10), "a", 0.80)   # exactly at the floor
 stopifnot(r$ok)
 
+# --- shot_xg_lookup / join_shot_xg (inthegame-blog#336) ------------------------
+sh <- data.frame(match_id = c("m1", "m1", "m2", "m2"), event_id = c(10, 3e9, 5, 6),
+                 xg = c(0.1, 0.25, NA, 0.4), xgot = c(0.2, NA, NA, 0.5))
+lk <- shot_xg_lookup(sh)
+ch <- data.frame(match_id = c("m1", "m1", "m1", "m2", "m2", "m9"), event_id = c(10, 11, 3e9, 5, 6, 1),
+                 is_shot = c(TRUE, FALSE, TRUE, TRUE, TRUE, TRUE))
+r <- join_shot_xg(ch, lk, "T")
+stopifnot(is.null(r$failure), nrow(r$chains) == nrow(ch), identical(r$chains$event_id, ch$event_id))
+stopifnot(isTRUE(all.equal(r$chains$xg, c(0.1, NA, 0.25, NA, 0.4, NA))))    # 3e9 id keyed exactly; own goal NA kept
+stopifnot(isTRUE(all.equal(r$chains$xgot, c(0.2, NA, NA, NA, 0.5, NA))))
+stopifnot(r$n_shots == 5L, r$n_covered == 4L, r$n_found == 4L, r$n_xg == 3L) # m9 not in the shot table: not judged
+stopifnot(is.na(r$chains$xg[2]))                                             # non-shot row stays NA
+lk_pen <- shot_xg_lookup(transform(sh, xg = c(0.76943, 0.25, NA, 0.4)))     # unrounded penalty value
+stopifnot(identical(join_shot_xg(ch, lk_pen, "T")$chains$xg[1], 0.769))     # 3 dp, as match-shots
+ch2 <- ch; ch2$event_id[c(1, 3)] <- c(99, 98)                                # 2 of 4 covered shots lost
+stopifnot(grepl("matched only 50.0%", join_shot_xg(ch2, lk, "T")$failure))
+lk_na <- shot_xg_lookup(transform(sh, xg = NA_real_))                        # found, but xg all empty
+stopifnot(grepl("every xg is NA", join_shot_xg(ch, lk_na, "T")$failure))
+r <- join_shot_xg(ch[ch$match_id == "m9", ], lk, "T")                        # no overlap: not judged
+stopifnot(is.null(r$failure), r$n_covered == 0L)
+r <- join_shot_xg(ch[!ch$is_shot, ], lk, "T")                                # no shots at all
+stopifnot(is.null(r$failure), "xg" %in% names(r$chains), r$n_shots == 0L)
+stopifnot(inherits(try(shot_xg_lookup(rbind(sh, sh[1, ])), silent = TRUE), "try-error"))  # duplicate key
+stopifnot(all(is.na(shot_xg_lookup(sh[, c("match_id", "event_id", "xg")])$xgot)))         # no xgot column
+
 cat("PASS: test_chain_seasons.R\n")
