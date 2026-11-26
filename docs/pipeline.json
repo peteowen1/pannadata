@@ -1,0 +1,92 @@
+{
+  "repo": "peteowen1/pannadata",
+  "title": "pannadata pipeline",
+  "about": "How the football data gets from Opta to the site's R2 store, on GitHub Actions: the daily Opta scrape here, then the ratings and match predictions in the panna repo (see that repo's pipeline guide), then the blog data build here, which publishes what the site reads. Each stage starts the next by sending a repository_dispatch message; this guide times each stage on its own and does not follow one chain of runs across repos.",
+  "runs": 5,
+  "pipelines": [
+    {
+      "name": "Daily Opta scrape",
+      "workflow": "daily-opta-scrape.yml",
+      "about": "Fetches new Opta matches for the current season, merges them into the consolidated tables, scores new shots for xG and post-shot xG (xGOT), and publishes everything to the opta-latest release. Only the scheduled runs are counted, not manual backfills. Tuesday to Sunday it scrapes competition tiers 1 and 2; Monday it scrapes every tier (the scrape limit rises from 35 to 120 minutes), so Monday runs are the slow ones.",
+      "triggers": "GitHub's own schedule, set for 4pm Sydney time each day in summer. GitHub starts it hours late (the five runs used began between midnight and 3am Sydney time). When it succeeds it sends opta-scrape-complete to the panna repo, which starts both the Predictions Pipeline and the Opta RAPM/SPM Pipeline there.",
+      "select": {
+        "events": ["schedule"],
+        "branch": "main",
+        "require_jobs": ["^scrape$"]
+      },
+      "jobs": [
+        {
+          "name": "scrape",
+          "match": "^scrape$",
+          "about": "One job: restore the data already on the opta-latest release, scrape what is new, rebuild the consolidated tables, score shots, upload, then start the panna repo",
+          "steps": {
+            "Checkout pannadata": "Downloads this repo's code onto the machine",
+            "Setup Python": "Installs Python 3.11 with a cache of the pip packages",
+            "Install Python dependencies": "Installs the scraper's Python packages from scripts/opta/requirements.txt",
+            "Restore opta-latest from GitHub Releases": "Downloads the manifest of matches already scraped and the consolidated tables (player stats, shots, events, lineups, fixtures and the per-league events files) from the opta-latest release, so this run adds to them instead of starting empty; fails if a file that should be there is missing",
+            "Run Opta scraper": "Runs scripts/opta/scrape_opta.py: asks the Opta API for matches not yet in the manifest (the latest season of each competition; tiers 1 and 2, or every tier on Mondays) and saves one small parquet file per match, league and table",
+            "Scrape stats job summary": "Writes a table of what the scrape fetched, per league and season, onto the run's summary page",
+            "Build consolidated parquet files": "Runs scripts/opta/consolidate_opta.py: merges the new per-match files into the single opta_*.parquet tables and the per-league events files, one league at a time to save memory, and rebuilds opta-catalog.json",
+            "Verify events_consolidated coverage vs player_stats": "Runs scripts/opta/check_events_coverage.py: stops the run before upload if any league's events file is missing more than 20 matches that the player stats have, for the current season",
+            "Setup R for xG enrichment": "Installs R for the shot scoring below",
+            "Install R dependencies for xG": "Installs the R packages the shot scoring needs (arrow, dplyr, xgboost, data.table, cli)",
+            "Enrich shots with xG + xGOT": "Fills in shots that are missing details and scores them: repairs shot rows from the stored events, adds goalmouth placement, then downloads the xG v5 and xGOT v3 models from the models release and scores shots with no value yet (scripts/score_shots_context.R); an error here is recorded and fails the run at the end, after the upload",
+            "Build player profiles (DOB/nationality/height)": "Runs scripts/opta/build_player_profiles.py: one row per player with date of birth, nationality and height, taken from the reep register because Opta's feed has none of them (best effort; a failure does not fail the run)",
+            "Upload to GitHub Releases": "Uploads the consolidated tables, the event-less match list, the catalog and only the events files that changed this run to the opta-latest release; the match manifest goes up last, and only if every earlier upload worked, followed by bus_manifest.json",
+            "Summary": "Prints the manifest size and the number of files built",
+            "re:^Recovery": "Only when the scraper crashed or timed out: consolidates and uploads whatever it had saved so the work is not lost",
+            "Build current club squads": "Runs scripts/opta/build_squads.py to build squads.parquet (who is at each club right now) and uploads it to opta-latest; best effort, keeping the old file if it fails",
+            "Trigger panna predictions pipeline": "Sends opta-scrape-complete to the panna repo, which starts its predictions and ratings runs (tries three times)",
+            "Fail on failed fixture windows": "Ends the run red if any fixture window failed on its first page (an Opta outage or rate limit), after everything else has been published",
+            "Fail on shot xG scoring failure": "Only when shot scoring failed: ends the run red, after the upload, so new shots are not silently left without xG"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Blog data build",
+      "workflow": "build-blog-data.yml",
+      "about": "Takes the ratings and predictions the panna repo published, joins them to the Opta data, builds the parquet files the site reads, and uploads them to the R2 store (inthegame-data, football folder). Only runs started by the panna repo's predictions-complete message are counted.",
+      "triggers": "The panna repo's Predictions Pipeline sends predictions-complete when it finishes publishing (a step near the end there). It can also be started by hand. It starts nothing else: the site reads the R2 files it uploads. It shares a queue with the daily scrape, so the two never write R2 at the same time.",
+      "select": {
+        "events": ["repository_dispatch"],
+        "branch": "main",
+        "require_jobs": ["^build$"]
+      },
+      "jobs": [
+        {
+          "name": "build",
+          "match": "^build$",
+          "about": "One job: download the published ratings, predictions and Opta tables, rebuild each blog file, upload them to R2, then check nothing expected is missing",
+          "steps": {
+            "Download source data": "Downloads from the ratings-data, blog-latest and opta-latest releases: the ratings, predictions, game logs, World Cup files, team strength, shot events, lineups and club squads that the builds below read; fails if a required one is missing",
+            "re:^Enrich shot xG": "Safety check: if more than 15% of the latest season's shots have no xG, fails the build under the current model setting (re-run the daily scrape to fix it); skipped when xG is healthy",
+            "Stop if stored xG is broken under context models": "Only when the check above found broken xG: stops the run before anything is built or uploaded",
+            "Build ratings parquet": "Runs scripts/build_blog_data.R: builds ratings.parquet, the player ratings table (xRAPM, SPM, career panna, EPR, PSR and the combined Piero rating) the site's player pages use",
+            "Enrich WC squads with Piero": "Copies each World Cup squad player's career ratings and Piero rating from ratings.parquet, so the squads match it exactly",
+            "Build player details parquet": "Runs scripts/build_player_meta.R: one row per player with their team, league and most common position",
+            "Enrich shots with xGOT": "Under the current model setting this only prints that xGOT comes from the daily scrape and does nothing else",
+            "Build weak-foot table (live xG)": "Builds shot-foot-history.json: each player's right-footed and left-footed shots so far, which the live xG scorer on the site needs",
+            "Build shot parquet": "Runs scripts/build_shot_data.R: recent shots with xG for the site's shot charts",
+            "Download and filter player skills": "Downloads opta_skills.parquet and keeps only the latest season, as player-skills.parquet",
+            "Build match-shots (xG from enriched source)": "Builds match-shots.parquet: every shot in the blog's competitions plus the World Cup, with team names and the half it was taken in",
+            "Build match-stats per league": "Runs scripts/rebuild_match_stats.R: one match-stats parquet per league (and per World Cup, Euro, Copa America and AFCON), one league at a time to save memory",
+            "Build league xG from match-shots": "Builds league-xg.parquet and one team-match xG file per league from the shots",
+            "Enrich predictions with match-level xG": "Adds each finished match's shot-based xG to predictions.parquet",
+            "Build chain parquets (one league at a time)": "Runs scripts/build_chains_ci.R: builds the possession-chain files (chains-<league>.parquet, plus the newest seasons separately), downloading each league's events as it goes",
+            "Build player-positions parquet (detailed pos for blog filter)": "Runs scripts/build_player_positions.R: each player's detailed position (left back, centre mid and so on) per league and season, for the site's position filter",
+            "Fetch current club squads": "Downloads squads.parquet (who is at each club now) from opta-latest so the site's team column is current",
+            "Recent predictions": "Writes predictions-recent.parquet: only the last 450 days of predictions, so the site's matches pages load faster",
+            "Lock pre-match predictions": "Runs scripts/lock_predictions.R: keeps each match's last prediction made before its match day in predictions-locked.parquet (read from R2, added to, never rewritten)",
+            "Simulate cup competitions (UCL/UEL/UECL)": "Runs scripts/simulate_cup.R: simulates the Champions League, Europa League and Conference League from the latest predictions, as cup-simulations.parquet",
+            "Build per-player, per-team and per-league copies of match-stats and game-logs": "Runs scripts/by_player.R: re-sorts the match-stats and game-logs files by player and by team so a player or team page reads one small slice instead of the whole league",
+            "Strip oversized R metadata from parquets": "Rewrites any parquet whose footer is over 1 MB so browsers do not have to download a huge header first",
+            "Upload to R2": "Installs wrangler, uploads every parquet (and the small JSON files) to the inthegame-data bucket's football folder, then writes r2_bus_manifest.json last; fails before the manifest if any upload failed",
+            "Fail run if expected blog artifacts are missing": "After the upload, ends the run red if any file that is rebuilt every run is missing (ratings, player details, match-shots and the match-stats files)",
+            "Fail run if chains had per-comp failures": "After the upload, ends the run red if any competition's chain file failed to build (the others were still uploaded)"
+          }
+        }
+      ]
+    }
+  ]
+}

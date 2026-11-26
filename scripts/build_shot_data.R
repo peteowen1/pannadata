@@ -11,7 +11,7 @@ if (!file.exists(opta_path)) stop("opta_shot_events.parquet not found in source/
 
 opta_shots <- read_parquet(opta_path)
 
-required_cols <- c("season", "competition", "player_name", "x", "y",
+required_cols <- c("season", "competition", "player_id", "player_name", "x", "y",
                    "is_goal", "type_id", "body_part", "situation")
 missing <- setdiff(required_cols, names(opta_shots))
 if (length(missing) > 0) {
@@ -28,6 +28,9 @@ recent_seasons <- head(
 panna_shots <- opta_shots |>
   filter(competition %in% tracked_leagues, season %in% recent_seasons) |>
   transmute(
+    # player_id (pannadata#229): shots were matched by name only, so "E. Haaland"
+    # and "M. Haaland" merged on a name filter. The id keeps them apart.
+    player_id,
     player_name,
     x = round(x, 1),
     y = round(y, 1),
@@ -122,18 +125,21 @@ if ("xgot" %in% names(opta_shots)) {
 panna_shots <- panna_shots |> rename(is_big_chance = big_chance)
 
 dir.create("blog", showWarnings = FALSE)
-# Sorted by player_name and written in 10,000-row groups (pannadata#153).
+# Sorted by player_id and written in 10,000-row groups (pannadata#153, #229).
 # The blog's player page keeps one player's shots; with the file as one row
 # group it decoded all ~227k rows and downloaded all ~40 MB to do that
-# (~5.5 s). Grouped by player, each row group's min/max on player_name lets
-# a reader skip every group that cannot hold the player: on 2026-10-02's file,
-# 23 groups, a one-player read in 10 ms against 350 ms, same 401 shots. The
-# blog only gets this once its reader prunes on STRING statistics, which
-# data-loader.js _rowGroupRanges deliberately refuses today (numeric only);
-# tracked on #153. .row keeps each player's rows in their existing order.
+# (~5.5 s). Grouped by player, each row group's min/max on the key lets a
+# reader skip every group that cannot hold the player (on 2026-10-02's file,
+# sorted by name: 23 groups, a one-player read in 10 ms against 350 ms, same
+# 401 shots). player_id replaced player_name as the sort key in #229: the id is
+# the unambiguous key and the Play Finder's one-player query reads one group.
+# The blog's reader does not prune on STRING statistics today
+# (data-loader.js _rowGroupRanges is numeric only; tracked on #153), and
+# player_id is a string too, so nothing is skipped until it does.
+# .row keeps each player's rows in their existing order.
 panna_shots <- panna_shots |>
   mutate(.row = row_number()) |>
-  arrange(player_name, .row) |>
+  arrange(player_id, .row) |>
   select(-.row)
 write_parquet(panna_shots, "blog/shots.parquet", chunk_size = 10000)
 cat("shots:", nrow(panna_shots), "shots across", length(recent_seasons), "seasons\n")

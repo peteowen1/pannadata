@@ -2,6 +2,14 @@ name: Build blog data
 
 on:
   workflow_dispatch:
+    inputs:
+      dry_run:
+        # Build everything, run every gate, but skip the R2 upload (the only step
+        # that writes outside the runner). Lets a dev-branch change run end to end
+        # without touching live data (pannadata#229).
+        description: "Dry run: build and gate, but upload nothing to R2"
+        type: boolean
+        default: false
   repository_dispatch:
     types: [predictions-complete]
 
@@ -23,6 +31,11 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # One normalised flag for the dry-run listing and the R2 upload, so the two
+    # conditions cannot diverge (boolean or string "true" both mean dry run;
+    # repository_dispatch has no inputs, so it is always "false" = upload).
+    env:
+      DRY_RUN: ${{ (inputs.dry_run == true || inputs.dry_run == 'true') && 'true' || 'false' }}
     # The chains step builds ~14 comps serially at ~4-6 min each once the loop
     # is healthy — 30 min only ever fit because the loop was crashing at comp 2
     # (see build_chains_ci.R per-comp tryCatch note). A timeout mid-chains kills
@@ -907,7 +920,23 @@ jobs:
         continue-on-error: true
         run: Rscript scripts/strip_parquet_r_metadata.R blog
 
+      - name: Dry run - list what would have been uploaded
+        if: ${{ env.DRY_RUN == 'true' }}
+        run: |
+          n=$(ls blog/*.parquet blog/*.json 2>/dev/null | wc -l)
+          echo "DRY RUN: R2 upload skipped. $n file(s) would have gone to inthegame-data/football:"
+          {
+            echo "### Dry run: R2 upload skipped ($n files)"
+            echo '| file | bytes |'
+            echo '|---|---:|'
+            for f in blog/*.parquet blog/*.json; do
+              [ -e "$f" ] || continue
+              printf '| %s | %s |\n' "${f#blog/}" "$(stat -c %s "$f")"
+            done
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: Upload to R2
+        if: ${{ env.DRY_RUN == 'false' }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
