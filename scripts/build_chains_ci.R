@@ -376,6 +376,14 @@ build_chain_table <- function(ev, comp, warn_no_overlap = TRUE) {
     sx <- join_shot_xg(chains, shot_xg, comp)
     cat("  shot xg: ", sx$n_found, "/", sx$n_shots, " shot rows found (", sx$n_covered,
         " in covered matches), ", sx$n_xg, " with xg\n", sep = "")
+    # A current-season file whose shots find no match in the shot table at all
+    # would ship all-NA xg green (e.g. a renamed `competition` value). Past-season
+    # files pass warn_no_overlap = FALSE but are covered by the same table, so
+    # the rule is applied to the main file only, the one the blog reads first.
+    if (is.null(sx$failure) && warn_no_overlap && sx$n_shots > 0L && sx$n_covered == 0L) {
+      sx$failure <- sprintf("%s: none of %d shot rows is in a match the shot table has - shipping would leave xg all NA",
+                            comp, sx$n_shots)
+    }
     if (!is.null(sx$failure)) {
       cat("  SKIP ", comp, " - ", sx$failure, " (recorded, continuing)\n", sep = "")
       return(list(chains = NULL, failure = sx$failure))
