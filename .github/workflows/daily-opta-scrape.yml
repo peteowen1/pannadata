@@ -77,6 +77,8 @@ env:
 jobs:
   scrape:
     runs-on: ubuntu-latest
+    # WORKFLOW_PAT lives in the cross-repo Environment (main/dev only); other refs get none and fall back to github.token.
+    environment: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && 'cross-repo' || '' }}
     # 120 was tight for big historical backfills (per-match fetch is rate-limited
     # ~17 min/league-season). 300 (under GH's 360-min hosted cap) lets one dispatch
     # drain ~15 league-seasons instead of ~6. Daily cron finishes early regardless.
@@ -89,6 +91,13 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
+    - name: Require WORKFLOW_PAT on main/dev
+      # main/dev read it from the cross-repo Environment; fail here, not at the first cross-repo write.
+      if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
+      env:
+        PAT: ${{ secrets.WORKFLOW_PAT }}
+      run: test -n "$PAT" || { echo "::error title=No WORKFLOW_PAT::set it in the cross-repo Environment"; exit 1; }
+
     - name: Checkout pannadata
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
