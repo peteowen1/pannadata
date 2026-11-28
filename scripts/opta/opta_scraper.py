@@ -342,9 +342,18 @@ def fixture_context_fields(match: Dict) -> Dict:
     official, VAR) for uses not yet decided.
     """
     info = match.get("matchInfo", {}) or {}
-    venue = info.get("venue") or {}
-    extra = (match.get("liveData", {}) or {}).get("matchDetailsExtra") or {}
+    venue = info.get("venue")
+    if not isinstance(venue, dict):
+        venue = {}
+    extra = (match.get("liveData", {}) or {}).get("matchDetailsExtra")
+    if not isinstance(extra, dict):
+        extra = {}
+    # One odd payload must not stop a season's fixtures write: a single official
+    # can arrive as an object instead of a list, and entries are not guaranteed dicts.
     officials = extra.get("matchOfficial") or []
+    if isinstance(officials, dict):
+        officials = [officials]
+    officials = [o for o in officials if isinstance(o, dict)] if isinstance(officials, list) else []
     referee = next((o for o in officials if o.get("type") == "Main"), {})
     referee_name = " ".join(
         part for part in (referee.get("firstName"), referee.get("lastName")) if part
