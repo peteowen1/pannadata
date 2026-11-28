@@ -397,6 +397,20 @@ Match schedule and results. Contains ALL statuses (Played, Fixture, Postponed).
 | `match_status` | chr | Fixture, Played, Postponed |
 | `competition` | chr | Opta league code |
 | `season` | chr | Season string |
+| `venue_id`, `venue_name` | chr | Stadium id and name from the fixture feed |
+| `venue_latitude`, `venue_longitude` | dbl | Stadium coordinates (used for weather and travel distance) |
+| `venue_neutral` | lgl | TRUE when the feed marks the venue neutral |
+| `local_date`, `local_time` | chr | Kickoff at the stadium's local clock |
+| `match_week` | chr | Round number as the feed gives it |
+| `coverage_level`, `var` | chr | Opta coverage tier and VAR flag, raw |
+| `referee_id`, `referee_name` | chr | The "Main" match official. Present before kickoff once appointed (19 of 29 upcoming EPL fixtures on 2026-11-28), NA until then |
+| `attendance` | dbl | Crowd. Known after the match only: never a same-match model input |
+| `match_officials_json` | chr | The feed's whole officials block (assistants, fourth official, VAR), "" when absent |
+
+The venue-to-`match_officials_json` columns were added 2026-11-28 and are filled only for
+season files scraped since then; earlier season files lack them until a `--types fixtures`
+backfill, and old seasons carry none in the feed (EPL 2002-03 has no venue or officials).
+Check coverage per competition-season before using one.
 
 Filter with `load_opta_fixtures(league, status = "Fixture")` for upcoming matches.
 

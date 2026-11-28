@@ -329,6 +329,54 @@ def _to_str_or_none(value) -> Optional[str]:
     return str(value)
 
 
+def fixture_context_fields(match: Dict) -> Dict:
+    """Venue, kickoff, referee and attendance from one item of the match-list feed.
+
+    The match-list feed (`match/` endpoint, also the top of every `_stats.json`)
+    carries these for played matches AND, before kickoff, for fixtures: the
+    venue and local kickoff time as soon as the fixture is listed, the referee
+    once appointed (19 of 29 upcoming EPL fixtures on 2026-11-28). Attendance
+    is post-match only. Every field is None/NaN when the feed omits it (older
+    seasons carry none of them), so a consumer must check coverage, not presence.
+    `match_officials_json` keeps the whole officials block (assistants, fourth
+    official, VAR) for uses not yet decided.
+    """
+    info = match.get("matchInfo", {}) or {}
+    venue = info.get("venue")
+    if not isinstance(venue, dict):
+        venue = {}
+    extra = (match.get("liveData", {}) or {}).get("matchDetailsExtra")
+    if not isinstance(extra, dict):
+        extra = {}
+    # One odd payload must not stop a season's fixtures write: a single official
+    # can arrive as an object instead of a list, and entries are not guaranteed dicts.
+    officials = extra.get("matchOfficial") or []
+    if isinstance(officials, dict):
+        officials = [officials]
+    officials = [o for o in officials if isinstance(o, dict)] if isinstance(officials, list) else []
+    referee = next((o for o in officials if o.get("type") == "Main"), {})
+    referee_name = " ".join(
+        part for part in (referee.get("firstName"), referee.get("lastName")) if part
+    )
+    neutral = venue.get("neutral")
+    return {
+        "venue_id": _to_str_or_none(venue.get("id")),
+        "venue_name": _to_str_or_none(venue.get("longName") or venue.get("shortName")),
+        "venue_latitude": _to_float_or_nan(venue.get("latitude")),
+        "venue_longitude": _to_float_or_nan(venue.get("longitude")),
+        "venue_neutral": None if neutral is None else _is_yes(neutral),
+        "local_date": _to_str_or_none(info.get("localDate")),
+        "local_time": _to_str_or_none(info.get("localTime")),
+        "match_week": _to_str_or_none(info.get("week")),
+        "coverage_level": _to_str_or_none(info.get("coverageLevel")),
+        "var": _to_str_or_none(info.get("var")),
+        "referee_id": _to_str_or_none(referee.get("id")),
+        "referee_name": _to_str_or_none(referee_name),
+        "attendance": _to_float_or_nan(extra.get("attendance")),
+        "match_officials_json": _json_or_empty(officials),
+    }
+
+
 class OptaScraper:
     """Scrapes Opta data from TheAnalyst API"""
 
