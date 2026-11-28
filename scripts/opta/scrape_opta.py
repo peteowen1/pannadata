@@ -35,7 +35,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional
 from opta_scraper import (OptaScraper, MatchEvent, ShotEvent, PlayerLineup, AllMatchEvent,
-                          zero_minute_goal_share)
+                          zero_minute_goal_share, fixture_context_fields)
 from dataclasses import asdict
 import pandas as pd
 import pyarrow.lib
@@ -1036,6 +1036,7 @@ def scrape_season(scraper: OptaScraper, competition: str, season_name: str,
                 "away_score_ht": ht_score.get("away") if ht_score else None,
                 "competition": competition,
                 "season": season_name,
+                **fixture_context_fields(m),
             }
             all_fixture_records.append(fixture_record)
 
