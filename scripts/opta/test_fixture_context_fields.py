@@ -63,6 +63,17 @@ def test_old_season_with_no_venue_or_extras_is_all_missing():
     assert out["referee_id"] is None
 
 
+def test_odd_shapes_do_not_raise():
+    one = {"liveData": {"matchDetailsExtra": {"matchOfficial": {"id": "r", "type": "Main",
+                                                                "lastName": "Oliver"}}}}
+    assert fixture_context_fields(one)["referee_id"] == "r"
+    for officials in ([None], ["x"], "x", 7):
+        out = fixture_context_fields({"liveData": {"matchDetailsExtra": {"matchOfficial": officials}}})
+        assert out["referee_id"] is None
+    assert fixture_context_fields({"matchInfo": {"venue": "Anfield"}})["venue_id"] is None
+    assert fixture_context_fields({"liveData": {"matchDetailsExtra": []}})["referee_id"] is None
+
+
 def test_scrape_season_writes_the_columns(tmp_path, monkeypatch):
     class Stub:
         data_dir = tmp_path
